@@ -1,0 +1,89 @@
+.wheel-wrap {
+  position: relative;
+  width: 520px;
+  height: 520px;
+  margin: 0 auto;
+}
+
+/* ===== MAIN WHEEL ===== */
+.wheel {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  position: relative;
+  transform-origin: center;
+  will-change: transform;
+
+  /* важное: фиксирует визуальную чистоту */
+  overflow: hidden;
+
+  /* внешний стиль */
+  border: 10px solid #faab19;
+  box-shadow: 0 0 40px rgba(0,0,0,0.5), 0 0 60px rgba(250, 171, 25, 0.2);
+  background: #111;
+}
+
+/* Центральный элемент, чтобы колесо выглядело солиднее */
+.wheel::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 60px;
+  height: 60px;
+  background: #fac319;
+  border: 8px solid #1a1a1a;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 100;
+  box-shadow: 0 0 15px rgba(0,0,0,0.8);
+}
+
+/* ===== WHEEL ITEM (SLICE) ===== */
+.wheel-item {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Active segment styling */
+.wheel-item.active-segment {
+  filter: brightness(1.3);
+  box-shadow: inset 0 0 80px rgba(250, 195, 25, 0.6);
+  border-left: 3px solid #fff !important;
+  z-index: 100 !important; /* Ensure active segment is on top */
+}
+
+/* Background image for the slice */
+.wheel-item-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: brightness(0.7) contrast(1.1); /* Slightly darker to make text pop if it were there */
+  z-index: 1; /* Картинка поверх базового цвета сегмента */
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.pointer {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+
+  width: 0;
+  height: 0;
+
+  border-left: 20px solid transparent;
+  border-right: 20px solid transparent;
+  border-top: 40px solid #fac319;
+
+  z-index: 50;
+
+  filter: drop-shadow(0 4px 10px rgba(0,0,0,0.5));
+}
