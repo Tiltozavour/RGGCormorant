@@ -66,7 +66,8 @@
   background-position: center;
   filter: brightness(0.7) contrast(1.1); /* Slightly darker to make text pop if it were there */
   z-index: 1; /* Картинка поверх базового цвета сегмента */
-  transition: opacity 0.3s ease;
+  /* Добавляем плавность для трансформации (масштаба) с эффектом отскока */
+  transition: opacity 0.3s ease, transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
   pointer-events: none;
 }
 
