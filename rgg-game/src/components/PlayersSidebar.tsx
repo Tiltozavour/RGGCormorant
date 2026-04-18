@@ -76,6 +76,9 @@ function PlayersSidebar({
                   Последний счет
                 </th>
                 <th className="px-4 py-3 text-left font-medium">
+                  Бонусы
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
                   Итоговый счет
                 </th>
               </tr>
@@ -106,7 +109,8 @@ function PlayersSidebar({
                       <div className="flex items-center gap-3">
                         <img
                           src={row.avatar || FALLBACK_AVATAR}
-                          className={`h-9 w-9 rounded-full object-cover border ${isTop1 ? "border-yellow-400" : "border-yellow-500/20"}`}
+                          className={`h-9 w-9 rounded-full object-cover border-2 ${isTop1 ? "border-yellow-400 shadow-[0_0_10px_rgba(250,195,25,0.4)]" : ""}`}
+                          style={{ borderColor: !isTop1 ? (player?.borderColor || "rgba(250,195,25,0.2)") : undefined }}
                         />
                         <div>
                           <div className={`font-bold ${isTop1 ? "text-yellow-400" : "text-white"}`}>{row.login}</div>

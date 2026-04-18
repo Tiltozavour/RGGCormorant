@@ -30,7 +30,7 @@ export const GameWheel: React.FC<Props> = ({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null); // Состояние для наведения на таблицу
   const [removedGameId, setRemovedGameId] = useState<string | null>(null); // Новое состояние для анимации исчезновения
   const wheelRef = useRef<HTMLDivElement>(null); // Ref for the main wheel div
-  const requestRef = useRef<number>(0); // Ref for animation frame ID
+  const requestRef = useRef<number>(); // Ref for animation frame ID
 
   const angleStep = items.length > 0 ? 360 / items.length : 0;
 
@@ -164,7 +164,7 @@ export const GameWheel: React.FC<Props> = ({
             >
               {items.map((item, i) => {
                 const isHighlighted = i === activeIndex || i === hoveredIndex; // Подсветка при вращении или наведении
-                const isWinner = !spinning && winner && (i === activeIndex); 
+                const isWinner = !spinning && winner && (winner.id === item.id); // Надежная проверка победителя
                 const segmentColor = `hsl(${(i * 360) / items.length}, 75%, 45%)`;
                 
                 const needsSkew = items.length > 2;

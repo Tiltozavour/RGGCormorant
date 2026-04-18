@@ -51,6 +51,16 @@ function AppClean() {
   const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
   const [isScoresDetailsOpen, setIsScoresDetailsOpen] = useState(false);
 
+  const handleUpdateLogin = async (val: string) => {
+    if (!user || !playerData || val === playerData.login || val.trim().length < 3) return;
+    await updateDoc(doc(db, "players", user.uid), { login: val.trim() });
+  };
+
+  const handleUpdateBorderColor = async (color: string) => {
+    if (!user) return;
+    await updateDoc(doc(db, "players", user.uid), { borderColor: color });
+  };
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -462,20 +472,60 @@ function AppClean() {
         />
       )}
 
-      <div
-        className={`fixed top-0 right-0 h-full w-80 backdrop-blur-xl border-l border-yellow-500/20 p-4 flex flex-col gap-4 z-50 transform transition-transform duration-300 ${
+      <aside
+        className={`fixed top-0 right-0 h-full w-80 backdrop-blur-xl border-l border-yellow-500/20 p-6 flex flex-col gap-8 z-50 transform transition-transform duration-500 ease-out ${
           isSidebarOpen ? "translate-x-0" : "translate-x-full"
         }`}
+        style={{ fontFamily: "'Comfortaa', sans-serif" }}
       >
-        <button onClick={() => setIsSidebarOpen(false)}>Close</button>
+        <div className="flex justify-end -mr-2 -mt-2">
+          <button 
+            onClick={() => setIsSidebarOpen(false)}
+            className="text-zinc-500 hover:text-white transition-colors p-2 text-2xl font-light"
+          >
+            ✕
+          </button>
+        </div>
 
-        <div className="flex flex-col items-center gap-3">
-          <img
-            src={playerData.avatar || FALLBACK_AVATAR}
-            onClick={() => setIsAvatarModalOpen(true)}
-            className="w-24 h-24 rounded-full cursor-pointer"
-          />
-          <h2>{playerData.login}</h2>
+        <div className="flex flex-col items-center gap-6">
+          <div 
+            className="relative p-1 rounded-full transition-all duration-500 shadow-2xl"
+            style={{ background: playerData.borderColor || '#fac319' }}
+          >
+            <img
+              src={playerData.avatar || FALLBACK_AVATAR}
+              onClick={() => setIsAvatarModalOpen(true)}
+              className="w-28 h-28 rounded-full cursor-pointer object-cover border-4 border-black hover:opacity-80 transition-opacity"
+              title="Нажмите, чтобы изменить аватар"
+            />
+          </div>
+
+          <div className="flex flex-col gap-5 w-full">
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] uppercase font-black text-zinc-500 tracking-[0.2em] px-1">Ваш позывной</label>
+              <input 
+                key={playerData.id + playerData.login}
+                defaultValue={playerData.login}
+                onBlur={(e) => handleUpdateLogin(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                className="bg-black/30 border border-white/5 rounded-xl px-4 py-3 text-white font-bold focus:border-yellow-500/50 outline-none transition-all shadow-inner"
+              />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <label className="text-[10px] uppercase font-black text-zinc-500 tracking-[0.2em] px-1">Цвет ауры</label>
+              <div className="flex gap-2.5 flex-wrap px-1">
+                {["#fac319", "#a855f7", "#3b82f6", "#ef4444", "#10b981", "#f97316", "#ffffff"].map(color => (
+                  <button 
+                    key={color}
+                    onClick={() => handleUpdateBorderColor(color)}
+                    className={`w-7 h-7 rounded-full border-2 transition-all ${playerData.borderColor === color ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-50 hover:opacity-100 hover:scale-105'}`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="border-t border-yellow-500/20 pt-4 mt-auto">
@@ -486,22 +536,36 @@ function AppClean() {
             Выйти
           </button>
         </div>
-      </div>
+      </aside>
 
       {isAvatarModalOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 p-6 rounded-xl w-80 flex flex-col gap-4">
-            <h2>Изменить аватар</h2>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[10001] p-4">
+          <div className="bg-zinc-950 border border-yellow-500/30 p-8 rounded-[2.5rem] w-full max-w-sm flex flex-col gap-6 shadow-2xl animate-in zoom-in duration-300" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+            <div className="flex flex-col gap-2">
+              <h2 className="text-xl font-black text-yellow-500 uppercase italic tracking-tighter">Сменить аватар</h2>
+              <p className="text-xs text-zinc-500">Введите прямую ссылку на изображение</p>
+            </div>
 
-            <input
-              value={newAvatarUrl}
-              onChange={(e) => setNewAvatarUrl(e.target.value)}
-              className="p-2 bg-black border"
-            />
+            <div className="flex flex-col gap-2">
+              <input
+                value={newAvatarUrl}
+                onChange={(e) => setNewAvatarUrl(e.target.value)}
+                placeholder="https://i.pinimg.com/..."
+                className="w-full p-4 bg-black/50 border border-white/10 rounded-2xl text-white outline-none focus:border-yellow-500/50 transition-all font-bold placeholder:text-zinc-700"
+              />
+            </div>
 
-            <div className="flex gap-2">
-              <button onClick={updateAvatar}>Сохранить</button>
-              <button onClick={() => setIsAvatarModalOpen(false)}>
+            <div className="flex gap-3">
+              <button 
+                onClick={updateAvatar}
+                className="flex-1 bg-yellow-500 text-black py-4 rounded-2xl font-black uppercase text-sm hover:bg-white transition-all active:scale-95 shadow-[0_5px_0_#a16207] active:shadow-none active:translate-y-1"
+              >
+                Принять
+              </button>
+              <button 
+                onClick={() => setIsAvatarModalOpen(false)}
+                className="flex-1 bg-zinc-800 text-zinc-400 py-4 rounded-2xl font-bold uppercase text-sm hover:text-white transition-all"
+              >
                 Отмена
               </button>
             </div>
