@@ -21,7 +21,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
       {/* 🎮 Верхняя строка */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-purple-500/10">
 
-        <h3 className="text-purple-300 text-sm">
+        <h3 className="text-purple-300 text-base font-bold">
           Игроки ({players.length})
         </h3>
 
@@ -29,7 +29,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         {!isAdmin && (
           <button
             onClick={onRoll}
-            className="bg-purple-600 px-4 py-1 rounded hover:bg-purple-500 text-sm"
+            className="bg-purple-600 px-6 py-2 rounded hover:bg-purple-500 text-base font-bold"
           >
             🎲 Бросить кубик
           </button>
@@ -37,11 +37,11 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
         {/* 🛠️ Админ панель */}
         {isAdmin && (
-          <div className="flex gap-2">
-            <button className="bg-yellow-600 px-3 py-1 rounded text-xs">
+          <div className="flex gap-2 font-bold">
+            <button className="bg-yellow-600 px-4 py-1.5 rounded text-sm">
               Этап
             </button>
-            <button className="bg-green-600 px-3 py-1 rounded text-xs">
+            <button className="bg-green-600 px-4 py-1.5 rounded text-sm">
               Очки
             </button>
           </div>
@@ -66,14 +66,14 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
               >
                 <img
                   src={p.avatar || "https://i.pinimg.com/736x/6f/8d/ce/6f8dcedfc7102d5e88e0af7b88634fc2.jpg"}
-                  className="w-10 h-10 rounded-full object-cover mb-1"
+                  className="w-12 h-12 rounded-full object-cover mb-1"
                 />
 
-                <span className="text-xs text-center">
+                <span className="text-sm text-center font-bold text-zinc-100">
                   {p.login}
                 </span>
 
-                <span className="text-[10px] text-purple-300">
+                <span className="text-xs text-purple-300 font-medium">
                   🦖 {p.tiltCoins}
                 </span>
               </div>

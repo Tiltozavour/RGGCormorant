@@ -23,17 +23,24 @@ const BottomPanelRealtime: React.FC<BottomPanelRealtimeProps> = ({
   return (
     <div className="w-full h-40 border-t border-purple-500/20 bg-black/40 backdrop-blur-md flex flex-col">
       <div className="flex items-center justify-between px-4 py-2 border-b border-purple-500/10 gap-3">
-        <h3 className="text-purple-300 text-sm">Игроки ({players.length})</h3>
+        <h3 className="text-purple-300 text-base font-bold">Игроки ({players.length})</h3>
 
-        <div className="text-xs text-zinc-300">
-          Этап: {gameState.phase} | Раунд: {gameState.round}
+        <div className="text-sm text-zinc-200">
+          {gameState.phase === "waiting_game" ? (
+            <span className="flex items-center gap-1 text-base">
+              Следующая игра — <b className="text-yellow-400 uppercase">{gameState.currentGame || "..."}</b> | 
+              Ожидаем начала, следите за анонсом в канале Карморанта
+            </span>
+          ) : (
+            <>Этап: {gameState.phase} | Раунд: {gameState.round}</>
+          )}
         </div>
 
         {!isAdmin && (
           <button
             onClick={onRoll}
             disabled={!canRoll}
-            className={`px-4 py-1 rounded text-sm transition ${
+            className={`px-4 py-2 rounded text-base font-bold transition ${
               canRoll
                 ? "bg-purple-600 hover:bg-purple-500"
                 : "bg-zinc-700 text-zinc-400 cursor-not-allowed"
@@ -44,11 +51,11 @@ const BottomPanelRealtime: React.FC<BottomPanelRealtimeProps> = ({
         )}
 
         {isAdmin && (
-          <div className="flex gap-2">
-            <button className="bg-yellow-600 px-3 py-1 rounded text-xs">
+          <div className="flex gap-2 font-bold">
+            <button className="bg-yellow-600 px-4 py-1.5 rounded text-sm">
               Этап
             </button>
-            <button className="bg-green-600 px-3 py-1 rounded text-xs">
+            <button className="bg-green-600 px-4 py-1.5 rounded text-sm">
               Очки
             </button>
           </div>
@@ -72,12 +79,12 @@ const BottomPanelRealtime: React.FC<BottomPanelRealtimeProps> = ({
                     player.avatar ||
                     "https://i.pinimg.com/736x/6f/8d/ce/6f8dcedfc7102d5e88e0af7b88634fc2.jpg"
                   }
-                  className="w-10 h-10 rounded-full object-cover mb-1"
+                  className="w-12 h-12 rounded-full object-cover mb-1"
                 />
 
-                <span className="text-xs text-center">{player.login}</span>
+                <span className="text-sm text-center font-bold text-zinc-100">{player.login}</span>
 
-                <span className="text-[10px] text-purple-300">
+                <span className="text-xs text-purple-300 font-medium">
                   🦖 {player.tiltCoins ?? 0}
                 </span>
               </div>

@@ -56,7 +56,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const movementCounterRef = useRef(0);
   const processedRollsRef = useRef<Set<string>>(new Set());
 
-  const [wheelGames, setWheelGames] = useState<{name: string, image?: string}[]>([]);
+  const [wheelGames, setWheelGames] = useState<{id: string, name: string, image?: string}[]>([]);
 
   useEffect(() => {
     if (showWheel) {
