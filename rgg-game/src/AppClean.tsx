@@ -361,6 +361,7 @@ function AppClean() {
       <div className="flex justify-between items-center p-4 backdrop-blur-sm border-b border-yellow-500/20">
         <h2 className="font-title text-2xl text-yellow-400 tracking-widest">
           Cormorant Society
+                <span className="text-xl font-bold text-purple/90 "> | Этап 1</span>
         </h2>
 
         <div className="flex items-center gap-3">
