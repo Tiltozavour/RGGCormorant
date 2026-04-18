@@ -21,18 +21,18 @@ const BottomPanelRealtime: React.FC<BottomPanelRealtimeProps> = ({
   canRoll,
 }) => {
   return (
-    <div className="w-full h-40 border-t border-purple-500/20 bg-black/40 backdrop-blur-md flex flex-col">
+    <div className="w-full h-40 border-t border-purple-500/20 bg-black/40 backdrop-blur-md flex flex-col" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
       <div className="flex items-center justify-between px-4 py-2 border-b border-purple-500/10 gap-3">
-        <h3 className="text-purple-300 text-base font-bold">Игроки ({players.length})</h3>
+        <h3 className="text-purple-300 text-base font-bold uppercase tracking-tight">Игроки ({players.length})</h3>
 
-        <div className="text-sm text-zinc-200">
+        <div className="text-sm text-zinc-200 font-medium">
           {gameState.phase === "waiting_game" ? (
             <span className="flex items-center gap-1 text-base">
               Следующая игра — <b className="text-yellow-400 uppercase">{gameState.currentGame || "..."}</b> | 
               Ожидаем начала, следите за анонсом в канале Карморанта
             </span>
           ) : (
-            <>Этап: {gameState.phase} | Раунд: {gameState.round}</>
+            <>Этап: {gameState.phase} | Этап: {gameState.round}</>
           )}
         </div>
 
@@ -40,7 +40,7 @@ const BottomPanelRealtime: React.FC<BottomPanelRealtimeProps> = ({
           <button
             onClick={onRoll}
             disabled={!canRoll}
-            className={`px-4 py-2 rounded text-base font-bold transition ${
+            className={`px-6 py-2 rounded text-base font-bold transition ${
               canRoll
                 ? "bg-purple-600 hover:bg-purple-500"
                 : "bg-zinc-700 text-zinc-400 cursor-not-allowed"
@@ -51,11 +51,11 @@ const BottomPanelRealtime: React.FC<BottomPanelRealtimeProps> = ({
         )}
 
         {isAdmin && (
-          <div className="flex gap-2 font-bold">
-            <button className="bg-yellow-600 px-4 py-1.5 rounded text-sm">
+          <div className="flex gap-2">
+            <button className="bg-yellow-600 px-4 py-1.5 rounded text-sm font-bold">
               Этап
             </button>
-            <button className="bg-green-600 px-4 py-1.5 rounded text-sm">
+            <button className="bg-green-600 px-4 py-1.5 rounded text-sm font-bold">
               Очки
             </button>
           </div>
@@ -79,12 +79,12 @@ const BottomPanelRealtime: React.FC<BottomPanelRealtimeProps> = ({
                     player.avatar ||
                     "https://i.pinimg.com/736x/6f/8d/ce/6f8dcedfc7102d5e88e0af7b88634fc2.jpg"
                   }
-                  className="w-12 h-12 rounded-full object-cover mb-1"
+                  className="w-14 h-14 rounded-full object-cover mb-1"
                 />
 
-                <span className="text-sm text-center font-bold text-zinc-100">{player.login}</span>
+                <span className="text-base text-center font-bold text-zinc-100">{player.login}</span>
 
-                <span className="text-xs text-purple-300 font-medium">
+                <span className="text-sm text-purple-300 font-medium">
                   🦖 {player.tiltCoins ?? 0}
                 </span>
               </div>

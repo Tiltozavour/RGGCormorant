@@ -18,6 +18,7 @@ interface GameBoardProps {
   showWheel?: boolean;
   onWheelResult?: (gameName: string) => void;
   onCloseWheel?: () => void;
+  round: number;
 }
 
 interface MapCell {
@@ -44,6 +45,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   showWheel,
   onWheelResult,
   onCloseWheel,
+  round,
 }) => {
   const [piecePos, setPiecePos] = useState({ x: 50, y: 50 });
   const [isAnimating, setIsAnimating] = useState(false);
@@ -201,6 +203,16 @@ const GameBoard: React.FC<GameBoardProps> = ({
       setChoice(null);
     };
   }, [currentRoll, currentRollPlayerId, rollConfirmed, playerData.id]);
+
+  if (round > 8) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-black/40 backdrop-blur-md rounded-3xl border border-yellow-500/20">
+        <h1 className="text-6xl font-black text-yellow-500 uppercase italic tracking-tighter drop-shadow-2xl animate-pulse">
+          Результаты игры
+        </h1>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (!currentRoll || !currentRollPlayerId) {

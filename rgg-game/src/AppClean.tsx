@@ -299,10 +299,33 @@ function AppClean() {
 
     const currentIndex = PHASE_ORDER.indexOf(gameState.phase);
     const safeIndex = currentIndex === -1 ? 0 : currentIndex;
-    const nextIndex =
-      (safeIndex + direction + PHASE_ORDER.length) % PHASE_ORDER.length;
 
-    await handleSetPhase(PHASE_ORDER[nextIndex]);
+    let nextIndex = safeIndex + direction;
+    let nextRound = gameState.round;
+
+    if (nextIndex >= PHASE_ORDER.length) {
+      nextIndex = 0;
+      nextRound += 1;
+    } else if (nextIndex < 0) {
+      nextIndex = PHASE_ORDER.length - 1;
+      if (nextRound > 0) nextRound -= 1;
+    }
+
+    const nextPhase = PHASE_ORDER[nextIndex];
+    const payload: Partial<GameState> = { 
+      phase: nextPhase,
+      round: nextRound 
+    };
+
+    if (nextPhase === "turn") {
+      Object.assign(payload, buildTurnState());
+    } else {
+      payload.currentRoll = null;
+      payload.currentRollPlayerId = null;
+      payload.rollConfirmed = false;
+    }
+
+    await updateDoc(doc(db, "gameState", "current"), payload);
   };
 
   const handlePrepareTurn = async () => {
@@ -361,7 +384,7 @@ function AppClean() {
       <div className="flex justify-between items-center p-4 backdrop-blur-sm border-b border-yellow-500/20">
         <h2 className="font-title text-2xl text-yellow-400 tracking-widest">
           Cormorant Society
-                <span className="text-xl font-bold text-purple/90 "> | Этап 1</span>
+                <span className="text-xl font-bold text-purple/90 "> | Этап {gameState.round}</span>
         </h2>
 
         <div className="flex items-center gap-3">
@@ -415,6 +438,7 @@ function AppClean() {
             showWheel={gameState.showWheel}
             onWheelResult={(res) => void syncWheelResult("current", res)}
             onCloseWheel={() => void syncWheelVisibility("current", false)}
+            round={gameState.round}
           />
         </div>
 
