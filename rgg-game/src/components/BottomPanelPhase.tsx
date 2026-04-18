@@ -1,9 +1,12 @@
-import React from "react";
-import type { GameState } from "../types/game";
+import React, { useState, useEffect } from "react";
+import type { GameState, Player } from "../types/game";
 import type { User } from "firebase/auth";
+import { doc, updateDoc, increment } from "firebase/firestore";
+import { db } from "../firebase";
 
 interface BottomPanelPhaseProps {
   currentUser: User | null;
+  players: Player[]; // Добавляем игроков в пропсы
   isAdmin: boolean;
   gameState: GameState;
   onRoll: () => void;
@@ -19,6 +22,7 @@ interface BottomPanelPhaseProps {
 
 const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
   currentUser,
+  players,
   isAdmin,
   gameState,
   onRoll,
@@ -31,6 +35,43 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
   canConfirmRoll,
   onToggleWheel,
 }) => {
+  const [isFillingResults, setIsFillingResults] = useState(false);
+  const [tempScores, setTempScores] = useState<Record<string, number>>({});
+
+  // Синхронизируем локальный ввод с данными из базы при открытии формы
+  useEffect(() => {
+    if (isFillingResults) {
+      setTempScores(gameState.currentResults || {});
+    }
+  }, [isFillingResults, gameState.currentResults]);
+
+  const handleSaveResults = async () => {
+    if (!isAdmin) return;
+    try {
+      // 1. Обновляем монеты, записываем последний результат и обнуляем старые бонусы
+      const playerUpdates = Object.entries(tempScores).map(([playerId, score]) => {
+        return updateDoc(doc(db, "players", playerId), {
+          tiltCoins: increment(score),
+          lastTiltoCoins: score,
+          bonusPoints: 0
+        });
+      });
+
+      await Promise.all(playerUpdates);
+
+      // 2. Сохраняем промежуточные результаты в состояние игры
+      await updateDoc(doc(db, "gameState", "current"), {
+        currentResults: tempScores
+      });
+      
+      setIsFillingResults(false);
+      // 3. Автоматически переходим к следующему этапу (голосованию)
+      onNextPhase();
+    } catch (e) {
+      console.error("Ошибка сохранения результатов:", e);
+    }
+  };
+
   const turnLabel =
     gameState.turnOrder.length === 0
       ? "Свободный ход"
@@ -48,9 +89,9 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
   return (
     <div className="w-full h-40 border-t border-purple-500/20 bg-black/40 backdrop-blur-md flex flex-col" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
       <div className="flex items-center justify-between px-4 py-2 border-b border-purple-500/10 gap-3">
-        <h3 className="text-purple-300 text-base font-bold uppercase tracking-tight">Панель игры</h3>
+        <h3 className="text-purple-300 text-base font-bold uppercase tracking-tight shrink-0">Панель игры</h3>
 
-        <div className="text-sm text-zinc-200 font-medium">
+        <div className="text-sm text-zinc-200 font-medium truncate">
           {gameState.phase === "waiting_game" && `Этап: Ожидание проведения игры "${gameState.currentGame || "..."}" | Этап ${gameState.round}`}
           {gameState.phase === "playing" && `Этап: Играем в "${gameState.currentGame || "..."}" | Этап ${gameState.round}`}
           {gameState.phase === "results" && `Этап: Подводим итоги игры | Этап ${gameState.round}`}
@@ -112,7 +153,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
         )}
 
         {isAdmin && (
-          <div className="flex gap-2 font-bold">
+          <div className="flex gap-2 font-bold shrink-0">
             {gameState.phase === "next_game" && (
               <button
                 onClick={() => {
@@ -138,16 +179,17 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
             </button>
             
             {gameState.phase === "results" && (
-              <button className="bg-blue-600 px-4 py-1.5 rounded text-sm">
-                Заполнить результаты игры
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setIsFillingResults(!isFillingResults)}
+                  className="bg-blue-600 px-4 py-1.5 rounded text-sm hover:bg-blue-500 transition-colors"
+                >
+                  {isFillingResults ? "Закрыть ввод" : "Заполнить результаты игры"}
+                </button>
+              </div>
             )}
 
-            {gameState.phase === "voting" && (
-              <button className="bg-indigo-600 px-4 py-1.5 rounded text-sm">
-                Посмотреть голосование
-              </button>
-            )}
+            {gameState.phase === "voting" && <AdminVotingView gameState={gameState} players={players} onFinish={onNextPhase} />}
 
             {gameState.phase === "turn" && (
               <button
@@ -161,10 +203,221 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
         )}
       </div>
 
-      <div className="flex-1 px-4 py-3 text-base text-zinc-200 flex items-center">
-        Таблица игроков перенесена в левую боковую панель. Здесь можно
-        оставить карточки и игровые элементы следующего этапа.
+      {/* Контентная область: ввод результатов */}
+      <div className="flex-1 px-4 py-3 text-base text-zinc-200 flex items-center overflow-x-auto custom-scrollbar gap-4">
+        {isFillingResults && gameState.phase === "results" && isAdmin && (
+          <div className="flex gap-4 items-center min-w-max animate-in fade-in slide-in-from-bottom-2 duration-300">
+            {players.filter(p => p.role !== 'admin').map(player => (
+              <div key={player.id} className="bg-zinc-900/60 p-2 rounded-xl border border-purple-500/20 flex flex-col items-center gap-1 min-w-[100px]">
+                <span className="text-[10px] uppercase font-black text-zinc-500 truncate w-20 text-center">{player.login}</span>
+                <input 
+                  type="number" 
+                  className="w-16 bg-black border border-zinc-700 rounded text-center text-sm p-1 text-yellow-400 font-bold focus:border-yellow-500 outline-none transition-colors"
+                  value={tempScores[player.id] ?? 0}
+                  onChange={e => setTempScores(prev => ({...prev, [player.id]: parseInt(e.target.value) || 0}))}
+                />
+              </div>
+            ))}
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setTempScores({})}
+                className="bg-zinc-800 hover:bg-red-900/60 border border-zinc-700 hover:border-red-500/50 px-4 py-2 rounded-xl font-bold text-sm transition-all uppercase tracking-tighter text-zinc-400 hover:text-white"
+              >
+                Сбросить
+              </button>
+              <button 
+                onClick={handleSaveResults}
+                className="bg-green-600 hover:bg-green-500 px-6 py-2 rounded-xl font-bold text-sm transition-all shadow-lg hover:scale-105 active:scale-95 uppercase tracking-tighter"
+              >
+                Сохранить результаты
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Интерфейс голосования для обычных игроков */}
+        {!isAdmin && gameState.phase === "voting" && (
+          <PlayerVotingView 
+            currentUser={currentUser} 
+            players={players} 
+            gameState={gameState} 
+          />
+        )}
       </div>
+    </div>
+  );
+};
+
+/**
+ * Компонент голосования для игрока
+ */
+const PlayerVotingView: React.FC<{ currentUser: User | null, players: Player[], gameState: GameState }> = ({ currentUser, players, gameState }) => {
+  const myId = currentUser?.uid;
+  if (!myId) return null;
+
+  const myPlayerData = players.find(p => p.id === myId);
+  const isParticipating = (myPlayerData?.lastTiltoCoins ?? 0) > 0;
+  const hasVoted = !!gameState.votes?.[myId];
+
+  if (!isParticipating) {
+    return <div className="text-zinc-500 italic">Вы не участвовали в этой игре, поэтому не можете голосовать.</div>;
+  }
+
+  if (hasVoted) {
+    const votedFor = players.find(p => p.id === gameState.votes[myId]);
+    return (
+      <div className="flex items-center gap-3 bg-indigo-900/30 px-4 py-2 rounded-xl border border-indigo-500/30 animate-in fade-in zoom-in duration-300">
+        <span className="text-indigo-200">Ваш голос принят за:</span>
+        <b className="text-white uppercase">{votedFor?.login || "???"}</b>
+      </div>
+    );
+  }
+
+  // Кандидаты — те, кто участвовал (очки > 0)
+  const candidates = players.filter(p => p.role !== 'admin' && (p.lastTiltoCoins ?? 0) > 0);
+
+  const handleVote = async (targetId: string) => {
+    await updateDoc(doc(db, "gameState", "current"), {
+      [`votes.${myId}`]: targetId
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest">Выберите лучшего игрока:</span>
+      <div className="flex gap-2">
+        {candidates.map(c => (
+          <button
+            key={c.id}
+            onClick={() => handleVote(c.id)}
+            className="bg-indigo-600 hover:bg-white hover:text-indigo-900 text-white px-3 py-1.5 rounded-lg text-xs font-black transition-all uppercase"
+          >
+            {c.login}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Компонент управления голосованием для админа
+ */
+const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFinish: () => void }> = ({ gameState, players, onFinish }) => {
+  const [showDetails, setShowDetails] = useState(false);
+
+  const handleFinishVoting = async () => {
+    const currentVotes = gameState.votes || {};
+    
+    // Игроки, которые участвуют в раунде (счет > 0), но еще не проголосовали
+    const currentNonVoters = players.filter(p => 
+      p.role !== 'admin' && 
+      (p.lastTiltoCoins ?? 0) > 0 && 
+      !currentVotes[p.id]
+    );
+
+    let skipBonuses = false;
+    if (currentNonVoters.length > 0) {
+      const names = currentNonVoters.map(v => v.login).join(", ");
+      if (!window.confirm(`Точно завершить голосование? Еще не проголосовали: ${names}.\nВ этом случае бонусы начислены не будут.`)) {
+        return;
+      }
+      skipBonuses = true;
+    }
+
+    if (!skipBonuses) {
+      const voteCounts: Record<string, number> = {};
+      // Считаем голоса
+      Object.values(currentVotes).forEach(votedId => {
+        voteCounts[votedId] = (voteCounts[votedId] || 0) + 1;
+      });
+
+      const voteEntries = Object.entries(voteCounts);
+      if (voteEntries.length > 0) {
+        // Находим максимум
+        const maxVotes = Math.max(...Object.values(voteCounts));
+        const winners = voteEntries
+          .filter(([, count]) => count === maxVotes)
+          .map(([id]) => id);
+
+        // Определяем баллы
+        let bonus = 0;
+        if (winners.length === 1) bonus = 3;
+        else if (winners.length === 2) bonus = 2;
+        else if (winners.length > 2) bonus = 1;
+
+        // Обновляем игроков
+        const updates = winners.map(winnerId => {
+          return updateDoc(doc(db, "players", winnerId), {
+            tiltCoins: increment(bonus),
+            bonusPoints: bonus
+          });
+        });
+
+        await Promise.all(updates);
+      }
+    }
+
+    // Очищаем голоса в БД
+    await updateDoc(doc(db, "gameState", "current"), {
+      votes: {}
+    });
+
+    onFinish();
+  };
+
+  // Игроки, которые участвуют в раунде (счет > 0), но еще не проголосовали
+  const nonVoters = players.filter(p => 
+    p.role !== 'admin' && 
+    (p.lastTiltoCoins ?? 0) > 0 && 
+    !gameState.votes?.[p.id]
+  );
+
+  return (
+    <div className="flex gap-2">
+      <button 
+        onClick={() => setShowDetails(!showDetails)}
+        className="bg-indigo-600 px-4 py-1.5 rounded text-sm hover:bg-indigo-500 transition-colors"
+      >
+        {showDetails ? "Скрыть голоса" : "Посмотреть голосование"}
+      </button>
+      <button 
+        onClick={handleFinishVoting}
+        className="bg-green-600 px-4 py-1.5 rounded text-sm font-bold shadow-[0_0_15px_rgba(34,197,94,0.3)] hover:scale-105 transition-all"
+      >
+        Завершить и начислить
+      </button>
+
+      {showDetails && (
+        <div className="fixed bottom-44 right-4 bg-zinc-900 border border-indigo-500/30 p-4 rounded-2xl shadow-2xl min-w-[200px] animate-in slide-in-from-right-4 duration-300">
+          <h4 className="text-indigo-400 font-bold text-xs uppercase mb-3">Текущие голоса:</h4>
+          <div className="space-y-2">
+            {players.filter(p => p.role !== 'admin').map(p => {
+              const count = Object.values(gameState.votes || {}).filter(id => id === p.id).length;
+              if (count === 0) return null;
+              return (
+                <div key={p.id} className="flex justify-between items-center text-xs">
+                  <span className="text-zinc-300">{p.login}</span>
+                  <span className="bg-indigo-500 text-white px-2 py-0.5 rounded-full font-bold">{count}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {nonVoters.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-white/10">
+              <h5 className="text-[10px] text-red-400 font-bold uppercase mb-2">Ожидаем голос от:</h5>
+              <div className="flex flex-wrap gap-1">
+                {nonVoters.map(v => (
+                  <span key={v.id} className="text-[10px] text-zinc-400 bg-zinc-800 px-1.5 py-0.5 rounded border border-white/5">
+                    {v.login}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

@@ -27,7 +27,12 @@ function PlayersSidebar({
   onOpenDetails,
 }: PlayersSidebarProps) {
   const rows = buildPlayerScoreRows(players, totalScores, gameHistory);
-  const latestGameName = gameHistory.at(-1)?.gameName ?? null;
+  const latestGameName = gameHistory.length > 0 ? gameHistory[gameHistory.length - 1].gameName : null;
+
+  // Находим ID текущего лидера (игнорируя админа) для визуального выделения
+  const topPlayerId = [...players]
+    .filter(p => p.role !== "admin")
+    .sort((a, b) => (b.tiltCoins ?? 0) - (a.tiltCoins ?? 0))[0]?.id;
 
   return (
     <>
@@ -42,6 +47,7 @@ function PlayersSidebar({
         className={`fixed top-0 left-0 h-full w-[min(92vw,720px)] bg-black/65 backdrop-blur-xl border-r border-yellow-500/20 p-4 md:p-6 flex flex-col gap-4 z-50 transform transition-transform duration-300 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
+        style={{ fontFamily: "'Comfortaa', sans-serif" }}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -78,26 +84,32 @@ function PlayersSidebar({
             <tbody>
               {rows.map((row) => {
                 const isCurrentUser = row.playerId === currentUserId;
-                const lastScoreLabel = formatLastScore(row);
+                // Находим игрока, чтобы взять актуальные данные из БД
+                const player = players.find(p => p.id === row.playerId);
+                const lastScore = player?.lastTiltoCoins ?? 0;
+                const bonusScore = player?.bonusPoints ?? 0;
                 const gameLabel = row.lastGameName
                   ? ` (${row.lastGameName})`
                   : "";
+                const isTop1 = row.playerId === topPlayerId;
 
                 return (
                   <tr
                     key={row.playerId}
-                    className={`border-t border-yellow-500/10 ${
-                      isCurrentUser ? "bg-yellow-500/8" : "bg-transparent"
+                    className={`border-t border-yellow-500/10 transition-all duration-500 ${
+                      isTop1 
+                        ? "bg-yellow-500/20 shadow-[inset_0_0_30px_rgba(250,204,21,0.1)]" 
+                        : isCurrentUser ? "bg-yellow-500/8" : "bg-transparent"
                     }`}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <img
                           src={row.avatar || FALLBACK_AVATAR}
-                          className="h-9 w-9 rounded-full object-cover border border-yellow-500/20"
+                          className={`h-9 w-9 rounded-full object-cover border ${isTop1 ? "border-yellow-400" : "border-yellow-500/20"}`}
                         />
                         <div>
-                          <div className="text-white">{row.login}</div>
+                          <div className={`font-bold ${isTop1 ? "text-yellow-400" : "text-white"}`}>{row.login}</div>
                           {isCurrentUser && (
                             <div className="text-[11px] text-yellow-300">
                               это вы
@@ -108,12 +120,16 @@ function PlayersSidebar({
                     </td>
 
                     <td className="px-4 py-3 text-zinc-200">
-                      {lastScoreLabel}
+                      {lastScore}
                       <span className="text-zinc-500">{gameLabel}</span>
                     </td>
 
+                    <td className="px-4 py-3 text-indigo-300 font-medium">
+                      +{bonusScore}
+                    </td>
+
                     <td className="px-4 py-3 text-green-300 font-medium">
-                      {row.totalScore}
+                      {player?.tiltCoins ?? 0}
                     </td>
                   </tr>
                 );

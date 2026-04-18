@@ -48,7 +48,6 @@ function AppClean() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   const [newAvatarUrl, setNewAvatarUrl] = useState("");
-  const [phaseNotification, setPhaseNotification] = useState<string | null>(null);
   const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
   const [isScoresDetailsOpen, setIsScoresDetailsOpen] = useState(false);
 
@@ -122,7 +121,6 @@ function AppClean() {
 
   useEffect(() => {
     const gameStateRef = doc(db, "gameState", "current");
-    let notificationTimer: ReturnType<typeof setTimeout> | null = null;
 
     const unsubscribe = onSnapshot(gameStateRef, (snap) => {
       if (!snap.exists()) {
@@ -134,25 +132,11 @@ function AppClean() {
         ...defaultGameState,
         ...(snap.data() as Partial<GameState>),
       };
-
-      setGameState((prevGameState) => {
-        if (prevGameState.phase !== nextGameState.phase) {
-          setPhaseNotification(PHASE_LABELS[nextGameState.phase]);
-          if (notificationTimer) {
-            clearTimeout(notificationTimer);
-          }
-          notificationTimer = setTimeout(() => setPhaseNotification(null), 3000);
-        }
-
-        return nextGameState;
-      });
+      setGameState(nextGameState);
     });
 
     return () => {
       unsubscribe();
-      if (notificationTimer) {
-        clearTimeout(notificationTimer);
-      }
     };
   }, []);
 
@@ -382,45 +366,44 @@ function AppClean() {
       </video>
 
       <div className="flex justify-between items-center p-4 backdrop-blur-sm border-b border-yellow-500/20">
-        <h2 className="font-title text-2xl text-yellow-400 tracking-widest">
-          Cormorant Society
-                <span className="text-xl font-bold text-purple/90 "> | Этап {gameState.round}</span>
-        </h2>
+        <div className="flex items-center gap-6">
+          <h2 
+            className="font-title text-2xl text-yellow-400 tracking-widest cursor-pointer hover:opacity-80 transition-all active:scale-95"
+            onClick={() => setIsPlayersSidebarOpen(true)}
+            title="Открыть рейтинг игроков"
+          >
+            Cormorant Society
+                  <span className="text-xl font-bold text-purple/90 "> | Этап {gameState.round}</span>
+          </h2>
 
-        <div className="flex items-center gap-3">
-          <img
-            src={playerData.avatar || FALLBACK_AVATAR}
-            className="w-8 h-8 rounded-full border border-yellow-500/30 object-cover"
-          />
-          <span>{playerData.login}</span>
+          <div 
+            className="bg-yellow-900/60 border border-yellow-500/40 px-4 py-1 rounded-lg backdrop-blur-xl animate-pulse flex items-center justify-center"
+            style={{ fontFamily: "'Comfortaa', sans-serif" }}
+          >
+            <span className="text-yellow-200 text-xs font-black uppercase tracking-[0.2em]">
+              {PHASE_LABELS[gameState.phase]}
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-5">
           <button
             onClick={() => setIsPlayersSidebarOpen(true)}
-            className="text-sm text-yellow-300 underline underline-offset-4 hover:text-yellow-200 transition"
+            className="text-sm text-yellow-300 underline underline-offset-4 hover:text-yellow-200 transition font-medium"
           >
             Игроки и очки
           </button>
 
           <div
-            className="text-green-400 cursor-pointer"
+            className="text-green-400 cursor-pointer font-bold uppercase tracking-wider"
             onClick={() => setIsSidebarOpen(true)}
           >
-            Coins: {playerData.tiltCoins ?? 0}
+            {isAdmin ? "Меню" : `Coins: ${playerData.tiltCoins ?? 0}`}
           </div>
         </div>
       </div>
 
       <div className="flex flex-col flex-1">
-        {phaseNotification && (
-          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-yellow-900/80 border border-yellow-500/40 px-8 py-3 rounded-xl backdrop-blur-xl animate-pulse">
-            <span className="text-yellow-200 text-lg font-semibold">
-              {phaseNotification}
-            </span>
-          </div>
-        )}
-
         <div className="flex-1 p-6">
           <GameBoard
             playerData={
@@ -444,6 +427,7 @@ function AppClean() {
 
         <BottomPanel
           currentUser={user}
+          players={players} // Передаем список игроков
           isAdmin={isAdmin}
           gameState={gameState}
           onRoll={handleRoll}
@@ -492,11 +476,6 @@ function AppClean() {
             className="w-24 h-24 rounded-full cursor-pointer"
           />
           <h2>{playerData.login}</h2>
-        </div>
-
-        <div>
-          <h2>Balance</h2>
-          <p>Coins: {playerData.tiltCoins ?? 0}</p>
         </div>
 
         <div className="border-t border-yellow-500/20 pt-4 mt-auto">

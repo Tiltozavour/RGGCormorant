@@ -24,6 +24,8 @@ export interface Player {
   login: string;
   avatar?: string;
   tiltCoins?: number;
+  lastTiltoCoins?: number; // Результат последнего раунда/голосования
+  bonusPoints?: number;   // Очки за голосование в текущем раунде
   position?: number;
   prevCell?: number | null;
   inGame?: boolean;
@@ -42,6 +44,7 @@ export interface GameState {
   lastWheelResult: string | null;
   votes: Record<string, string>;
   scores: Record<string, number>;
+  currentResults: Record<string, number>; // Добавляем поле для текущих результатов
   showWheel: boolean;
   currentRoll: number | null;
   currentRollPlayerId: string | null;
@@ -59,6 +62,7 @@ export const defaultGameState: GameState = {
   lastWheelResult: null,
   votes: {},
   scores: {},
+  currentResults: {}, // Инициализируем пустым объектом
   showWheel: false,
   currentRoll: null,
   currentRollPlayerId: null,
