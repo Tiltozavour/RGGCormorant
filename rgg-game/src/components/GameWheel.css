@@ -133,3 +133,17 @@
   transition: opacity 0.5s ease-out, transform 0.5s ease-out, height 0.5s ease-out, padding 0.5s ease-out, margin 0.5s ease-out;
   pointer-events: none; /* Игнорируем события мыши */
 }
+
+/* Анимация левитации для активной фишки */
+@keyframes piece-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+.animate-piece-bounce {
+  animation: piece-bounce 2s infinite ease-in-out;
+}

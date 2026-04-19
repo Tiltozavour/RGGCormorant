@@ -5,6 +5,7 @@ import { gameMap } from "./gameMap";
 import type { Player } from "../types/game";
 import { GameWheel } from "./GameWheel";
 import { fetchAvailableGames } from "./gameList";
+import "./GameWheel.css";
 
 interface GameBoardProps {
   playerData: Player;
@@ -411,13 +412,18 @@ const GameBoard: React.FC<GameBoardProps> = ({
           return (
             <div
               key={otherPlayer.id}
-              className="absolute flex flex-col items-center transition-all duration-500"
+              className="absolute flex flex-col items-center transition-all duration-500 group"
               style={{
                 left: `${cell.x}%`,
                 top: `${cell.y}%`,
                 transform: "translate(-50%, -50%)",
               }}
             >
+              {/* Всплывающее количество коинов */}
+              <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-all duration-300 bg-black/90 border border-yellow-500/50 px-2 py-0.5 rounded text-[10px] font-bold text-yellow-400 whitespace-nowrap pointer-events-none z-[60] shadow-xl transform translate-y-2 group-hover:translate-y-0">
+                🦖 {otherPlayer.tiltCoins ?? 0}
+              </div>
+
               {isCurrentTurn && (
                 <div
                   className="absolute w-20 h-20 rounded-full blur-2xl opacity-60"
@@ -430,19 +436,24 @@ const GameBoard: React.FC<GameBoardProps> = ({
                 style={{ background: otherPlayer.borderColor || "#a855f7" }}
               />
 
-              <div className="mb-1 px-2 text-xs rounded bg-black/70 border flex items-center gap-1">
-                {otherPlayer.login}
+              <div 
+                className="mb-1 px-2 text-xs rounded bg-black/70 border flex items-center gap-1 font-bold"
+                style={{ fontFamily: "'Comfortaa', sans-serif" }}
+              >
+                {otherPlayer.login.toUpperCase()}
                 {isCurrentTurn && <span>Turn</span>}
               </div>
 
-              <div
-                className={`w-10 h-10 rounded-full p-[2px] ${isCurrentTurn ? "ring-2 ring-yellow-400 ring-offset-2 ring-offset-transparent" : ""}`}
-                style={{ background: otherPlayer.borderColor || "#a855f7" }}
-              >
-                <img
-                  src={otherPlayer.avatar || FALLBACK_AVATAR}
-                  className="w-full h-full rounded-full object-cover"
-                />
+              <div className="transition-transform duration-300 group-hover:scale-125">
+                <div
+                  className={`w-10 h-10 rounded-full p-[2px] ${isCurrentTurn ? "ring-2 ring-yellow-400 ring-offset-2 ring-offset-transparent animate-piece-bounce" : ""}`}
+                  style={{ background: otherPlayer.borderColor || "#a855f7" }}
+                >
+                  <img
+                    src={otherPlayer.avatar || FALLBACK_AVATAR}
+                    className="w-full h-full rounded-full object-cover"
+                  />
+                </div>
               </div>
             </div>
           );
@@ -450,13 +461,18 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
       {!isAdminView && (
         <div
-          className="absolute flex flex-col items-center"
+          className="absolute flex flex-col items-center group"
           style={{
             left: `${displayedPiecePos.x}%`,
             top: `${displayedPiecePos.y}%`,
             transform: "translate(-50%, -50%)",
           }}
         >
+          {/* Всплывающее количество коинов для себя */}
+          <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-all duration-300 bg-black/90 border border-yellow-500/50 px-2 py-0.5 rounded text-[10px] font-bold text-yellow-400 whitespace-nowrap pointer-events-none z-[60] shadow-xl transform translate-y-2 group-hover:translate-y-0">
+            🦖 {playerData.tiltCoins ?? 0}
+          </div>
+
           {playerData.id === currentTurnPlayerId && (
             <div
               className="absolute w-20 h-20 rounded-full blur-2xl opacity-60 animate-pulse"
@@ -469,23 +485,28 @@ const GameBoard: React.FC<GameBoardProps> = ({
             style={{ background: playerData.borderColor || "#facc15" }}
           />
 
-          <div className="mb-1 px-2 text-xs rounded bg-black/70 border flex items-center gap-1">
-            {playerData.login}
+          <div 
+            className="mb-1 px-2 text-xs rounded bg-black/70 border flex items-center gap-1 font-bold"
+            style={{ fontFamily: "'Comfortaa', sans-serif" }}
+          >
+            {playerData.login.toUpperCase()}
             {playerData.id === currentTurnPlayerId && <span>Turn</span>}
           </div>
 
-          <div
-            className={`w-10 h-10 rounded-full p-[2px] ${
-              playerData.id === currentTurnPlayerId
-                ? "ring-2 ring-yellow-400 ring-offset-2 ring-offset-transparent"
-                : ""
-            }`}
-            style={{ background: playerData.borderColor || "#facc15" }}
-          >
-            <img
-              src={playerData.avatar || FALLBACK_AVATAR}
-              className="w-full h-full rounded-full object-cover"
-            />
+          <div className="transition-transform duration-300 group-hover:scale-125">
+            <div
+              className={`w-10 h-10 rounded-full p-[2px] ${
+                playerData.id === currentTurnPlayerId
+                  ? "ring-2 ring-yellow-400 ring-offset-2 ring-offset-transparent animate-piece-bounce"
+                  : ""
+              }`}
+              style={{ background: playerData.borderColor || "#facc15" }}
+            >
+              <img
+                src={playerData.avatar || FALLBACK_AVATAR}
+                className="w-full h-full rounded-full object-cover"
+              />
+            </div>
           </div>
         </div>
       )}
