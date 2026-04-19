@@ -27,6 +27,7 @@ interface MapCell {
   x: number;
   y: number;
   next: number[];
+  type: 'neutral' | 'b-shop' | 'gambling';
 }
 
 const map = gameMap as MapCell[];
@@ -245,13 +246,33 @@ const GameBoard: React.FC<GameBoardProps> = ({
   // Визуальная позиция теперь всегда управляется локальным стейтом для плавности
   const displayedPiecePos = piecePos;
 
+  // Собираем всех активных игроков в один список для расчета смещения на клетках
+  const allActivePlayers = [
+    ...(isAdminView ? [] : [playerData]),
+    ...players.filter(p => p.id !== playerData.id && p.inGame && p.position !== undefined)
+  ];
+
+  const getPlayersOnCell = (pos: number) => allActivePlayers.filter(p => (p.id === playerData.id ? (playerData.position ?? 0) : p.position) === pos);
+  const getPlayerOffset = (playerId: string, pos: number) => {
+    const playersOnCell = getPlayersOnCell(pos);
+    const numPlayers = playersOnCell.length;
+    if (numPlayers <= 1) return { x: 0, y: 0 };
+    
+    const index = playersOnCell.findIndex(p => p.id === playerId);
+    const angle = (index / numPlayers) * 2 * Math.PI;
+    
+    // Если игроков больше 4, увеличиваем радиус, чтобы они не слипались
+    const radius = numPlayers > 4 ? 32 : 22; 
+
+    return {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius
+    };
+  };
+
   if (!playerData.inGame && !isAdminView) {
     return (
       <div className="relative w-full h-full">
-        <div className="flex items-center justify-center w-full h-full">
-          <div className="relative w-[900px] h-[850px]" />
-        </div>
-
         <img
           src="/map.jpg"
           className="absolute inset-0 w-full h-full object-contain opacity-20 pointer-events-none"
@@ -272,7 +293,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
           return (
             <div
               key={cell.id}
-              className={`absolute flex items-center justify-center ${
+              className={`absolute flex items-center justify-center transition-all duration-500 ${
                 isStartPoint ? "cursor-pointer group" : ""
               }`}
               style={{
@@ -284,24 +305,34 @@ const GameBoard: React.FC<GameBoardProps> = ({
             >
               <div
                 className={`
-                  w-14 h-14
+                  ${isStartPoint ? "w-24 h-24" : "w-14 h-14"}
                   ${
                     isStartPoint
-                      ? "bg-yellow-500/30 border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.5)] group-hover:bg-yellow-500/50 group-hover:scale-110 transition-all duration-200"
-                      : "bg-zinc-900/60 border-purple-500/20"
-                  }
+                      ? "bg-purple-600/30 border-purple-400 shadow-[0_0_40px_rgba(168,85,247,0.6)] group-hover:bg-purple-500/50 group-hover:scale-110 active:scale-95 cursor-pointer transition-all duration-200"
+                      : cell.type === 'b-shop'
+                        ? "bg-[#00c8ff]/15 border-[#00c8ff]/60 shadow-[0_0_25px_rgba(0,200,255,0.25)]"
+                        : cell.type === 'gambling'
+                          ? "bg-[#a855f7]/15 border-[#a855f7]/60 shadow-[0_0_25px_rgba(168,85,247,0.25)]"
+                          : "bg-[#001c69]/40 border-[#1e3a8a]/50"
+                  } 
                   rounded-xl
                   border
                   backdrop-blur-md
                   flex items-center justify-center
                 `}
               >
-                <span className="absolute top-1 left-2 text-xs text-purple-300">
+                <span 
+                  className={`absolute left-2 text-purple-300 font-black tracking-tighter ${isStartPoint ? "top-2 text-xs" : "top-1 text-[10px]"}`}
+                  style={{ fontFamily: "'Comfortaa', sans-serif" }}
+                >
                   {cell.id}
                 </span>
 
                 {isStartPoint && (
-                  <span className="text-xs text-yellow-400 font-semibold animate-pulse">
+                  <span 
+                    className="text-xs text-purple-200 font-black animate-pulse tracking-widest"
+                    style={{ fontFamily: "'Comfortaa', sans-serif" }}
+                  >
                     START
                   </span>
                 )}
@@ -325,10 +356,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
     canSpin={isAdminView}
   />
 )}
-      <div className="flex items-center justify-center w-full h-full">
-        <div className="relative w-[900px] h-[850px]" />
-      </div>
-
+      <div className="relative w-full h-full">
       <img
         src="/map.jpg"
         className="absolute inset-0 w-full h-full object-contain opacity-20 pointer-events-none"
@@ -364,7 +392,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
         return (
           <div
             key={cell.id}
-            className="absolute flex items-center justify-center"
+            className="absolute flex items-center justify-center transition-all duration-500"
             style={{
               left: `${cell.x}%`,
               top: `${cell.y}%`,
@@ -373,21 +401,28 @@ const GameBoard: React.FC<GameBoardProps> = ({
           >
             <div
               className={`
-                w-14 h-14
+                ${isStartPoint ? "w-24 h-24" : "w-14 h-14"}
                 ${
                   isStartPoint
-                    ? "bg-yellow-500/20 border-yellow-400/60 shadow-[0_0_15px_rgba(250,204,21,0.3)]"
+                    ? "bg-purple-600/20 border-purple-400/60 shadow-[0_0_30px_rgba(168,85,247,0.4)]"
                     : isCurrent
                       ? "bg-purple-500/30 border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.6)]"
-                      : "bg-zinc-900/60 border-purple-500/20"
+                      : cell.type === 'b-shop'
+                        ? "bg-[#00c8ff]/15 border-[#00c8ff]/60 shadow-[0_0_20px_rgba(0,200,255,0.2)]"
+                        : cell.type === 'gambling'
+                          ? "bg-[#a855f7]/15 border-[#a855f7]/60 shadow-[0_0_20px_rgba(168,85,247,0.2)]"
+                          : "bg-[#001c69]/40 border-[#1e3a8a]/50"
                 }
-                rounded-xl
+                rounded-xl transition-all duration-200 hover:scale-110 hover:z-10
                 border
                 backdrop-blur-md
                 flex items-center justify-center
               `}
             >
-              <span className="absolute top-1 left-2 text-xs text-purple-300">
+              <span
+                className={`absolute left-2 text-purple-300 font-black tracking-tighter ${isStartPoint ? "top-2 text-xs" : "top-1 text-[10px]"}`}
+                style={{ fontFamily: "'Comfortaa', sans-serif" }}
+              >
                 {cell.id}
               </span>
             </div>
@@ -401,9 +436,10 @@ const GameBoard: React.FC<GameBoardProps> = ({
             <button
               key={id}
               onClick={() => handleChoice(id)}
-              className="bg-purple-600 hover:bg-purple-500 hover:scale-110 active:scale-90 transition-all px-6 py-2 rounded-xl font-black uppercase text-sm shadow-xl shadow-purple-500/20 border border-white/10"
+              className="bg-purple-600 hover:bg-purple-500 hover:scale-110 active:scale-95 transition-all px-6 py-2 rounded-xl font-black uppercase text-sm shadow-xl shadow-purple-500/20 border border-white/10"
+              style={{ fontFamily: "'Comfortaa', sans-serif" }}
             >
-              to {id}
+              В сторону {id}
             </button>
           ))}
         </div>
@@ -417,15 +453,16 @@ const GameBoard: React.FC<GameBoardProps> = ({
           if (!cell) return null;
 
           const isCurrentTurn = otherPlayer.id === currentTurnPlayerId;
+          const offset = getPlayerOffset(otherPlayer.id, pos);
 
           return (
             <div
               key={otherPlayer.id}
-              className="absolute flex flex-col items-center transition-all duration-500 group"
+              className={`absolute flex flex-col items-center transition-all duration-500 group ${isCurrentTurn ? "z-40" : "z-30"}`}
               style={{
                 left: `${cell.x}%`,
                 top: `${cell.y}%`,
-                transform: "translate(-50%, -50%)",
+                transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
               }}
             >
               {/* Всплывающее количество коинов */}
@@ -446,11 +483,11 @@ const GameBoard: React.FC<GameBoardProps> = ({
               />
 
               <div 
-                className="mb-1 px-2 text-xs rounded bg-black/70 border flex items-center gap-1 font-bold"
+                className={`mb-1 px-2 text-[10px] rounded bg-black/70 border flex items-center gap-1 font-black uppercase ${isCurrentTurn ? "text-yellow-400 border-yellow-500/50" : "text-zinc-300 border-white/10"}`}
                 style={{ fontFamily: "'Comfortaa', sans-serif" }}
               >
-                {otherPlayer.login.toUpperCase()}
-                {isCurrentTurn && <span>Turn</span>}
+                {otherPlayer.login}
+                {isCurrentTurn && <span className="text-[8px] opacity-70">●</span>}
               </div>
 
               <div className="transition-transform duration-300 group-hover:scale-125">
@@ -470,11 +507,14 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
       {!isAdminView && (
         <div
-          className="absolute flex flex-col items-center group"
+          className={`absolute flex flex-col items-center group transition-all duration-500 ${playerData.id === currentTurnPlayerId ? "z-40" : "z-30"}`}
           style={{
-            left: `${displayedPiecePos.x}%`,
-            top: `${displayedPiecePos.y}%`,
-            transform: "translate(-50%, -50%)",
+            // Если мы анимируемся, берем координаты из displayedPiecePos, иначе из карты для офсета
+            left: isAnimating ? `${displayedPiecePos.x}%` : `${getCell(playerData.position ?? 0)?.x}%`,
+            top: isAnimating ? `${displayedPiecePos.y}%` : `${getCell(playerData.position ?? 0)?.y}%`,
+            transform: isAnimating 
+              ? "translate(-50%, -50%)" 
+              : `translate(calc(-50% + ${getPlayerOffset(playerData.id, playerData.position ?? 0).x}px), calc(-50% + ${getPlayerOffset(playerData.id, playerData.position ?? 0).y}px))`,
           }}
         >
           {/* Всплывающее количество коинов для себя */}
@@ -495,11 +535,11 @@ const GameBoard: React.FC<GameBoardProps> = ({
           />
 
           <div 
-            className="mb-1 px-2 text-xs rounded bg-black/70 border flex items-center gap-1 font-bold"
+            className={`mb-1 px-2 text-[10px] rounded bg-black/70 border flex items-center gap-1 font-black uppercase ${playerData.id === currentTurnPlayerId ? "text-yellow-400 border-yellow-500/50" : "text-zinc-300 border-white/10"}`}
             style={{ fontFamily: "'Comfortaa', sans-serif" }}
           >
-            {playerData.login.toUpperCase()}
-            {playerData.id === currentTurnPlayerId && <span>Turn</span>}
+            {playerData.login}
+            {playerData.id === currentTurnPlayerId && <span className="text-[8px] opacity-70">●</span>}
           </div>
 
           <div className="transition-transform duration-300 group-hover:scale-125">
@@ -519,6 +559,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 };

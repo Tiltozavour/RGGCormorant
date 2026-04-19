@@ -50,6 +50,7 @@ function AppClean() {
   const [newAvatarUrl, setNewAvatarUrl] = useState("");
   const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
   const [isScoresDetailsOpen, setIsScoresDetailsOpen] = useState(false);
+  const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(false);
 
   const handleUpdateLogin = async (val: string) => {
     if (!user || !playerData || val === playerData.login || val.trim().length < 3) return;
@@ -424,24 +425,42 @@ function AppClean() {
         </div>
 
         <div className="flex items-center gap-5">
-          <button
-            onClick={() => setIsPlayersSidebarOpen(true)}
-            className="text-sm text-yellow-300 underline underline-offset-4 hover:text-yellow-200 transition font-medium"
-          >
-            Игроки и очки
-          </button>
-
           <div
-            className="text-green-400 cursor-pointer font-bold uppercase tracking-wider"
+            className="flex items-center gap-4 cursor-pointer hover:opacity-80 transition-all active:scale-95 group"
             onClick={() => setIsSidebarOpen(true)}
           >
-            {isAdmin ? "Меню" : `Coins: ${playerData.tiltCoins ?? 0}`}
+            <div className="flex flex-col items-end hidden sm:flex">
+              <span 
+                className="text-sm font-black text-white tracking-tight"
+                style={{ fontFamily: "'Comfortaa', sans-serif" }}
+              >
+                {playerData.login}
+              </span>
+              {!isAdmin && (
+              <span className="text-sm text-green-400 font-black leading-none mt-1"  style={{ fontFamily: "'Comfortaa', sans-serif" }}>{playerData.tiltCoins ?? 0} 🦖</span>
+              )}
+            </div>
+            
+            <div 
+              className="w-10 h-10 rounded-full p-[2px] shadow-lg transition-transform duration-300 group-hover:rotate-12"
+              style={{ background: playerData.borderColor || '#fac319' }}
+            >
+              <img
+                src={playerData.avatar || FALLBACK_AVATAR}
+                className="w-full h-full rounded-full object-cover border-2 border-black"
+                alt="me"
+              />
+            </div>
+
+            <div className="text-zinc-500 font-light text-xl ml-1 group-hover:text-yellow-500 transition-colors">
+              {isAdmin ? "⚙️" : "☰"}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="flex flex-col flex-1">
-        <div className="flex-1 p-6">
+      <div className="relative flex flex-col flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden">
           <GameBoard
             playerData={
               isAdmin
@@ -462,21 +481,34 @@ function AppClean() {
           />
         </div>
 
-        <BottomPanel
-          currentUser={user}
-          players={players} // Передаем список игроков
-          isAdmin={isAdmin}
-          gameState={gameState}
-          onRoll={handleRoll}
-          canRoll={canRoll}
-          currentTurnPlayerId={currentTurnPlayerId}
-          onPrevPhase={() => void handleStepPhase(-1)}
-          onNextPhase={() => void handleStepPhase(1)}
-          onPrepareTurn={() => void handlePrepareTurn()}
-          onConfirmRoll={handleConfirmRoll}
-          canConfirmRoll={canConfirmRoll}
-          onToggleWheel={() => void syncWheelVisibility("current", !gameState.showWheel)}
-        />
+        {/* Кнопка-язычок для вызова панели управления */}
+        <button
+          onClick={() => setIsBottomPanelOpen(!isBottomPanelOpen)}
+          className={`absolute left-1/2 -translate-x-1/2 z-40 bg-purple-600/90 hover:bg-purple-500 text-white px-8 py-2 rounded-t-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all active:scale-95 shadow-[0_-10px_30px_rgba(0,0,0,0.6)] border-x border-t border-white/20 backdrop-blur-md ${
+            isBottomPanelOpen ? "bottom-40" : "bottom-0"
+          }`}
+          style={{ fontFamily: "'Comfortaa', sans-serif" }}
+        >
+          {isBottomPanelOpen ? "▼ Скрыть управление" : "▲ Панель управления"}
+        </button>
+
+        <div className={`shrink-0 transition-all duration-300 ease-in-out ${isBottomPanelOpen ? "h-40 opacity-100" : "h-0 opacity-0 pointer-events-none overflow-hidden"}`}>
+          <BottomPanel
+            currentUser={user}
+            players={players}
+            isAdmin={isAdmin}
+            gameState={gameState}
+            onRoll={handleRoll}
+            canRoll={canRoll}
+            currentTurnPlayerId={currentTurnPlayerId}
+            onPrevPhase={() => void handleStepPhase(-1)}
+            onNextPhase={() => void handleStepPhase(1)}
+            onPrepareTurn={() => void handlePrepareTurn()}
+            onConfirmRoll={handleConfirmRoll}
+            canConfirmRoll={canConfirmRoll}
+            onToggleWheel={() => void syncWheelVisibility("current", !gameState.showWheel)}
+          />
+        </div>
       </div>
 
       <PlayersSidebar
@@ -508,7 +540,7 @@ function AppClean() {
         <div className="flex justify-end -mr-2 -mt-2">
           <button 
             onClick={() => setIsSidebarOpen(false)}
-            className="text-zinc-500 hover:text-white transition-colors p-2 text-2xl font-light"
+            className="text-zinc-500 hover:text-white hover:scale-110 active:scale-90 transition-all p-2 text-2xl font-light"
           >
             ✕
           </button>
@@ -558,7 +590,7 @@ function AppClean() {
         <div className="border-t border-yellow-500/20 pt-4 mt-auto">
           <button
             onClick={handleLogout}
-            className="w-full px-4 py-2 bg-red-900/40 border border-red-500/30 text-red-300 rounded-lg hover:bg-red-900/60 transition"
+            className="w-full px-4 py-2 bg-red-900/40 border border-red-500/30 text-red-300 rounded-lg hover:bg-red-900/60 hover:scale-[1.02] active:scale-95 transition-all"
           >
             Выйти
           </button>

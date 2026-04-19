@@ -1,7 +1,6 @@
 import type { Player, GameHistoryEntry } from "../types/game";
 import {
   buildPlayerScoreRows,
-    ,
 } from "./scoreUtils";
 
 interface PlayersSidebarProps {

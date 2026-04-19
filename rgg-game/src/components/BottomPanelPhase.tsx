@@ -160,7 +160,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
                   console.log("Нажатие на 🎡. Пропс onToggleWheel существует?", !!onToggleWheel);
                   onToggleWheel?.();
                 }}
-                className="bg-purple-600 hover:bg-purple-500 px-4 py-1.5 rounded text-sm flex items-center gap-1 transition"
+                className="bg-purple-600 hover:bg-purple-500 active:scale-95 px-4 py-1.5 rounded text-sm flex items-center gap-1 transition-all"
               >
                 🎡 Колесо
               </button>
@@ -256,7 +256,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
             <div className="flex gap-2">
               <button 
                 onClick={() => setTempScores({})}
-                className="bg-zinc-800 hover:bg-red-900/60 border border-zinc-700 hover:border-red-500/50 px-4 py-2 rounded-xl font-bold text-sm transition-all uppercase tracking-tighter text-zinc-400 hover:text-white"
+                className="bg-zinc-800 hover:bg-red-900/60 border border-zinc-700 hover:border-red-500/50 active:scale-95 px-4 py-2 rounded-xl font-bold text-sm transition-all uppercase tracking-tighter text-zinc-400 hover:text-white"
               >
                 Сбросить
               </button>
