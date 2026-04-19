@@ -259,12 +259,39 @@ function AppClean() {
   };
 
   const buildTurnState = () => {
-    const activePlayers = players
-      .filter((player) => player.inGame && player.role !== "admin")
-      .map((player) => player.id);
+    const activePlayers = players.filter((p) => p.inGame && p.role !== "admin");
+    const allZero = activePlayers.every((p) => (p.tiltCoins ?? 0) === 0);
+
+    let sortedIds: string[];
+
+    if (allZero) {
+      // 1. Если у всех 0 — полный рандом
+      sortedIds = activePlayers
+        .map((p) => ({ id: p.id, rnd: Math.random() }))
+        .sort((a, b) => a.rnd - b.rnd)
+        .map((p) => p.id);
+    } else {
+      // 2. Сортировка по очкам (tiltCoins) DESC
+      // При равенстве очков — приоритет тому, кто был раньше в предыдущей turnOrder
+      const currentOrder = gameState.turnOrder;
+
+      sortedIds = [...activePlayers]
+        .sort((a, b) => {
+          const scoreA = a.tiltCoins ?? 0;
+          const scoreB = b.tiltCoins ?? 0;
+
+          if (scoreB !== scoreA) return scoreB - scoreA;
+
+          const idxA = currentOrder.indexOf(a.id);
+          const idxB = currentOrder.indexOf(b.id);
+          // Если оба были в прошлом списке, сохраняем их относительный порядок
+          return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+        })
+        .map((p) => p.id);
+    }
 
     return {
-      turnOrder: activePlayers,
+      turnOrder: sortedIds,
       currentTurnIndex: 0,
       currentRoll: null,
       currentRollPlayerId: null,

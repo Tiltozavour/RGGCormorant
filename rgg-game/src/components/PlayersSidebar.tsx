@@ -1,7 +1,7 @@
 import type { Player, GameHistoryEntry } from "../types/game";
 import {
   buildPlayerScoreRows,
-  formatLastScore,
+    ,
 } from "./scoreUtils";
 
 interface PlayersSidebarProps {
@@ -61,7 +61,7 @@ function PlayersSidebar({
 
           <button
             onClick={onClose}
-            className="text-zinc-300 hover:text-white transition"
+            className="text-zinc-400 hover:text-white hover:scale-110 active:scale-90 transition-all p-1"
           >
             Закрыть
           </button>
@@ -144,7 +144,7 @@ function PlayersSidebar({
 
         <button
           onClick={onOpenDetails}
-          className="self-start text-sm text-yellow-300 underline underline-offset-4 hover:text-yellow-200 transition"
+          className="self-start text-sm text-yellow-300 underline underline-offset-4 hover:text-yellow-200 active:opacity-50 transition-all font-bold uppercase tracking-widest"
         >
           Подробнее
         </button>

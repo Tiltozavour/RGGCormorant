@@ -48,7 +48,11 @@ const GameBoard: React.FC<GameBoardProps> = ({
   onCloseWheel,
   round,
 }) => {
-  const [piecePos, setPiecePos] = useState({ x: 50, y: 50 });
+  // Иници                  ализируем локальную позицию сразу координатами из текущей клетки в БД
+  const [piecePos, setPiecePos] = useState(() => {
+    const initialCell = map.find((c) => c.id === (playerData.position ?? 0));
+    return initialCell ? { x: initialCell.x, y: initialCell.y } : { x: 50, y: 50 };
+  });
   const [isAnimating, setIsAnimating] = useState(false);
   const [choice, setChoice] = useState<number[] | null>(null);
   const choiceResolveRef = useRef<((value: number) => void) | null>(null);
@@ -76,9 +80,17 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const getCell = (id: number) => map.find((cell) => cell.id === id);
 
   useEffect(() => {
-    startPosRef.current = playerData.position ?? 0;
+    const currentPos = playerData.position ?? 0;
+    startPosRef.current = currentPos;
     startPrevRef.current = playerData.prevCell ?? null;
-  }, [playerData.position, playerData.prevCell]);
+
+    // Синхронизируем визуальную позицию с БД только когда фишка НЕ анимируется.
+    // Это убирает прыжки при старте и завершении хода.
+    if (!isAnimating) {
+      const cell = map.find((c) => c.id === currentPos);
+      if (cell) setPiecePos({ x: cell.x, y: cell.y });
+    }
+  }, [playerData.position, playerData.prevCell, isAnimating]);
 
   const animateTo = (target: { x: number; y: number }): Promise<void> =>
     new Promise((resolve) => {
@@ -230,11 +242,8 @@ const GameBoard: React.FC<GameBoardProps> = ({
   };
 
   const isAdminView = playerData.id === "__admin__";
-  const playerCell = getCell(playerData.position ?? 0);
-  const displayedPiecePos =
-    !isAnimating && playerCell
-      ? { x: playerCell.x, y: playerCell.y }
-      : piecePos;
+  // Визуальная позиция теперь всегда управляется локальным стейтом для плавности
+  const displayedPiecePos = piecePos;
 
   if (!playerData.inGame && !isAdminView) {
     return (
@@ -392,7 +401,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
             <button
               key={id}
               onClick={() => handleChoice(id)}
-              className="bg-purple-600 px-4 py-2 rounded hover:bg-purple-500"
+              className="bg-purple-600 hover:bg-purple-500 hover:scale-110 active:scale-90 transition-all px-6 py-2 rounded-xl font-black uppercase text-sm shadow-xl shadow-purple-500/20 border border-white/10"
             >
               to {id}
             </button>

@@ -234,7 +234,7 @@ export const GameWheel: React.FC<Props> = ({
               </div>
             )}
             {!spinning && (
-              <button onClick={onClose} className="text-zinc-500 hover:text-white transition">
+              <button onClick={onClose} className="text-zinc-500 hover:text-white hover:scale-105 active:scale-95 transition-all text-sm uppercase font-bold tracking-widest">
                 Закрыть
               </button>
             )}
@@ -299,7 +299,7 @@ export const GameWheel: React.FC<Props> = ({
                 </button>
               )}
               <button onClick={handleCloseWinner} className="w-full py-3 text-zinc-500 hover:text-white text-sm font-bold">
-                Вернуться к колесу
+                <span className="hover:underline active:opacity-50 transition-all">Вернуться к колесу</span>
               </button>
             </div>
           </div>

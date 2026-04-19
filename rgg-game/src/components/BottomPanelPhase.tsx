@@ -167,13 +167,13 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
             )}
             <button
               onClick={onPrevPhase}
-              className="bg-yellow-700 px-4 py-1.5 rounded text-sm"
+              className="bg-yellow-700 hover:bg-yellow-600 active:scale-95 transition-all px-4 py-1.5 rounded text-sm font-bold shadow-md hover:shadow-yellow-500/20"
             >
               Этап -
             </button>
             <button
               onClick={onNextPhase}
-              className="bg-yellow-600 px-4 py-1.5 rounded text-sm"
+              className="bg-yellow-600 hover:bg-yellow-500 active:scale-95 transition-all px-4 py-1.5 rounded text-sm font-bold shadow-md hover:shadow-yellow-400/20"
             >
               Этап +
             </button>
@@ -182,7 +182,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
               <div className="flex gap-2">
                 <button 
                   onClick={() => setIsFillingResults(!isFillingResults)}
-                  className="bg-blue-600 px-4 py-1.5 rounded text-sm hover:bg-blue-500 transition-colors"
+                  className="bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all px-4 py-1.5 rounded text-sm font-bold shadow-md"
                 >
                   {isFillingResults ? "Закрыть ввод" : "Заполнить результаты игры"}
                 </button>
@@ -194,7 +194,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
             {gameState.phase === "turn" && (
               <button
                 onClick={onPrepareTurn}
-                className="bg-green-600 px-4 py-1.5 rounded text-sm"
+                className="bg-green-600 hover:bg-green-500 active:scale-95 transition-all px-4 py-1.5 rounded text-sm font-bold shadow-md shadow-green-500/10"
               >
                 Подготовить ход
               </button>
@@ -203,8 +203,43 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
         )}
       </div>
 
-      {/* Контентная область: ввод результатов */}
-      <div className="flex-1 px-4 py-3 text-base text-zinc-200 flex items-center overflow-x-auto custom-scrollbar gap-4">
+      {/* Контентная область */}
+      <div className="flex-1 px-4 py-3 text-base text-zinc-200 flex items-center overflow-x-auto custom-scrollbar">
+        {/* Очередь ходов для админа в фазе turn */}
+        {isAdmin && gameState.phase === "turn" && gameState.turnOrder.length > 0 && (
+          <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-left-4 duration-500">
+            <span className="text-[10px] font-black uppercase text-purple-400 tracking-widest px-1">Очередь ходов:</span>
+            <div className="flex items-center gap-2">
+              {gameState.turnOrder.map((pid, idx) => {
+                const p = players.find(player => player.id === pid);
+                const isCurrent = idx === gameState.currentTurnIndex;
+                const isDone = idx < gameState.currentTurnIndex;
+
+                return (
+                  <React.Fragment key={pid}>
+                    <div className={`
+                      flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all
+                      ${isCurrent 
+                        ? "bg-yellow-500/20 border-yellow-500 shadow-[0_0_15px_rgba(250,195,25,0.3)] scale-105 z-10" 
+                        : isDone ? "bg-zinc-800/40 border-zinc-700 opacity-50" : "bg-zinc-900/60 border-white/5"}
+                    `}>
+                      <span className={`text-xs font-black ${isCurrent ? "text-yellow-400" : "text-zinc-500"}`}>
+                        {idx + 1}
+                      </span>
+                      <span className={`text-sm font-bold ${isCurrent ? "text-white" : "text-zinc-400"}`}>
+                        {p?.login || "???"}
+                      </span>
+                    </div>
+                    {idx < gameState.turnOrder.length - 1 && (
+                      <span className="text-zinc-700 font-light">→</span>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {isFillingResults && gameState.phase === "results" && isAdmin && (
           <div className="flex gap-4 items-center min-w-max animate-in fade-in slide-in-from-bottom-2 duration-300">
             {players.filter(p => p.role !== 'admin').map(player => (
@@ -290,7 +325,7 @@ const PlayerVotingView: React.FC<{ currentUser: User | null, players: Player[], 
           <button
             key={c.id}
             onClick={() => handleVote(c.id)}
-            className="bg-indigo-600 hover:bg-white hover:text-indigo-900 text-white px-3 py-1.5 rounded-lg text-xs font-black transition-all uppercase"
+            className="bg-indigo-600 hover:bg-white hover:text-indigo-900 active:scale-90 text-white px-3 py-1.5 rounded-lg text-xs font-black transition-all uppercase shadow-lg hover:shadow-indigo-500/40"
           >
             {c.login}
           </button>
@@ -377,13 +412,13 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
     <div className="flex gap-2">
       <button 
         onClick={() => setShowDetails(!showDetails)}
-        className="bg-indigo-600 px-4 py-1.5 rounded text-sm hover:bg-indigo-500 transition-colors"
+        className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all px-4 py-1.5 rounded text-sm font-bold shadow-md"
       >
         {showDetails ? "Скрыть голоса" : "Посмотреть голосование"}
       </button>
       <button 
         onClick={handleFinishVoting}
-        className="bg-green-600 px-4 py-1.5 rounded text-sm font-bold shadow-[0_0_15px_rgba(34,197,94,0.3)] hover:scale-105 transition-all"
+        className="bg-green-600 hover:bg-green-500 active:scale-95 transition-all px-4 py-1.5 rounded text-sm font-bold shadow-[0_0_15px_rgba(34,197,94,0.3)] hover:shadow-green-400/40"
       >
         Завершить и начислить
       </button>
