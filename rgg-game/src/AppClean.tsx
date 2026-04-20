@@ -1,433 +1,57 @@
-import { useCallback, useEffect, useState } from "react";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import type { User } from "firebase/auth";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  runTransaction,
-  updateDoc,
-  increment,
-  arrayRemove,
-} from "firebase/firestore";
+import { useState, useEffect } from "react";
 import Auth from "./components/Auth";
 import { syncWheelResult, syncWheelVisibility } from "./components/gameStateService";
 import BottomPanel from "./components/BottomPanelPhase";
 import GameBoard from "./components/GameBoard";
 import PlayersSidebar from "./components/PlayersSidebar";
 import ScoresDetailsPage from "./components/ScoresDetailsPage";
+import type { Player } from "./types/game";
 import type { GameCard } from "./types/card";
-import { auth, db } from "./firebase";
-import { defaultGameState } from "./types/game";
-import type { GamePhase, GameState, Player } from "./types/game";
-
-const FALLBACK_AVATAR =
-  "https://i.pinimg.com/736x/6f/8d/ce/6f8dcedfc7102d5e88e0af7b88634fc2.jpg";
-
-const PHASE_ORDER: GamePhase[] = [
-  "waiting_game",
-  "playing",
-  "results",
-  "voting",
-  "turn",
-  "next_game",
-];
-
-const PHASE_LABELS: Record<GamePhase, string> = {
-  waiting_game: "Ожидание начала игры",
-  playing: "Игра началась",
-  results: "Результаты раунда",
-  voting: "Голосование",
-  turn: "Ход",
-  next_game: "Раунд завершен",
-};
+import { useGameData } from "./components/useGameData";
+import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS } from "./components/gameConstants";
 
 function AppClean() {
-  const [user, setUser] = useState<User | null>(null);
-  const [playerData, setPlayerData] = useState<Player | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [gameState, setGameState] = useState<GameState>(defaultGameState);
+  const {
+    user, playerData, loading, players, gameState, allCards,
+    isAdmin, currentTurnPlayerId, canRoll, canConfirmRoll,
+    handlers
+  } = useGameData();
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   const [newAvatarUrl, setNewAvatarUrl] = useState("");
-  const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
   const [isScoresDetailsOpen, setIsScoresDetailsOpen] = useState(false);
   const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(false);
-  const [allCards, setAllCards] = useState<Record<string, GameCard>>({});
+  const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<GameCard | null>(null);
 
-  // Логика использования карты (вынесена на уровень App для корректного перекрытия UI)
-  const handleUseCard = async (card: GameCard) => {
-    if (!user || !playerData) return;
-
-    try {
-      const playerRef = doc(db, "players", user.uid);
-      
-      // 1. Удаляем карту из инвентаря в БД
-      await updateDoc(playerRef, {
-        inventory: arrayRemove(card.id)
-      });
-
-      // 2. Обработка эффектов
-      if (card.action === 'add_coins') {
-        await updateDoc(playerRef, {
-          tiltCoins: increment(card.value)
-        });
-      } 
-      else if (card.action === 'move_steps') {
-        alert(`Использована карта: ${card.name}. Эффект: перемещение на ${card.value}`);
+  // Автоматическое открытие панели при прокрутке вниз
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 100) {
+        setIsBottomPanelOpen(true);
+      } else {
+        setIsBottomPanelOpen(false);
       }
-      else if (card.action === 'protection') {
-        alert("Защита активирована!");
-      }
-
-      setSelectedCard(null);
-      console.log(`🚀 Карта ${card.name} успешно использована`);
-    } catch (e) {
-      console.error("Ошибка при использовании карты:", e);
-    }
-  };
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "cards"), (snap) => {
-      const cardMap: Record<string, GameCard> = {};
-      snap.docs.forEach((doc) => {
-        cardMap[doc.id] = { id: doc.id, ...doc.data() } as GameCard;
-      });
-      setAllCards(cardMap);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const handleUpdateLogin = async (val: string) => {
-    if (!user || !playerData || val === playerData.login || val.trim().length < 3) return;
-    await updateDoc(doc(db, "players", user.uid), { login: val.trim() });
-  };
-
-  const handleUpdateBorderColor = async (color: string) => {
-    if (!user) return;
-    await updateDoc(doc(db, "players", user.uid), { borderColor: color });
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch {
-      // ignore auth cleanup errors
-    }
-  };
-
-  const isAdmin = playerData?.role === "admin";
-  const currentTurnPlayerId =
-    gameState.turnOrder[gameState.currentTurnIndex] ?? null;
-  const hasTurnOrder = gameState.turnOrder.length > 0;
-  const isTurnPhase = gameState.phase === "turn";
-  const isCurrentPlayersTurn = !hasTurnOrder || currentTurnPlayerId === user?.uid;
-  const canRoll =
-    !isAdmin &&
-    Boolean(playerData?.inGame) &&
-    isTurnPhase &&
-    isCurrentPlayersTurn &&
-    gameState.currentRoll === null;
-  const canConfirmRoll =
-    !isAdmin &&
-    Boolean(playerData?.inGame) &&
-    isCurrentPlayersTurn &&
-    gameState.currentRoll !== null &&
-    !gameState.rollConfirmed;
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-
-    const playerRef = doc(db, "players", user.uid);
-    const unsubscribe = onSnapshot(playerRef, (snap) => {
-      if (!snap.exists()) {
-        setPlayerData(null);
-        return;
-      }
-
-      setPlayerData({
-        id: snap.id,
-        ...(snap.data() as Omit<Player, "id">),
-      });
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "players"), (snap) => {
-      setPlayers(
-        snap.docs.map((playerDoc) => ({
-          id: playerDoc.id,
-          ...(playerDoc.data() as Omit<Player, "id">),
-        }))
-      );
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    const gameStateRef = doc(db, "gameState", "current");
-
-    const unsubscribe = onSnapshot(gameStateRef, (snap) => {
-      if (!snap.exists()) {
-        setGameState(defaultGameState);
-        return;
-      }
-
-      const nextGameState: GameState = {
-        ...defaultGameState,
-        ...(snap.data() as Partial<GameState>),
-      };
-      setGameState(nextGameState);
-    });
-
-    return () => {
-      unsubscribe();
     };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const chooseStart = async (cellId: number) => {
-    if (!user) return;
-
-    await updateDoc(doc(db, "players", user.uid), {
-      position: cellId,
-      prevCell: null,
-      inGame: true,
-      inventory: ["inv_start_move", "inv_start_protect"]
-    });
-
-    setPlayerData((prev) =>
-      prev
-        ? {
-            ...prev,
-            position: cellId,
-            prevCell: null,
-            inGame: true,
-            inventory: ["inv_start_move", "inv_start_protect"]
-          }
-        : prev
-    );
-  };
-
-  const updateAvatar = async () => {
-    if (!user) return;
-
-    await updateDoc(doc(db, "players", user.uid), {
-      avatar: newAvatarUrl,
-    });
-
-    setPlayerData((prev) =>
-      prev
-        ? {
-            ...prev,
-            avatar: newAvatarUrl,
-          }
-        : prev
-    );
-
+  const handleConfirmAvatar = () => {
+    void handlers.updateAvatar(newAvatarUrl);
     setIsAvatarModalOpen(false);
     setNewAvatarUrl("");
-  };
-
-  const handleMoveComplete = useCallback(
-    async (position: number, prevCell: number | null) => {
-      if (!user) return;
-
-      const playerRef = doc(db, "players", user.uid);
-      const gameStateRef = doc(db, "gameState", "current");
-
-      await runTransaction(db, async (transaction) => {
-        const gsSnap = await transaction.get(gameStateRef);
-        if (!gsSnap.exists()) return;
-
-        const gsData = gsSnap.data();
-        const turnOrder: string[] = gsData.turnOrder || [];
-        const currentTurnIndex: number = gsData.currentTurnIndex || 0;
-
-        transaction.update(playerRef, { position, prevCell });
-
-        const isLastPlayer =
-          turnOrder.length > 0 && currentTurnIndex === turnOrder.length - 1;
-
-        if (isLastPlayer) {
-          transaction.update(gameStateRef, {
-            phase: "next_game",
-            currentRoll: null,
-            currentRollPlayerId: null,
-            currentTurnIndex: 0,
-            rollConfirmed: false,
-          });
-          return;
-        }
-
-        const nextTurnIndex =
-          turnOrder.length > 0
-            ? (currentTurnIndex + 1) % turnOrder.length
-            : currentTurnIndex;
-
-        transaction.update(gameStateRef, {
-          currentRoll: null,
-          currentRollPlayerId: null,
-          currentTurnIndex: nextTurnIndex,
-          rollConfirmed: false,
-        });
-      });
-    },
-    [user]
-  );
-
-  const handleRoll = async () => {
-    if (!user || !canRoll) return;
-
-    const roll = Math.floor(Math.random() * 6) + 1;
-
-    await updateDoc(doc(db, "gameState", "current"), {
-      currentRoll: roll,
-      currentRollPlayerId: user.uid,
-      rollConfirmed: false,
-    });
-  };
-
-  const handleConfirmRoll = async () => {
-    if (!user || !canConfirmRoll) return;
-
-    await updateDoc(doc(db, "gameState", "current"), {
-      rollConfirmed: true,
-    });
-  };
-
-  const buildTurnState = () => {
-    const activePlayers = players.filter((p) => p.inGame && p.role !== "admin");
-    const allZero = activePlayers.every((p) => (p.tiltCoins ?? 0) === 0);
-
-    let sortedIds: string[];
-
-    if (allZero) {
-      // 1. Если у всех 0 — полный рандом
-      sortedIds = activePlayers
-        .map((p) => ({ id: p.id, rnd: Math.random() }))
-        .sort((a, b) => a.rnd - b.rnd)
-        .map((p) => p.id);
-    } else {
-      // 2. Сортировка по очкам (tiltCoins) DESC
-      // При равенстве очков — приоритет тому, кто был раньше в предыдущей turnOrder
-      const currentOrder = gameState.turnOrder;
-
-      sortedIds = [...activePlayers]
-        .sort((a, b) => {
-          const scoreA = a.tiltCoins ?? 0;
-          const scoreB = b.tiltCoins ?? 0;
-
-          if (scoreB !== scoreA) return scoreB - scoreA;
-
-          const idxA = currentOrder.indexOf(a.id);
-          const idxB = currentOrder.indexOf(b.id);
-          // Если оба были в прошлом списке, сохраняем их относительный порядок
-          return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
-        })
-        .map((p) => p.id);
-    }
-
-    return {
-      turnOrder: sortedIds,
-      currentTurnIndex: 0,
-      currentRoll: null,
-      currentRollPlayerId: null,
-      rollConfirmed: false,
-    };
-  };
-
-  const handleSetPhase = async (phase: GamePhase) => {
-    if (!isAdmin) return;
-
-    const payload: Partial<GameState> = { phase };
-
-    if (phase === "turn") {
-      Object.assign(payload, buildTurnState());
-    } else {
-      payload.currentRoll = null;
-      payload.currentRollPlayerId = null;
-      payload.rollConfirmed = false;
-    }
-
-    await updateDoc(doc(db, "gameState", "current"), payload);
-  };
-
-  const handleStepPhase = async (direction: -1 | 1) => {
-    if (!isAdmin) return;
-
-    const currentIndex = PHASE_ORDER.indexOf(gameState.phase);
-    const safeIndex = currentIndex === -1 ? 0 : currentIndex;
-
-    let nextIndex = safeIndex + direction;
-    let nextRound = gameState.round;
-
-    if (nextIndex >= PHASE_ORDER.length) {
-      nextIndex = 0;
-      nextRound += 1;
-    } else if (nextIndex < 0) {
-      nextIndex = PHASE_ORDER.length - 1;
-      if (nextRound > 0) nextRound -= 1;
-    }
-
-    const nextPhase = PHASE_ORDER[nextIndex];
-    const payload: Partial<GameState> = { 
-      phase: nextPhase,
-      round: nextRound 
-    };
-
-    if (nextPhase === "turn") {
-      Object.assign(payload, buildTurnState());
-    } else {
-      payload.currentRoll = null;
-      payload.currentRollPlayerId = null;
-      payload.rollConfirmed = false;
-    }
-
-    await updateDoc(doc(db, "gameState", "current"), payload);
-  };
-
-  const handlePrepareTurn = async () => {
-    if (!isAdmin) return;
-
-    await updateDoc(doc(db, "gameState", "current"), {
-      ...buildTurnState(),
-      phase: "turn",
-    });
-  };
+  }
 
   if (loading) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-black text-white">
-        Проверка доступа...
-      </div>
-    );
+    return <div className="h-screen flex items-center justify-center bg-black text-white">Проверка доступа...</div>;
   }
 
-  if (!user) {
-    return <Auth onLogin={setUser} />;
-  }
+  if (!user) return <Auth onLogin={() => {}} />;
 
-  if (!playerData) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-black text-white">
-        Загрузка профиля...
-      </div>
-    );
-  }
+  if (!playerData) return <div className="h-screen flex items-center justify-center bg-black text-white">Загрузка профиля...</div>;
 
   if (isScoresDetailsOpen) {
     return (
@@ -441,7 +65,7 @@ function AppClean() {
   }
 
   return (
-    <div className="h-screen bg-transparent text-white flex flex-col">
+    <div className="min-h-screen bg-transparent text-white flex flex-col overflow-x-hidden">
       <div className="fixed inset-0 bg-gradient-to-b from-black via-transparent to-black opacity-80 -z-10" />
 
       <video
@@ -453,7 +77,7 @@ function AppClean() {
         <source src="/video/bg.mp4" type="video/mp4" />
       </video>
 
-      <div className="flex justify-between items-center p-4 backdrop-blur-sm border-b border-yellow-500/20">
+      <div className="sticky top-0 z-[60] flex justify-between items-center p-4 backdrop-blur-md border-b border-yellow-500/20 bg-black/20">
         <div className="flex items-center gap-6">
           <h2 
             className="font-title text-2xl text-yellow-400 tracking-widest cursor-pointer hover:opacity-80 transition-all active:scale-95"
@@ -502,15 +126,18 @@ function AppClean() {
               />
             </div>
 
-            <div className="text-zinc-500 font-light text-xl ml-1 group-hover:text-yellow-500 transition-colors">
+            <div 
+              className="text-zinc-500 font-light text-xl ml-1 group-hover:text-yellow-500 transition-colors"
+              title={isAdmin ? "Открыть панель администратора" : "Открыть настройки профиля"}
+            >
               {isAdmin ? "⚙️" : "☰"}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-hidden">
-        <div className="absolute inset-0 overflow-hidden">
+      <div className="relative flex-1">
+        <div className="relative h-[calc(100vh-73px)] w-full">
           <GameBoard
             playerData={
               isAdmin
@@ -522,39 +149,47 @@ function AppClean() {
             currentRollPlayerId={gameState.currentRollPlayerId}
             rollConfirmed={gameState.rollConfirmed}
             currentTurnPlayerId={currentTurnPlayerId}
-            chooseStart={chooseStart}
-            onMoveComplete={handleMoveComplete}
+            chooseStart={handlers.chooseStart}
+            onMoveComplete={handlers.handleMoveComplete}
             showWheel={gameState.showWheel}
             onWheelResult={(res) => void syncWheelResult("current", res)}
             onCloseWheel={() => void syncWheelVisibility("current", false)}
             round={gameState.round}
           />
         </div>
+        
+        {/* Распорка для активации вертикальной прокрутки и авто-открытия панели */}
+        <div className="h-[400px]" />
 
         {/* Кнопка-язычок для вызова панели управления */}
         <button
           onClick={() => setIsBottomPanelOpen(!isBottomPanelOpen)}
-          className={`absolute left-1/2 -translate-x-1/2 z-40 bg-purple-600/90 hover:bg-purple-500 text-white px-8 py-2 rounded-t-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all active:scale-95 shadow-[0_-10px_30px_rgba(0,0,0,0.6)] border-x border-t border-white/20 backdrop-blur-md ${
-            isBottomPanelOpen ? "bottom-[160px]" : "bottom-0"
+          className={`fixed left-1/2 -translate-x-1/2 z-[55] bg-purple-600/90 hover:bg-purple-500 text-white px-8 py-2 rounded-t-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all active:scale-95 shadow-[0_-10px_30px_rgba(0,0,0,0.6)] border-x border-t border-white/20 backdrop-blur-md transition-all duration-300 ${
+            isBottomPanelOpen ? "bottom-[450px]" : "bottom-0"
           }`}
           style={{ fontFamily: "'Comfortaa', sans-serif" }}
         >
           {isBottomPanelOpen ? "▼ Скрыть управление" : "▲ Панель управления"}
         </button>
 
-        <div className={`absolute bottom-0 left-0 right-0 transition-all duration-300 ease-in-out z-40 ${isBottomPanelOpen ? "translate-y-0 opacity-100" : "translate-y-full opacity-0 pointer-events-none"}`}>
+        {/* Сама панель теперь фиксированная, но управляется скроллом и кнопкой */}
+        <div className={`fixed bottom-0 left-0 right-0 transition-all duration-500 ease-out z-50 ${
+          isBottomPanelOpen 
+            ? "translate-y-0 opacity-100 pointer-events-auto" 
+            : "translate-y-full opacity-0 pointer-events-none"
+        }`}>
           <BottomPanel
             currentUser={user}
             players={players}
             isAdmin={isAdmin}
             gameState={gameState}
-            onRoll={handleRoll}
+            onRoll={handlers.handleRoll}
             canRoll={canRoll}
             currentTurnPlayerId={currentTurnPlayerId}
-            onPrevPhase={() => { void handleStepPhase(-1); }}
-            onNextPhase={() => { void handleStepPhase(1); }}
-            onPrepareTurn={() => { void handlePrepareTurn(); }}
-            onConfirmRoll={handleConfirmRoll}
+            onPrevPhase={() => { void handlers.handleStepPhase(-1); }}
+            onNextPhase={() => { void handlers.handleStepPhase(1); }}
+            onPrepareTurn={() => { void handlers.handlePrepareTurn(); }}
+            onConfirmRoll={handlers.handleConfirmRoll}
             canConfirmRoll={canConfirmRoll}
             onToggleWheel={() => void syncWheelVisibility("current", !gameState.showWheel)}
             allCards={allCards}
@@ -573,15 +208,25 @@ function AppClean() {
           >
             {/* Верхняя часть: Место для арта */}
             <div 
-              className="h-48 w-full relative flex items-center justify-center border-b border-white/5 z-10"
-              style={{ backgroundColor: (selectedCard!.bgCard || '#1a1a1a') + '20' }}
+              className="h-48 w-full relative flex items-center justify-center border-b border-white/5 z-10 overflow-hidden"
+              style={{ 
+                backgroundImage: `linear-gradient(165deg, ${selectedCard!.bgGradientStart || selectedCard!.bgCard || '#1a1a1a'} 0%, ${selectedCard!.bgGradientEnd || '#09090b'} 100%)` 
+              }}
             >
-              <span className="text-zinc-700 text-[10px] font-black uppercase tracking-[0.3em] opacity-40 select-none">Зона для изображения</span>
-              
+              {selectedCard!.artCard ? (
+                <img 
+                  src={selectedCard!.artCard} 
+                  alt="card-art" 
+                  className="h-full w-full object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in duration-500" 
+                />
+              ) : (
+                <span className="text-zinc-700 text-[10px] font-black uppercase tracking-[0.3em] opacity-40 select-none pointer-events-none">Зона для изображения</span>
+              )}
+
               <div className="absolute top-6 right-6 bg-black/60 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest text-white border border-white/10">
                 {selectedCard!.rarity}
-              </div> 
               </div>
+            </div>
             
             <div 
               className="p-6 flex flex-col gap-4 text-center relative z-10 flex-1 overflow-hidden"
@@ -592,17 +237,26 @@ function AppClean() {
               }}
             >
               {/* Затемняющий слой только для нижней части, чтобы текст «горел» на фоне рубашки */}
-              <div className="absolute inset-0 bg-zinc-900/90 -z-10" />
+              <div 
+                className="absolute inset-0 -z-10" 
+                style={{ backgroundColor: (selectedCard!.bgCard || '#18181b') + 'D9' }} // ~85% непрозрачности
+              />
 
               <div>
                 <h2 className="text-xl font-black text-white uppercase leading-tight">{selectedCard!.name}</h2>
-                <p className="text-sm text-zinc-400 mt-2 font-medium leading-relaxed italic">"{selectedCard!.description}"</p>
+                <p className="text-sm text-white mt-2 font-medium leading-relaxed italic">"{selectedCard!.description}"</p>
               </div>
 
               <div className="flex flex-col gap-2 mt-2">
                 <button 
-                  onClick={() => handleUseCard(selectedCard!)}
-                  className="bg-purple-600 hover:bg-purple-500 text-white py-4 rounded-2xl font-black uppercase text-sm transition-all active:scale-95 shadow-lg shadow-purple-500/20"
+                  onClick={() => { 
+                    if (selectedCard) {
+                      void handlers.handleUseCard(selectedCard);
+                      setSelectedCard(null);
+                    }
+                  }}
+                  className="text-white py-4 rounded-2xl font-black uppercase text-sm transition-all active:scale-95 shadow-lg hover:brightness-110"
+                  style={{ backgroundColor: selectedCard!.bgCard || '#6366f1' }}
                 >
                   Использовать карту
                 </button>
@@ -674,7 +328,7 @@ function AppClean() {
                 id="nickname-input"
                 key={playerData.id + playerData.login}
                 defaultValue={playerData.login}
-                onBlur={(e) => handleUpdateLogin(e.target.value)}
+                onBlur={(e) => handlers.handleUpdateLogin(e.target.value)}
                 placeholder="Введите ник"
                 onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                 className="bg-black/30 border border-white/5 rounded-xl px-4 py-3 text-white font-bold focus:border-yellow-500/50 outline-none transition-all shadow-inner"
@@ -684,11 +338,11 @@ function AppClean() {
             <div className="flex flex-col gap-3">
               <label className="text-[10px] uppercase font-black text-zinc-500 tracking-[0.2em] px-1">Цвет ауры</label>
               <div className="flex gap-2.5 flex-wrap px-1">
-                {["#fac319", "#a855f7", "#3b82f6", "#ef4444", "#10b981", "#f97316", "#ffffff"].map(color => (
+                {AURA_COLORS.map(color => (
                   <button 
                     key={color}
                     title={`Выбрать цвет ауры: ${color}`}
-                    onClick={() => handleUpdateBorderColor(color)}
+                    onClick={() => handlers.handleUpdateBorderColor(color)}
                     className={`w-7 h-7 rounded-full border-2 transition-all ${playerData.borderColor === color ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-50 hover:opacity-100 hover:scale-105'}`}
                     style={{ backgroundColor: color }}
                   />
@@ -700,7 +354,7 @@ function AppClean() {
 
         <div className="border-t border-yellow-500/20 pt-4 mt-auto">
           <button
-            onClick={handleLogout}
+            onClick={handlers.handleLogout}
             className="w-full px-4 py-2 bg-red-900/40 border border-red-500/30 text-red-300 rounded-lg hover:bg-red-900/60 hover:scale-[1.02] active:scale-95 transition-all"
           >
             Выйти
@@ -728,7 +382,7 @@ function AppClean() {
 
             <div className="flex gap-3">
               <button 
-                onClick={updateAvatar}
+                onClick={handleConfirmAvatar}
                 className="flex-1 bg-yellow-500 text-black py-4 rounded-2xl font-black uppercase text-sm hover:bg-white transition-all active:scale-95 shadow-[0_5px_0_#a16207] active:shadow-none active:translate-y-1"
               >
                 Принять

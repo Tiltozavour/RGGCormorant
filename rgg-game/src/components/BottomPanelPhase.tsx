@@ -107,7 +107,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
   const me = players.find(p => p.id === currentUser?.uid);
 
   return (
-    <div className="w-full h-40 border-t border-purple-500/20 bg-black/40 backdrop-blur-md flex flex-col overflow-visible" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+    <div className="w-full h-[450px] border-t border-purple-500/20 bg-black/80 backdrop-blur-xl flex flex-col overflow-visible" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
       <div className="flex items-center justify-between px-4 py-2 border-b border-purple-500/10 gap-3 relative z-10">
         <h3 className="text-purple-300 text-base font-bold uppercase tracking-tight shrink-0">Панель игры</h3>
 
@@ -330,7 +330,11 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
               {me?.inventory && me.inventory.length > 0 ? (
                 me.inventory.map((cardId, idx) => {
                   const card = allCards[cardId];
-                  if (!card) return null;
+                  // Если карта не загрузилась, показываем пустую заглушку вместо падения
+                  if (!card) return (
+                    <div key={idx} className="w-20 h-24 bg-zinc-800 rounded-xl animate-pulse" />
+                  );
+
                   const rarityColor = {
                     common: "#9ca3af",
                     rare: "#3b82f6",
@@ -345,8 +349,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
                       className="relative group cursor-pointer shrink-0 w-20 h-24 rounded-xl border-2 overflow-hidden transition-all duration-300 hover:-translate-y-16 active:-translate-y-20 hover:scale-110 active:scale-125 z-10 hover:z-[60] shadow-lg animate-in fade-in zoom-in-90"
                       style={{ 
                         borderColor: rarityColor + "80",
-                        backgroundColor: card.bgCard || '#1a1a1a',
-                        backgroundImage: card.faceCard ? `url("${card.faceCard}")` : 'none',
+                        backgroundImage: `url("${card.faceCard}"), linear-gradient(165deg, ${card.bgGradientStart || card.bgCard || '#1a1a1a'} 0%, ${card.bgGradientEnd || '#09090b'} 100%)`,
                         backgroundSize: 'cover',
                         backgroundPosition: 'center',
                         animationDelay: `${idx * 80}ms`,

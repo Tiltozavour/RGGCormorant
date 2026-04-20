@@ -7,8 +7,11 @@
     "rarity": "common",
     "action": "add_coins",
     "value": 15,
-    "faceCard": "/cards/common_back.svg",
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": "#4b5563",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 1
   },
   {
@@ -19,8 +22,11 @@
     "rarity": "rare",
     "action": "move_steps",
     "value": 3,
-    "faceCard": "/cards/faces/rare_back.png",
-    "bgCard": "#1e3a8a",
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": "#4b5563",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 2
   },
   {
@@ -31,8 +37,11 @@
     "rarity": "epic",
     "action": "extra_roll",
     "value": 1,
-    "faceCard": "/cards/faces/epic_back.png",
-    "bgCard": "#581c87",
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": "#4b5563",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 3
   },
   {
@@ -43,8 +52,11 @@
     "rarity": "common",
     "action": "protection",
     "value": 1,
-    "faceCard": "/cards/faces/common_back.png",
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": "#4b5563",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 4
   },
   {
@@ -55,8 +67,11 @@
     "rarity": "legendary",
     "action": "teleport_to_type",
     "value": 0,
-    "faceCard": "/cards/faces/legendary_back.png",
-    "bgCard": "#78350f",
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": "#4b5563",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 5
   },
   {
@@ -68,7 +83,10 @@
     "action": "protection",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": "/cards/card_back.svg",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 12
   },
   {
@@ -80,7 +98,10 @@
     "action": "move_steps",
     "value": 2,
     "faceCard": "/cards/card_back.svg",
-    "bgCard": "#3b82f6",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": "#4b5563",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 11
   },
   {
@@ -91,8 +112,11 @@
     "rarity": "common",
     "action": "add_coins",
     "value": -20,
-    "faceCard": "/cards/faces/instant_back.png",
-    "bgCard": "#991b1b",
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": "#4b5563",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 6
   },
   {
@@ -103,8 +127,11 @@
     "rarity": "rare",
     "action": "move_steps",
     "value": -4,
-    "faceCard": "/cards/faces/instant_back.png",
-    "bgCard": "#991b1b",
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": "#4b5563",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 7
   },
   {
@@ -115,8 +142,11 @@
     "rarity": "epic",
     "action": "add_coins",
     "value": 50,
-    "faceCard": "/cards/faces/instant_back.png",
-    "bgCard": "#065f46",
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": "#4b5563",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 8
   },
   {
@@ -127,8 +157,11 @@
     "rarity": "legendary",
     "action": "teleport",
     "value": 0,
-    "faceCard": "/cards/faces/instant_back.png",
-    "bgCard": "#000000",
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": "#4b5563",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 9
   },
   {
@@ -139,8 +172,11 @@
     "rarity": "common",
     "action": "skip_turn",
     "value": 1,
-    "faceCard": "/cards/faces/instant_back.png",
-    "bgCard": "#1e293b",
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": "#4b5563",
+    "bgGradientStart": "#4b5563",
+    "bgGradientEnd": "#1f2937",
     "number": 10
   }
 ]
