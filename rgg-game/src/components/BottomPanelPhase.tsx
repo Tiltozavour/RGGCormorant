@@ -21,6 +21,7 @@ interface BottomPanelPhaseProps {
   canConfirmRoll: boolean;
   onToggleWheel?: () => void;
   onCardClick: (card: GameCard) => void;
+  onOpenHand: () => void;
   allCards: Record<string, GameCard>;
 }
 
@@ -39,6 +40,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
   canConfirmRoll,
   onToggleWheel,
   onCardClick,
+  onOpenHand, // Извлекаем onOpenHand из пропсов
   allCards,
 }) => {
   const [isFillingResults, setIsFillingResults] = useState(false);
@@ -107,7 +109,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
   const me = players.find(p => p.id === currentUser?.uid);
 
   return (
-    <div className="w-full h-[450px] border-t border-purple-500/20 bg-black/80 backdrop-blur-xl flex flex-col overflow-visible" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+    <div className="w-full h-40 border-t border-purple-500/20 bg-white/5 backdrop-blur-xl flex flex-col overflow-visible" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
       <div className="flex items-center justify-between px-4 py-2 border-b border-purple-500/10 gap-3 relative z-10">
         <h3 className="text-purple-300 text-base font-bold uppercase tracking-tight shrink-0">Панель игры</h3>
 
@@ -318,50 +320,35 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
           <div className="flex flex-col gap-1 w-full animate-in fade-in slide-in-from-left-4 duration-500 overflow-visible">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-black uppercase text-purple-400 tracking-widest px-1">Ваш инвентарь:</span>
+              {/* Кнопка "Тест добор" теперь всегда справа */}
               <button 
                 onClick={handleTestGetCards}
-                className="text-[8px] bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 px-2 py-0.5 rounded text-purple-400/60 hover:text-purple-300 transition-all uppercase font-black"
+                className="ml-auto text-[8px] bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 px-2 py-0.5 rounded text-purple-400/60 hover:text-purple-300 transition-all uppercase font-black"
                 title="Добавить тестовые карты inv_006 и inv_007"
               >
                 🧪 Тест добор
               </button>
             </div>
-            <div className="flex gap-3 overflow-x-auto pb-2 pt-10 custom-scrollbar h-28 items-end px-1 overflow-y-visible">
+            <div className="flex-1 flex items-end pb-1 px-1 overflow-visible min-h-[100px]">
               {me?.inventory && me.inventory.length > 0 ? (
-                me.inventory.map((cardId, idx) => {
-                  const card = allCards[cardId];
-                  // Если карта не загрузилась, показываем пустую заглушку вместо падения
-                  if (!card) return (
-                    <div key={idx} className="w-20 h-24 bg-zinc-800 rounded-xl animate-pulse" />
-                  );
-
-                  const rarityColor = {
-                    common: "#9ca3af",
-                    rare: "#3b82f6",
-                    epic: "#a855f7",
-                    legendary: "#fac319",
-                  }[card.rarity] || "#ffffff";
-
-                  return (
-                    <div 
-                      key={`${cardId}-${idx}`} 
-                      onClick={() => onCardClick(card)}
-                      className="relative group cursor-pointer shrink-0 w-20 h-24 rounded-xl border-2 overflow-hidden transition-all duration-300 hover:-translate-y-16 active:-translate-y-20 hover:scale-110 active:scale-125 z-10 hover:z-[60] shadow-lg animate-in fade-in zoom-in-90"
-                      style={{ 
-                        borderColor: rarityColor + "80",
-                        backgroundImage: `url("${card.faceCard}"), linear-gradient(165deg, ${card.bgGradientStart || card.bgCard || '#1a1a1a'} 0%, ${card.bgGradientEnd || '#09090b'} 100%)`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                        animationDelay: `${idx * 80}ms`,
-                        animationFillMode: 'backwards'
-                      }}
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent p-2 flex flex-col justify-end">
-                        <div className="text-[9px] font-black text-white leading-tight uppercase line-clamp-2">{card.name}</div>
-                      </div>
-                    </div>
-                  );
-                })
+                /* Режим закрытой колоды */
+                <div 
+                  onClick={onOpenHand} // Клик на колоду открывает полноэкранную ленту
+                  className="relative group cursor-pointer w-20 h-24 rounded-xl border-2 border-white/20 overflow-hidden transition-all duration-300 hover:-translate-y-2 hover:scale-110 shadow-2xl animate-in zoom-in-90"
+                  style={{ 
+                    backgroundImage: `url("${allCards[me.inventory[0]]?.faceCard}"), linear-gradient(165deg, #4b5563 0%, #000 100%)`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center'
+                  }}
+                >
+                  <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-white text-xl font-black drop-shadow-md">{me.inventory.length}</span>
+                    <span className="text-[7px] text-white/70 uppercase font-bold tracking-tighter">В колоде</span>
+                  </div>
+                  <div className="absolute -right-1 -top-1 w-full h-full border-r border-t border-white/10 -z-10 rounded-xl shadow-lg" />
+                  <div className="absolute -right-2 -top-2 w-full h-full border-r border-t border-white/5 -z-20 rounded-xl" />
+                </div>
               ) : (
                 <span className="text-xs text-zinc-600 italic px-1">У вас пока нет карт...</span>
               )}

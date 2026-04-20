@@ -24,7 +24,7 @@ function AppClean() {
   const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(false);
   const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<GameCard | null>(null);
-  const [isHandOpen, setIsHandOpen] = useState(false);
+  const [isHandOpen, setIsHandOpen] = useState(false); // Состояние для открытия "руки" с картами
 
   // Автоматическое открытие панели при прокрутке вниз
   useEffect(() => {
@@ -195,7 +195,7 @@ function AppClean() {
             onToggleWheel={() => void syncWheelVisibility("current", !gameState.showWheel)}
             allCards={allCards}
             onCardClick={(card) => setSelectedCard(card)}
-            onOpenHand={() => setIsHandOpen(true)}
+            onOpenHand={() => setIsHandOpen(true)} // Передаем функцию для открытия "руки"
           />
         </div>
       </div>
@@ -278,7 +278,7 @@ function AppClean() {
       {isHandOpen && (
         <div 
           className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[10002] flex items-end justify-center pb-20 animate-in fade-in duration-300"
-          onClick={() => setIsHandOpen(false)}
+          onClick={() => setIsHandOpen(false)} // Закрываем по клику на фон
         >
           <div className="absolute top-10 left-1/2 -translate-x-1/2 text-center pointer-events-none">
             <h2 className="text-4xl font-black text-yellow-500 uppercase italic tracking-tighter drop-shadow-lg">Ваша колода</h2>
@@ -287,7 +287,7 @@ function AppClean() {
 
           <div 
             className="flex gap-8 overflow-x-auto px-20 py-10 max-w-full custom-scrollbar items-center select-none"
-            onClick={e => e.stopPropagation()}
+            onClick={e => e.stopPropagation()} // Предотвращаем закрытие при клике на саму ленту
           >
             {playerData?.inventory?.map((cardId, idx) => {
               const card = allCards[cardId];
@@ -296,7 +296,11 @@ function AppClean() {
               return (
                 <div 
                   key={`${cardId}-${idx}`}
-                  className="bg-zinc-900 border-2 rounded-[2.5rem] w-80 h-[520px] shrink-0 flex flex-col overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.8)] transition-all hover:scale-105 hover:-translate-y-6 relative group animate-in slide-in-from-bottom-10 duration-500"
+                  onClick={() => { // При клике на карту в ленте, открываем её модалку и закрываем ленту
+                    setSelectedCard(card);
+                    setIsHandOpen(false);
+                  }}
+                  className="bg-zinc-900 border-2 rounded-[2.5rem] w-80 h-[520px] shrink-0 flex flex-col overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.8)] transition-all hover:scale-105 hover:-translate-y-6 relative group animate-in slide-in-from-bottom-10 duration-500 cursor-pointer"
                   style={{ 
                     borderColor: (card.bgCard || '#fac319') + '80',
                     animationDelay: `${idx * 100}ms`
@@ -310,7 +314,7 @@ function AppClean() {
                     }}
                   >
                     {card.artCard ? (
-                      <img src={card.artCard} alt="art" className="h-full w-full object-contain drop-shadow-2xl p-6" />
+                      <img src={card.artCard} alt="card-art" className="h-full w-full object-contain drop-shadow-2xl p-6" />
                     ) : (
                       <span className="text-zinc-700 text-[10px] font-black uppercase tracking-[0.3em] opacity-40">IMAGE_ZONE</span>
                     )}
@@ -337,10 +341,11 @@ function AppClean() {
                     </div>
 
                     <button 
-                      onClick={() => {
+                      onClick={(e) => { // При клике на кнопку "Использовать"
+                        e.stopPropagation(); // Предотвращаем закрытие ленты
                         if (card) {
                           void handlers.handleUseCard(card);
-                          setIsHandOpen(false);
+                          setIsHandOpen(false); // Закрываем ленту после использования
                         }
                       }}
                       className="text-white py-5 rounded-[1.5rem] font-black uppercase text-sm transition-all active:scale-95 shadow-2xl hover:brightness-110 shrink-0"
