@@ -29,6 +29,7 @@ export interface Player {
   position?: number;
   prevCell?: number | null;
   inGame?: boolean;
+  inventory?: string[];   // Массив ID карточек
   role?: "admin" | "player";
   borderColor?: string;
   createdAt?: unknown;

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
+import type { GameCard } from "../types/card";
 import type { GameState, Player } from "../types/game";
 import type { User } from "firebase/auth";
 import { doc, updateDoc, increment } from "firebase/firestore";
 import { db } from "../firebase";
+import { uploadStarterCards } from "../types/cardService";
 
 interface BottomPanelPhaseProps {
   currentUser: User | null;
@@ -18,6 +20,8 @@ interface BottomPanelPhaseProps {
   onConfirmRoll: () => void;
   canConfirmRoll: boolean;
   onToggleWheel?: () => void;
+  onCardClick: (card: GameCard) => void;
+  allCards: Record<string, GameCard>;
 }
 
 const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
@@ -34,6 +38,8 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
   onConfirmRoll,
   canConfirmRoll,
   onToggleWheel,
+  onCardClick,
+  allCards,
 }) => {
   const [isFillingResults, setIsFillingResults] = useState(false);
   const [tempScores, setTempScores] = useState<Record<string, number>>({});
@@ -86,9 +92,11 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
         ? "Ход недоступен"
         : "Бросить кубик";
 
+  const me = players.find(p => p.id === currentUser?.uid);
+
   return (
-    <div className="w-full h-40 border-t border-purple-500/20 bg-black/40 backdrop-blur-md flex flex-col" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
-      <div className="flex items-center justify-between px-4 py-2 border-b border-purple-500/10 gap-3">
+    <div className="w-full h-40 border-t border-purple-500/20 bg-black/40 backdrop-blur-md flex flex-col overflow-visible" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+      <div className="flex items-center justify-between px-4 py-2 border-b border-purple-500/10 gap-3 relative z-10">
         <h3 className="text-purple-300 text-base font-bold uppercase tracking-tight shrink-0">Панель игры</h3>
 
         <div className="text-sm text-zinc-200 font-medium truncate">
@@ -154,6 +162,19 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
 
         {isAdmin && (
           <div className="flex gap-2 font-bold shrink-0">
+            <button
+              onClick={() => {
+                if (window.confirm("Загрузить стартовые карты в Firestore? Это обновит существующие данные.")) {
+                  uploadStarterCards()
+                    .then(() => alert("Карты успешно инициализированы!"))
+                    .catch((err) => alert("Ошибка: " + err.message));
+                }
+              }}
+              className="bg-zinc-700 hover:bg-zinc-600 active:scale-95 transition-all px-4 py-1.5 rounded text-sm font-bold shadow-md border border-white/10"
+              title="Загрузить коллекцию cards из JSON"
+            >
+              🛠️ Инит Карт
+            </button>
             {gameState.phase === "next_game" && (
               <button
                 onClick={() => {
@@ -204,13 +225,11 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
       </div>
 
       {/* Контентная область */}
-      <div className="flex-1 px-4 py-3 text-base text-zinc-200 flex items-center overflow-x-auto custom-scrollbar">
-        {/* Очередь ходов для админа в фазе turn */}
-        {isAdmin && gameState.phase === "turn" && gameState.turnOrder.length > 0 && (
-          <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-left-4 duration-500">
+      <div className="flex-1 px-4 py-3 text-base text-zinc-200 flex items-center relative z-20 overflow-visible">
+        {/* Очередь ходов для ад
+          <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-left-4 duration-500 overflow-hidden">
             <span className="text-[10px] font-black uppercase text-purple-400 tracking-widest px-1">Очередь ходов:</span>
             <div className="flex items-center gap-2">
-              {gameState.turnOrder.map((pid, idx) => {
                 const p = players.find(player => player.id === pid);
                 const isCurrent = idx === gameState.currentTurnIndex;
                 const isDone = idx < gameState.currentTurnIndex;
@@ -277,6 +296,50 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
             players={players} 
             gameState={gameState} 
           />
+        )}
+
+        {/* Инвентарь для обычных игроков (не админов) */}
+        {!isAdmin && gameState.phase !== "voting" && (
+          <div className="flex flex-col gap-1 w-full animate-in fade-in slide-in-from-left-4 duration-500 overflow-visible">
+            <span className="text-[10px] font-black uppercase text-purple-400 tracking-widest px-1">Ваш инвентарь:</span>
+            <div className="flex gap-3 overflow-x-auto pb-2 pt-10 custom-scrollbar h-28 items-end px-1 overflow-y-visible">
+              {me?.inventory && me.inventory.length > 0 ? (
+                me.inventory.map((cardId, idx) => {
+                  const card = allCards[cardId];
+                  if (!card) return null;
+                  const rarityColor = {
+                    common: "#9ca3af",
+                    rare: "#3b82f6",
+                    epic: "#a855f7",
+                    legendary: "#fac319",
+                  }[card.rarity] || "#ffffff";
+
+                  return (
+                    <div 
+                      key={`${cardId}-${idx}`} 
+                      onClick={() => onCardClick(card)}
+                      className="relative group cursor-pointer shrink-0 w-20 h-24 rounded-xl border-2 overflow-hidden transition-all duration-300 hover:-translate-y-16 active:-translate-y-20 hover:scale-110 active:scale-125 z-10 hover:z-[60] shadow-lg animate-in fade-in zoom-in-90"
+                      style={{ 
+                        borderColor: rarityColor + "80",
+                        backgroundColor: card.bgCard || '#1a1a1a',
+                        backgroundImage: card.faceCard ? `url(${card.faceCard})` : 'none',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        animationDelay: `${idx * 80}ms`,
+                        animationFillMode: 'backwards'
+                      }}
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent p-2 flex flex-col justify-end">
+                        <div className="text-[9px] font-black text-white leading-tight uppercase line-clamp-2">{card.name}</div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <span className="text-xs text-zinc-600 italic px-1">У вас пока нет карт...</span>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -454,7 +517,10 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
         </div>
       )}
     </div>
+
   );
+  
 };
+
 
 export default BottomPanelPhase;

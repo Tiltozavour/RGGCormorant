@@ -7,6 +7,8 @@ import {
   onSnapshot,
   runTransaction,
   updateDoc,
+  increment,
+  arrayRemove,
 } from "firebase/firestore";
 import Auth from "./components/Auth";
 import { syncWheelResult, syncWheelVisibility } from "./components/gameStateService";
@@ -14,6 +16,7 @@ import BottomPanel from "./components/BottomPanelPhase";
 import GameBoard from "./components/GameBoard";
 import PlayersSidebar from "./components/PlayersSidebar";
 import ScoresDetailsPage from "./components/ScoresDetailsPage";
+import type { GameCard } from "./types/card";
 import { auth, db } from "./firebase";
 import { defaultGameState } from "./types/game";
 import type { GamePhase, GameState, Player } from "./types/game";
@@ -51,6 +54,51 @@ function AppClean() {
   const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
   const [isScoresDetailsOpen, setIsScoresDetailsOpen] = useState(false);
   const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(false);
+  const [allCards, setAllCards] = useState<Record<string, GameCard>>({});
+  const [selectedCard, setSelectedCard] = useState<GameCard | null>(null);
+
+  // Логика использования карты (вынесена на уровень App для корректного перекрытия UI)
+  const handleUseCard = async (card: GameCard) => {
+    if (!user || !playerData) return;
+
+    try {
+      const playerRef = doc(db, "players", user.uid);
+      
+      // 1. Удаляем карту из инвентаря в БД
+      await updateDoc(playerRef, {
+        inventory: arrayRemove(card.id)
+      });
+
+      // 2. Обработка эффектов
+      if (card.action === 'add_coins') {
+        await updateDoc(playerRef, {
+          tiltCoins: increment(card.value)
+        });
+      } 
+      else if (card.action === 'move_steps') {
+        alert(`Использована карта: ${card.name}. Эффект: перемещение на ${card.value}`);
+      }
+      else if (card.action === 'protection') {
+        alert("Защита активирована!");
+      }
+
+      setSelectedCard(null);
+      console.log(`🚀 Карта ${card.name} успешно использована`);
+    } catch (e) {
+      console.error("Ошибка при использовании карты:", e);
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "cards"), (snap) => {
+      const cardMap: Record<string, GameCard> = {};
+      snap.docs.forEach((doc) => {
+        cardMap[doc.id] = { id: doc.id, ...doc.data() } as GameCard;
+      });
+      setAllCards(cardMap);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleUpdateLogin = async (val: string) => {
     if (!user || !playerData || val === playerData.login || val.trim().length < 3) return;
@@ -158,6 +206,7 @@ function AppClean() {
       position: cellId,
       prevCell: null,
       inGame: true,
+      inventory: ["inv_start_move", "inv_start_protect"]
     });
 
     setPlayerData((prev) =>
@@ -167,6 +216,7 @@ function AppClean() {
             position: cellId,
             prevCell: null,
             inGame: true,
+            inventory: ["inv_start_move", "inv_start_protect"]
           }
         : prev
     );
@@ -492,7 +542,7 @@ function AppClean() {
           {isBottomPanelOpen ? "▼ Скрыть управление" : "▲ Панель управления"}
         </button>
 
-        <div className={`shrink-0 transition-all duration-300 ease-in-out ${isBottomPanelOpen ? "h-40 opacity-100" : "h-0 opacity-0 pointer-events-none overflow-hidden"}`}>
+        <div className={`shrink-0 transition-all duration-300 ease-in-out ${isBottomPanelOpen ? "h-40 opacity-100 overflow-visible" : "h-0 opacity-0 pointer-events-none overflow-hidden"}`}>
           <BottomPanel
             currentUser={user}
             players={players}
@@ -507,9 +557,51 @@ function AppClean() {
             onConfirmRoll={handleConfirmRoll}
             canConfirmRoll={canConfirmRoll}
             onToggleWheel={() => void syncWheelVisibility("current", !gameState.showWheel)}
+            allCards={allCards}
+            onCardClick={(card) => setSelectedCard(card)}
           />
         </div>
       </div>
+
+      {/* Модалка предпросмотра карты (теперь перекрывает всё, включая фишки и кнопку управления) */}
+      {selectedCard && (
+        <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-[10002]" onClick={() => setSelectedCard(null)}>
+          <div 
+            className="bg-zinc-900 border-t-2 border-x-2 rounded-t-[2rem] w-full max-w-md flex flex-col overflow-hidden shadow-[0_-20px_50px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom duration-500" 
+            style={{ borderColor: (selectedCard.bgCard || '#fac319') + '50' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="h-48 w-full relative bg-black/40 flex items-center justify-center border-b border-white/5">
+              <img src={selectedCard.faceCard} alt={selectedCard.name} className="w-full h-full object-contain p-4" />
+              <div className="absolute top-4 right-4 bg-black/60 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest text-white border border-white/10">
+                {selectedCard.rarity}
+              </div>
+            </div>
+            
+            <div className="p-6 flex flex-col gap-4 text-center">
+              <div>
+                <h2 className="text-xl font-black text-white uppercase leading-tight">{selectedCard.name}</h2>
+                <p className="text-sm text-zinc-400 mt-2 font-medium leading-relaxed italic">"{selectedCard.description}"</p>
+              </div>
+
+              <div className="flex flex-col gap-2 mt-2">
+                <button 
+                  onClick={() => handleUseCard(selectedCard)}
+                  className="bg-purple-600 hover:bg-purple-500 text-white py-4 rounded-2xl font-black uppercase text-sm transition-all active:scale-95 shadow-lg shadow-purple-500/20"
+                >
+                  Использовать карту
+                </button>
+                <button 
+                  onClick={() => setSelectedCard(null)}
+                  className="text-zinc-500 hover:text-zinc-300 py-2 text-xs uppercase font-bold transition-colors"
+                >
+                  Закрыть
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <PlayersSidebar
         isOpen={isPlayersSidebarOpen}
