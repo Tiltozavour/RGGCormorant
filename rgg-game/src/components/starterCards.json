@@ -1,29 +1,5 @@
 [
   {
-    "id": "inv_start_move",
-    "name": "Карта движения",
-    "description": "Передвинуть себя или игрока на +2 клетки.",
-    "deck": "inventory",
-    "rarity": "common",
-    "action": "move_steps",
-    "value": 2,
-    "faceCard": "/cards/card_back.svg",
-    "bgCard": "#3b82f6",
-    "number": 11
-  },
-  {
-    "id": "inv_start_protect",
-    "name": "Карта защиты",
-    "description": "Блокирует действие любой карты, от игрока или моментального эффекта.",
-    "deck": "inventory",
-    "rarity": "common",
-    "action": "protection",
-    "value": 1,
-    "faceCard": "/cards/common_back.svg.svg",
-    "bgCard": "#10b981",
-    "number": 12
-  },
-  {
     "id": "inv_001",
     "name": "Мешочек коинов",
     "description": "Вы находите заначку древнего динозавра. Дает +15 коинов.",
@@ -82,6 +58,30 @@
     "faceCard": "/cards/faces/legendary_back.png",
     "bgCard": "#78350f",
     "number": 5
+  },
+  {
+    "id": "inv_006",
+    "name": "Карта защиты",
+    "description": "Блокирует действие любой карты, от игрока или моментального эффекта.",
+    "deck": "inventory",
+    "rarity": "common",
+    "action": "protection",
+    "value": 1,
+    "faceCard": "/cards/card_back.svg",
+    "bgCard": "/cards/card_back.svg",
+    "number": 12
+  },
+  {
+    "id": "inv_007",
+    "name": "Карта движения",
+    "description": "Передвинуть себя или игрока на +2 клетки.",
+    "deck": "inventory",
+    "rarity": "common",
+    "action": "move_steps",
+    "value": 2,
+    "faceCard": "/cards/card_back.svg",
+    "bgCard": "#3b82f6",
+    "number": 11
   },
   {
     "id": "mom_001",

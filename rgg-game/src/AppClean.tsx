@@ -461,7 +461,7 @@ function AppClean() {
             title="Открыть рейтинг игроков"
           >
             Cormorant Society
-                  <span className="text-xl font-bold text-purple/90 "> | Этап {gameState.round}</span>
+            <span className="text-xl font-bold text-purple-400/90 "> | Этап {gameState.round}</span>
           </h2>
 
           <div 
@@ -509,13 +509,13 @@ function AppClean() {
         </div>
       </div>
 
-      <div className="relative flex flex-col flex-1 overflow-hidden">
-        <div className="flex-1 overflow-hidden">
+      <div className="relative flex-1 overflow-hidden">
+        <div className="absolute inset-0 overflow-hidden">
           <GameBoard
             playerData={
               isAdmin
                 ? ({ id: "__admin__", login: "Admin", inGame: false } as Player)
-                : playerData
+                : playerData!
             }
             players={players}
             currentRoll={gameState.currentRoll}
@@ -535,14 +535,14 @@ function AppClean() {
         <button
           onClick={() => setIsBottomPanelOpen(!isBottomPanelOpen)}
           className={`absolute left-1/2 -translate-x-1/2 z-40 bg-purple-600/90 hover:bg-purple-500 text-white px-8 py-2 rounded-t-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all active:scale-95 shadow-[0_-10px_30px_rgba(0,0,0,0.6)] border-x border-t border-white/20 backdrop-blur-md ${
-            isBottomPanelOpen ? "bottom-40" : "bottom-0"
+            isBottomPanelOpen ? "bottom-[160px]" : "bottom-0"
           }`}
           style={{ fontFamily: "'Comfortaa', sans-serif" }}
         >
           {isBottomPanelOpen ? "▼ Скрыть управление" : "▲ Панель управления"}
         </button>
 
-        <div className={`shrink-0 transition-all duration-300 ease-in-out ${isBottomPanelOpen ? "h-40 opacity-100 overflow-visible" : "h-0 opacity-0 pointer-events-none overflow-hidden"}`}>
+        <div className={`absolute bottom-0 left-0 right-0 transition-all duration-300 ease-in-out z-40 ${isBottomPanelOpen ? "translate-y-0 opacity-100" : "translate-y-full opacity-0 pointer-events-none"}`}>
           <BottomPanel
             currentUser={user}
             players={players}
@@ -551,9 +551,9 @@ function AppClean() {
             onRoll={handleRoll}
             canRoll={canRoll}
             currentTurnPlayerId={currentTurnPlayerId}
-            onPrevPhase={() => void handleStepPhase(-1)}
-            onNextPhase={() => void handleStepPhase(1)}
-            onPrepareTurn={() => void handlePrepareTurn()}
+            onPrevPhase={() => { void handleStepPhase(-1); }}
+            onNextPhase={() => { void handleStepPhase(1); }}
+            onPrepareTurn={() => { void handlePrepareTurn(); }}
             onConfirmRoll={handleConfirmRoll}
             canConfirmRoll={canConfirmRoll}
             onToggleWheel={() => void syncWheelVisibility("current", !gameState.showWheel)}
@@ -567,26 +567,41 @@ function AppClean() {
       {selectedCard && (
         <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-[10002]" onClick={() => setSelectedCard(null)}>
           <div 
-            className="bg-zinc-900 border-t-2 border-x-2 rounded-t-[2rem] w-full max-w-md flex flex-col overflow-hidden shadow-[0_-20px_50px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom duration-500" 
-            style={{ borderColor: (selectedCard.bgCard || '#fac319') + '50' }}
+            className="bg-zinc-900 border-t-2 border-x-2 rounded-t-[2rem] w-full max-w-md flex flex-col overflow-hidden shadow-[0_-20px_50px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom duration-500 relative" 
+            style={{ borderColor: (selectedCard!.bgCard || '#fac319') + '50' }}
             onClick={e => e.stopPropagation()}
           >
-            <div className="h-48 w-full relative bg-black/40 flex items-center justify-center border-b border-white/5">
-              <img src={selectedCard.faceCard} alt={selectedCard.name} className="w-full h-full object-contain p-4" />
-              <div className="absolute top-4 right-4 bg-black/60 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest text-white border border-white/10">
-                {selectedCard.rarity}
+            {/* Верхняя часть: Место для арта */}
+            <div 
+              className="h-48 w-full relative flex items-center justify-center border-b border-white/5 z-10"
+              style={{ backgroundColor: (selectedCard!.bgCard || '#1a1a1a') + '20' }}
+            >
+              <span className="text-zinc-700 text-[10px] font-black uppercase tracking-[0.3em] opacity-40 select-none">Зона для изображения</span>
+              
+              <div className="absolute top-6 right-6 bg-black/60 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest text-white border border-white/10">
+                {selectedCard!.rarity}
+              </div> 
               </div>
-            </div>
             
-            <div className="p-6 flex flex-col gap-4 text-center">
+            <div 
+              className="p-6 flex flex-col gap-4 text-center relative z-10 flex-1 overflow-hidden"
+              style={{ 
+                backgroundImage: selectedCard!.faceCard ? `url("${selectedCard!.faceCard}")` : 'none',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+              }}
+            >
+              {/* Затемняющий слой только для нижней части, чтобы текст «горел» на фоне рубашки */}
+              <div className="absolute inset-0 bg-zinc-900/90 -z-10" />
+
               <div>
-                <h2 className="text-xl font-black text-white uppercase leading-tight">{selectedCard.name}</h2>
-                <p className="text-sm text-zinc-400 mt-2 font-medium leading-relaxed italic">"{selectedCard.description}"</p>
+                <h2 className="text-xl font-black text-white uppercase leading-tight">{selectedCard!.name}</h2>
+                <p className="text-sm text-zinc-400 mt-2 font-medium leading-relaxed italic">"{selectedCard!.description}"</p>
               </div>
 
               <div className="flex flex-col gap-2 mt-2">
                 <button 
-                  onClick={() => handleUseCard(selectedCard)}
+                  onClick={() => handleUseCard(selectedCard!)}
                   className="bg-purple-600 hover:bg-purple-500 text-white py-4 rounded-2xl font-black uppercase text-sm transition-all active:scale-95 shadow-lg shadow-purple-500/20"
                 >
                   Использовать карту
@@ -608,7 +623,7 @@ function AppClean() {
         players={players}
         totalScores={gameState.scores}
         gameHistory={gameState.gameHistory}
-        currentUserId={user.uid}
+        currentUserId={user?.uid || null}
         onClose={() => setIsPlayersSidebarOpen(false)}
         onOpenDetails={() => {
           setIsPlayersSidebarOpen(false);
@@ -632,6 +647,7 @@ function AppClean() {
         <div className="flex justify-end -mr-2 -mt-2">
           <button 
             onClick={() => setIsSidebarOpen(false)}
+            title="Закрыть панель управления"
             className="text-zinc-500 hover:text-white hover:scale-110 active:scale-90 transition-all p-2 text-2xl font-light"
           >
             ✕
@@ -653,11 +669,13 @@ function AppClean() {
 
           <div className="flex flex-col gap-5 w-full">
             <div className="flex flex-col gap-2">
-              <label className="text-[10px] uppercase font-black text-zinc-500 tracking-[0.2em] px-1">Ваш позывной</label>
+              <label htmlFor="nickname-input" className="text-[10px] uppercase font-black text-zinc-500 tracking-[0.2em] px-1">Ваш позывной</label>
               <input 
+                id="nickname-input"
                 key={playerData.id + playerData.login}
                 defaultValue={playerData.login}
                 onBlur={(e) => handleUpdateLogin(e.target.value)}
+                placeholder="Введите ник"
                 onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                 className="bg-black/30 border border-white/5 rounded-xl px-4 py-3 text-white font-bold focus:border-yellow-500/50 outline-none transition-all shadow-inner"
               />
@@ -669,6 +687,7 @@ function AppClean() {
                 {["#fac319", "#a855f7", "#3b82f6", "#ef4444", "#10b981", "#f97316", "#ffffff"].map(color => (
                   <button 
                     key={color}
+                    title={`Выбрать цвет ауры: ${color}`}
                     onClick={() => handleUpdateBorderColor(color)}
                     className={`w-7 h-7 rounded-full border-2 transition-all ${playerData.borderColor === color ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-50 hover:opacity-100 hover:scale-105'}`}
                     style={{ backgroundColor: color }}
@@ -700,6 +719,7 @@ function AppClean() {
             <div className="flex flex-col gap-2">
               <input
                 value={newAvatarUrl}
+                title="URL вашего изображения"
                 onChange={(e) => setNewAvatarUrl(e.target.value)}
                 placeholder="https://i.pinimg.com/..."
                 className="w-full p-4 bg-black/50 border border-white/10 rounded-2xl text-white outline-none focus:border-yellow-500/50 transition-all font-bold placeholder:text-zinc-700"

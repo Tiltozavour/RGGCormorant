@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import type { GameCard } from "../types/card";
 import type { GameState, Player } from "../types/game";
 import type { User } from "firebase/auth";
-import { doc, updateDoc, increment } from "firebase/firestore";
+import { doc, updateDoc, increment, arrayUnion } from "firebase/firestore";
 import { db } from "../firebase";
 import { uploadStarterCards } from "../types/cardService";
 
@@ -43,6 +43,18 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
 }) => {
   const [isFillingResults, setIsFillingResults] = useState(false);
   const [tempScores, setTempScores] = useState<Record<string, number>>({});
+
+  const handleTestGetCards = async () => {
+    if (!currentUser) return;
+    try {
+      const playerRef = doc(db, "players", currentUser.uid);
+      await updateDoc(playerRef, {
+        inventory: arrayUnion("inv_006", "inv_007")
+      });
+    } catch (e) {
+      console.error("Ошибка при доборе тестовых карт:", e);
+    }
+  };
 
   // Синхронизируем локальный ввод с данными из базы при открытии формы
   useEffect(() => {
@@ -226,10 +238,12 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
 
       {/* Контентная область */}
       <div className="flex-1 px-4 py-3 text-base text-zinc-200 flex items-center relative z-20 overflow-visible">
-        {/* Очередь ходов для ад
+        {/* Очередь ходов для админа в фазе turn */}
+        {isAdmin && gameState.phase === "turn" && gameState.turnOrder.length > 0 && (
           <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-left-4 duration-500 overflow-hidden">
             <span className="text-[10px] font-black uppercase text-purple-400 tracking-widest px-1">Очередь ходов:</span>
             <div className="flex items-center gap-2">
+              {gameState.turnOrder.map((pid, idx) => {
                 const p = players.find(player => player.id === pid);
                 const isCurrent = idx === gameState.currentTurnIndex;
                 const isDone = idx < gameState.currentTurnIndex;
@@ -266,6 +280,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
                 <span className="text-[10px] uppercase font-black text-zinc-500 truncate w-20 text-center">{player.login}</span>
                 <input 
                   type="number" 
+                  title={`Очки для ${player.login}`}
                   className="w-16 bg-black border border-zinc-700 rounded text-center text-sm p-1 text-yellow-400 font-bold focus:border-yellow-500 outline-none transition-colors"
                   value={tempScores[player.id] ?? 0}
                   onChange={e => setTempScores(prev => ({...prev, [player.id]: parseInt(e.target.value) || 0}))}
@@ -301,7 +316,16 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
         {/* Инвентарь для обычных игроков (не админов) */}
         {!isAdmin && gameState.phase !== "voting" && (
           <div className="flex flex-col gap-1 w-full animate-in fade-in slide-in-from-left-4 duration-500 overflow-visible">
-            <span className="text-[10px] font-black uppercase text-purple-400 tracking-widest px-1">Ваш инвентарь:</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase text-purple-400 tracking-widest px-1">Ваш инвентарь:</span>
+              <button 
+                onClick={handleTestGetCards}
+                className="text-[8px] bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 px-2 py-0.5 rounded text-purple-400/60 hover:text-purple-300 transition-all uppercase font-black"
+                title="Добавить тестовые карты inv_006 и inv_007"
+              >
+                🧪 Тест добор
+              </button>
+            </div>
             <div className="flex gap-3 overflow-x-auto pb-2 pt-10 custom-scrollbar h-28 items-end px-1 overflow-y-visible">
               {me?.inventory && me.inventory.length > 0 ? (
                 me.inventory.map((cardId, idx) => {
@@ -322,7 +346,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
                       style={{ 
                         borderColor: rarityColor + "80",
                         backgroundColor: card.bgCard || '#1a1a1a',
-                        backgroundImage: card.faceCard ? `url(${card.faceCard})` : 'none',
+                        backgroundImage: card.faceCard ? `url("${card.faceCard}")` : 'none',
                         backgroundSize: 'cover',
                         backgroundPosition: 'center',
                         animationDelay: `${idx * 80}ms`,
