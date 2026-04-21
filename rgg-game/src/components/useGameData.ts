@@ -7,6 +7,7 @@ import {
   onSnapshot,
   runTransaction,
   updateDoc,
+  arrayUnion,
   increment,
   arrayRemove,
 } from "firebase/firestore";
@@ -69,7 +70,7 @@ export function useGameData() {
   const isTurnPhase = gameState.phase === "turn";
   const isCurrentPlayersTurn = gameState.turnOrder.length === 0 || currentTurnPlayerId === user?.uid;
   
-  const canRoll = !isAdmin && !!playerData?.inGame && isTurnPhase && isCurrentPlayersTurn && gameState.currentRoll === null;
+  const canRoll = !isAdmin && !!playerData?.inGame && isTurnPhase && isCurrentPlayersTurn && gameState.currentRoll === null && !playerData?.isFrozen;
   const canConfirmRoll = !isAdmin && !!playerData?.inGame && isCurrentPlayersTurn && gameState.currentRoll !== null && !gameState.rollConfirmed;
 
   // Handlers
@@ -100,16 +101,93 @@ export function useGameData() {
     await updateDoc(doc(db, "players", user.uid), { avatar: url });
   };
 
-  const handleUseCard = async (card: GameCard) => {
+  // Метод для выдачи призовой (легендарной) карты игроку (только для админа)
+  const grantPrizeCard = async (playerId: string, cardId: string) => {
+    if (!isAdmin) return;
+    const playerRef = doc(db, "players", playerId);
+    await updateDoc(playerRef, {
+      inventory: arrayUnion(cardId)
+    });
+    // Здесь можно добавить логику удаления карты из "пула доступных призов" в БД,
+    // если она помечена как isUnique
+  };
+
+  const handleUseCard = async (card: GameCard, targetPlayerId?: string) => {
     if (!user || !playerData) return;
     try {
       const playerRef = doc(db, "players", user.uid);
+      const targetRef = targetPlayerId ? doc(db, "players", targetPlayerId) : null;
+
       await updateDoc(playerRef, { inventory: arrayRemove(card.id) });
 
-      if (card.action === 'add_coins') {
-        await updateDoc(playerRef, { tiltCoins: increment(card.value) });
-      } else if (card.action === 'move_steps') {
-        alert(`Эффект: перемещение на ${card.value}`);
+      switch (card.action) {
+        case 'add_coins':
+          // Если есть цель (например, кража), можно добавить логику здесь, 
+          // но обычно монеты добавляются себе
+          await updateDoc(playerRef, { tiltCoins: increment(card.value) });
+          break;
+
+        case 'move_steps':
+          // Если выбрана цель (Судья душ / Жертвопредложение)
+          const subjectRef = targetRef || playerRef;
+          const subjectData = targetPlayerId ? players.find(p => p.id === targetPlayerId) : playerData;
+          
+          // Для мгновенного перемещения через карту
+          const currentPos = subjectData?.position || 0;
+          const newPos = currentPos + card.value;
+          await updateDoc(subjectRef, { position: Math.max(0, newPos), prevCell: currentPos });
+          
+          if (targetPlayerId) {
+            alert(`Игрок ${subjectData?.login} перемещен на ${card.value} кл.`);
+          }
+          break;
+
+        case 'teleport':
+          await updateDoc(playerRef, { position: card.value, prevCell: null });
+          break;
+
+        case 'freeze_player':
+          if (targetRef) {
+            await updateDoc(targetRef, { 
+              isFrozen: true,
+              freezeDuration: card.value || 1 
+            });
+            alert(`Игрок заморожен!`);
+          }
+          break;
+
+        case 'spin_wheel':
+          // Принудительно открываем колесо для всех (синхронизация через БД)
+          await updateDoc(doc(db, "gameState", "current"), { showWheel: true });
+          break;
+
+        case 'challenge_gaben':
+          // Реализация механики Габена: ставим статус испытания
+          await updateDoc(playerRef, { 
+            customStatus: 'gaben_challenge',
+            statusDuration: 2 
+          });
+          alert("Испытание Габена принято! Не двигайтесь 2 хода.");
+          break;
+
+        case 'steal_coins':
+          if (targetRef) {
+            await runTransaction(db, async (transaction) => {
+              const targetSnap = await transaction.get(targetRef);
+              const currentTargetCoins = targetSnap.data()?.tiltCoins || 0;
+              const stealAmount = Math.min(currentTargetCoins, card.value);
+              transaction.update(targetRef, { tiltCoins: increment(-stealAmount) });
+              transaction.update(playerRef, { tiltCoins: increment(stealAmount) });
+            });
+          }
+          break;
+
+        case 'protection':
+          await updateDoc(playerRef, { hasProtection: true });
+          break;
+
+        default:
+          console.warn("Действие карты не распознано:", card.action);
       }
     } catch (e) {
       console.error(e);
@@ -238,6 +316,7 @@ export function useGameData() {
       chooseStart,
       updateAvatar,
       handleUseCard,
+      grantPrizeCard,
       handleMoveComplete,
       handleRoll,
       handleConfirmRoll,

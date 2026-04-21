@@ -8,7 +8,14 @@ export type CardAction =
   | 'protection'       // Иммунитет к негативным эффектам
   | 'teleport'         // Прямой телепорт на ID клетки
   | 'teleport_to_type' // Телепорт на ближайшую клетку определенного типа
-  | 'skip_turn';       // Пропуск следующего хода
+  | 'skip_turn'        // Пропуск следующего хода
+  | 'steal_coins'      // Украсть монеты
+  | 'steal_card'       // Украсть карту
+  | 'discard_card'     // Сбросить карту противника
+  | 'freeze_player'    // Заморозить игрока
+  | 'spin_wheel'       // Повторный запуск колеса
+  | 'duel'             // Дуэль (PvP)
+  | 'challenge_gaben'; // Испытание Габена
 
 export interface GameCard {
   id: string;          // Уникальный ID (например, inv_001)
@@ -26,4 +33,7 @@ export interface GameCard {
   bgGradientStart?: string; // Начальный цвет градиента
   bgGradientEnd?: string;   // Конечный цвет градиента
   number: number;      // Порядковый номер в коллекции для удобства
+  isUnique?: boolean;  // Флаг уникальности (для призовых карт)
 }
+
+export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';

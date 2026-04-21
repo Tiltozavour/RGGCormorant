@@ -58,6 +58,30 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
     }
   };
 
+  // Функция для выдачи всех существующих карт всем игрокам (кроме админов)
+  const handleGiveAllCards = async () => {
+    if (!isAdmin) return;
+
+    try {
+      const allCardIds = Object.keys(allCards);
+      
+      // Находим всех игроков, которые не являются админами
+      const targetPlayers = players.filter(p => p.role !== 'admin');
+
+      const updates = targetPlayers.map(p => 
+        updateDoc(doc(db, "players", p.id), {
+          inventory: allCardIds
+        })
+      );
+
+      await Promise.all(updates);
+      alert(`Все карты (${allCardIds.length} шт.) выданы игрокам (${targetPlayers.length} чел.).`);
+    } catch (error: any) { // Добавляем type assertion для error
+      console.error("Ошибка при выдаче всех карт:", error);
+      alert("Ошибка при выдаче всех карт: " + error.message);
+    }
+  };
+
   // Синхронизируем локальный ввод с данными из базы при открытии формы
   useEffect(() => {
     if (isFillingResults) {
@@ -99,20 +123,21 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
         ? "Ход: ваш"
         : "Ход: другой игрок";
 
+  const me = players.find(p => p.id === currentUser?.uid);
+
   const rollLabel =
     gameState.currentRoll !== null
       ? `Выпало: ${gameState.currentRoll}`
-      : gameState.phase !== "turn"
-        ? "Ход недоступен"
-        : "Бросить кубик";
-
-  const me = players.find(p => p.id === currentUser?.uid);
+      : me?.isFrozen
+        ? "❄️ ЗАМОРОЖЕН"
+        : gameState.phase !== "turn"
+          ? "Ход недоступен"
+          : "Бросить кубик";
 
   return (
-    <div className="w-full h-40 border-t border-purple-500/20 bg-white/5 backdrop-blur-xl flex flex-col overflow-visible" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
-      <div className="flex items-center justify-between px-4 py-2 border-b border-purple-500/10 gap-3 relative z-10">
+    <div className="w-full h-40 border-t border-purple-500/20 bg-black/40 backdrop-blur-md flex flex-col" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+      <div className="flex items-center justify-between px-4 py-2 border-b border-purple-500/10 gap-3">
         <h3 className="text-purple-300 text-base font-bold uppercase tracking-tight shrink-0">Панель игры</h3>
-
         <div className="text-sm text-zinc-200 font-medium truncate">
           {gameState.phase === "waiting_game" && `Этап: Ожидание проведения игры "${gameState.currentGame || "..."}" | Этап ${gameState.round}`}
           {gameState.phase === "playing" && `Этап: Играем в "${gameState.currentGame || "..."}" | Этап ${gameState.round}`}
@@ -189,6 +214,14 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
             >
               🛠️ Инит Карт
             </button>
+            <button
+              onClick={handleGiveAllCards} // Новая кнопка для выдачи всех карт
+              className="bg-green-700 hover:bg-green-600 active:scale-95 transition-all px-4 py-1.5 rounded text-sm font-bold shadow-md border border-white/10"
+              title="Выдать текущему игроку все существующие карты"
+            >
+              🎴 Все карты
+            </button>
+
             {gameState.phase === "next_game" && (
               <button
                 onClick={() => {
@@ -376,7 +409,7 @@ const PlayerVotingView: React.FC<{ currentUser: User | null, players: Player[], 
   }
 
   if (hasVoted) {
-    const votedFor = players.find(p => p.id === gameState.votes[myId]);
+    const votedFor = players.find(p => p.id === gameState.votes?.[myId]);
     return (
       <div className="flex items-center gap-3 bg-indigo-900/30 px-4 py-2 rounded-xl border border-indigo-500/30 animate-in fade-in zoom-in duration-300">
         <span className="text-indigo-200">Ваш голос принят за:</span>

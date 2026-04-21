@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
-import Auth from "./components/Auth";
-import { syncWheelResult, syncWheelVisibility } from "./components/gameStateService";
-import BottomPanel from "./components/BottomPanelPhase";
-import GameBoard from "./components/GameBoard";
-import PlayersSidebar from "./components/PlayersSidebar";
-import ScoresDetailsPage from "./components/ScoresDetailsPage";
-import type { Player } from "./types/game";
-import type { GameCard } from "./types/card";
-import { useGameData } from "./components/useGameData";
-import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS } from "./components/gameConstants";
+import Auth from "./Auth";
+import { syncWheelResult, syncWheelVisibility } from "./gameStateService";
+import BottomPanel from "./BottomPanelPhase";
+import GameBoard from "./GameBoard";
+import PlayersSidebar from "./PlayersSidebar";
+import ScoresDetailsPage from "./ScoresDetailsPage";
+import type { Player } from "../types/game";
+import type { GameCard as GameCardType } from "../types/card";
+import { useGameData } from "./useGameData";
+import GameCard from "./GameCard";
+import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS } from "./gameConstants";
 
 function AppClean() {
   const {
@@ -23,7 +24,7 @@ function AppClean() {
   const [isScoresDetailsOpen, setIsScoresDetailsOpen] = useState(false);
   const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(false);
   const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
-  const [selectedCard, setSelectedCard] = useState<GameCard | null>(null);
+  const [selectedCard, setSelectedCard] = useState<GameCardType | null>(null);
   const [isHandOpen, setIsHandOpen] = useState(false); // Состояние для открытия "руки" с картами
 
   // Автоматическое открытие панели при прокрутке вниз
@@ -200,164 +201,56 @@ function AppClean() {
         </div>
       </div>
 
-      {/* Модалка предпросмотра карты (теперь перекрывает всё, включая фишки и кнопку управления) */}
+      {/* Модалка предпросмотра одиночной карты */}
       {selectedCard && (
-        <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-[10002]" onClick={() => setSelectedCard(null)}>
-          <div 
-            className="bg-zinc-900 border-t-2 border-x-2 rounded-t-[2rem] w-full max-w-md flex flex-col overflow-hidden shadow-[0_-20px_50px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom duration-500 relative" 
-            style={{ borderColor: (selectedCard!.bgCard || '#fac319') + '50' }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Верхняя часть: Место для арта */}
-            <div 
-              className="h-48 w-full relative flex items-center justify-center border-b border-white/5 z-10 overflow-hidden"
-              style={{ 
-                backgroundImage: `linear-gradient(165deg, ${selectedCard!.bgGradientStart || selectedCard!.bgCard || '#1a1a1a'} 0%, ${selectedCard!.bgGradientEnd || '#09090b'} 100%)` 
-              }}
-            >
-              {selectedCard!.artCard ? (
-                <img 
-                  src={selectedCard!.artCard} 
-                  alt="card-art" 
-                  className="h-full w-full object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in duration-500" 
-                />
-              ) : (
-                <span className="text-zinc-700 text-[10px] font-black uppercase tracking-[0.3em] opacity-40 select-none pointer-events-none">Зона для изображения</span>
-              )}
-
-              <div className="absolute top-6 right-6 bg-black/60 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest text-white border border-white/10">
-                {selectedCard!.rarity}
-              </div>
-            </div>
-            
-            <div 
-              className="p-6 flex flex-col gap-4 text-center relative z-10 flex-1 overflow-hidden"
-              style={{ 
-                backgroundImage: selectedCard!.faceCard ? `url("${selectedCard!.faceCard}")` : 'none',
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-              }}
-            >
-              {/* Затемняющий слой только для нижней части, чтобы текст «горел» на фоне рубашки */}
-              <div 
-                className="absolute inset-0 -z-10" 
-                style={{ backgroundColor: (selectedCard!.bgCard || '#18181b') + 'D9' }} // ~85% непрозрачности
-              />
-
-              <div>
-                <h2 className="text-xl font-black text-white uppercase leading-tight">{selectedCard!.name}</h2>
-                <p className="text-sm text-white mt-2 font-medium leading-relaxed italic">"{selectedCard!.description}"</p>
-              </div>
-
-              <div className="flex flex-col gap-2 mt-2">
-                <button 
-                  onClick={() => { 
-                    if (selectedCard) {
-                      void handlers.handleUseCard(selectedCard);
-                      setSelectedCard(null);
-                    }
-                  }}
-                  className="text-white py-4 rounded-2xl font-black uppercase text-sm transition-all active:scale-95 shadow-lg hover:brightness-110"
-                  style={{ backgroundColor: selectedCard!.bgCard || '#6366f1' }}
-                >
-                  Использовать карту
-                </button>
-                <button 
-                  onClick={() => setSelectedCard(null)}
-                  className="text-zinc-500 hover:text-zinc-300 py-2 text-xs uppercase font-bold transition-colors"
-                >
-                  Закрыть
-                </button>
-              </div>
-            </div>
-          </div>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[10003]" onClick={() => setSelectedCard(null)}>
+          <GameCard 
+            card={selectedCard} 
+            index={0} 
+            totalCards={1} 
+            onUse={() => {
+              void handlers.handleUseCard(selectedCard);
+              setSelectedCard(null);
+            }}
+          />
         </div>
       )}
 
       {/* Полноэкранная лента "Руки" (всей колоды в ряд) */}
       {isHandOpen && (
-        <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[10002] flex items-end justify-center pb-20 animate-in fade-in duration-300"
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-xl z-[10002] flex items-end justify-center pb-16 overflow-hidden"
           onClick={() => setIsHandOpen(false)} // Закрываем по клику на фон
         >
           <div className="absolute top-10 left-1/2 -translate-x-1/2 text-center pointer-events-none">
             <h2 className="text-4xl font-black text-yellow-500 uppercase italic tracking-tighter drop-shadow-lg">Ваша колода</h2>
-            <p className="text-white/60 text-xs font-bold uppercase tracking-widest mt-2">Нажмите на фон, чтобы вернуться к игре</p>
+            <p className="text-white/40 text-[10px] font-bold uppercase tracking-[0.4em] mt-2">Нажмите на фон, чтобы закрыть</p>
           </div>
 
-          <div 
-            className="flex gap-8 overflow-x-auto px-20 py-10 max-w-full custom-scrollbar items-center select-none"
+          <div
+            className="flex px-[10vw] py-20 overflow-x-auto overflow-y-hidden max-w-full custom-scrollbar items-end select-none scroll-smooth"
             onClick={e => e.stopPropagation()} // Предотвращаем закрытие при клике на саму ленту
           >
-            {playerData?.inventory?.map((cardId, idx) => {
+            {playerData?.inventory?.map((cardId, idx, arr) => {
               const card = allCards[cardId];
               if (!card) return null;
-              
+
               return (
-                <div 
+                <GameCard
                   key={`${cardId}-${idx}`}
-                  onClick={() => { // При клике на карту в ленте, открываем её модалку и закрываем ленту
+                  card={card}
+                  index={idx}
+                  totalCards={arr.length}
+                  isInHand={true}
+                  onClick={() => {
                     setSelectedCard(card);
                     setIsHandOpen(false);
                   }}
-                  className="bg-zinc-900 border-2 rounded-[2.5rem] w-80 h-[520px] shrink-0 flex flex-col overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.8)] transition-all hover:scale-105 hover:-translate-y-6 relative group animate-in slide-in-from-bottom-10 duration-500 cursor-pointer"
-                  style={{ 
-                    borderColor: (card.bgCard || '#fac319') + '80',
-                    animationDelay: `${idx * 100}ms`
+                  onUse={() => {
+                    void handlers.handleUseCard(card);
+                    setIsHandOpen(false);
                   }}
-                >
-                  {/* Верх: Арт */}
-                  <div 
-                    className="h-56 w-full relative flex items-center justify-center border-b border-white/5 z-10 overflow-hidden shrink-0"
-                    style={{ 
-                      backgroundImage: `linear-gradient(165deg, ${card.bgGradientStart || card.bgCard || '#1a1a1a'} 0%, ${card.bgGradientEnd || '#09090b'} 100%)` 
-                    }}
-                  >
-                    {card.artCard ? (
-                      <img src={card.artCard} alt="card-art" className="h-full w-full object-contain drop-shadow-2xl p-6" />
-                    ) : (
-                      <span className="text-zinc-700 text-[10px] font-black uppercase tracking-[0.3em] opacity-40">IMAGE_ZONE</span>
-                    )}
-                    <div className="absolute top-6 right-6 bg-black/60 px-3 py-1 rounded-full text-[10px] font-black uppercase text-white border border-white/10">
-                      {card.rarity}
-                    </div>
-                  </div>
-                  
-                  {/* Низ: Описание и Действие */}
-                  <div 
-                    className="p-8 flex flex-col gap-5 text-center relative z-10 flex-1"
-                    style={{ 
-                      backgroundImage: card.faceCard ? `url("${card.faceCard}")` : 'none',
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                    }}
-                  >
-                    <div className="absolute inset-0 bg-zinc-900/90 -z-10" 
-                         style={{ backgroundColor: (card.bgCard || '#18181b') + 'E6' }} />
-
-                    <div className="flex-1 flex flex-col justify-center gap-3">
-                      <h2 className="text-2xl font-black text-white uppercase leading-tight tracking-tight">{card.name}</h2>
-                      <p className="text-sm text-white/70 font-medium leading-relaxed italic line-clamp-4">"{card.description}"</p>
-                    </div>
-
-                    <button 
-                      onClick={(e) => { // При клике на кнопку "Использовать"
-                        e.stopPropagation(); // Предотвращаем закрытие ленты
-                        if (card) {
-                          void handlers.handleUseCard(card);
-                          setIsHandOpen(false); // Закрываем ленту после использования
-                        }
-                      }}
-                      className="text-white py-5 rounded-[1.5rem] font-black uppercase text-sm transition-all active:scale-95 shadow-2xl hover:brightness-110 shrink-0"
-                      style={{ 
-                        backgroundColor: card.bgCard || '#6366f1',
-                        boxShadow: `0 10px 30px ${(card.bgCard || '#6366f1')}40`
-                      }}
-                    >
-                      Использовать карту
-                    </button>
-                  </div>
-                </div>
+                />
               );
             })}
           </div>

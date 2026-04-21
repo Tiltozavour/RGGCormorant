@@ -6,9 +6,11 @@ import GameBoard from "./components/GameBoard";
 import PlayersSidebar from "./components/PlayersSidebar";
 import ScoresDetailsPage from "./components/ScoresDetailsPage";
 import type { Player } from "./types/game";
-import type { GameCard } from "./types/card";
+import type { GameCard as GameCardType, CardRarity as Rarity } from "./types/card"; 
 import { useGameData } from "./components/useGameData";
 import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS } from "./components/gameConstants";
+import GameCard from "./components/GameCard";
+
 
 function AppClean() {
   const {
@@ -23,8 +25,9 @@ function AppClean() {
   const [isScoresDetailsOpen, setIsScoresDetailsOpen] = useState(false);
   const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(false);
   const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
-  const [selectedCard, setSelectedCard] = useState<GameCard | null>(null);
+  const [selectedCard, setSelectedCard] = useState<GameCardType | null>(null);
   const [isHandOpen, setIsHandOpen] = useState(false);
+  const [pendingTargetCard, setPendingTargetCard] = useState<GameCardType | null>(null); // Карта, ожидающая выбора цели
 
   // Автоматическое открытие панели при прокрутке вниз
   useEffect(() => {
@@ -39,6 +42,22 @@ function AppClean() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  // Проверка: требует ли карта выбора цели?
+  const cardNeedsTarget = (card: GameCardType) => {
+    const targetActions: string[] = ['steal_coins', 'steal_card', 'discard_card', 'freeze_player', 'duel'];
+    // Специальные ID для карт типа "Судья душ" и "Жертвопредложение", которые используют общий action
+    const targetIds = ['inv_008', 'inv_014', 'inv_017', 'inv_021']; 
+    return targetActions.includes(card.action) || targetIds.includes(card.id);
+  };
+
+  const handleCardClick = (card: GameCardType) => {
+    if (cardNeedsTarget(card)) {
+      setPendingTargetCard(card);
+    } else {
+      void handlers.handleUseCard(card as any);
+    }
+  };
 
   const handleConfirmAvatar = () => {
     void handlers.updateAvatar(newAvatarUrl);
@@ -200,81 +219,22 @@ function AppClean() {
         </div>
       </div>
 
-      {/* Модалка предпросмотра карты (теперь перекрывает всё, включая фишки и кнопку управления) */}
+      {/* Модалка предпросмотра карты */}
       {selectedCard && (
-        <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-[10002]" onClick={() => setSelectedCard(null)}>
-          <div 
-            className="bg-zinc-900 border-t-2 border-x-2 rounded-t-[2rem] w-full max-w-md flex flex-col overflow-hidden shadow-[0_-20px_50px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom duration-500 relative" 
-            style={{ borderColor: (selectedCard!.bgCard || '#fac319') + '50' }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Верхняя часть: Место для арта */}
-            <div 
-              className="h-48 w-full relative flex items-center justify-center border-b border-white/5 z-10 overflow-hidden"
-              style={{ 
-                backgroundImage: `linear-gradient(165deg, ${selectedCard!.bgGradientStart || selectedCard!.bgCard || '#1a1a1a'} 0%, ${selectedCard!.bgGradientEnd || '#09090b'} 100%)` 
-              }}
-            >
-              {selectedCard!.artCard ? (
-                <img 
-                  src={selectedCard!.artCard} 
-                  alt="card-art" 
-                  className="h-full w-full object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in duration-500" 
-                />
-              ) : (
-                <span className="text-zinc-700 text-[10px] font-black uppercase tracking-[0.3em] opacity-40 select-none pointer-events-none">Зона для изображения</span>
-              )}
-
-              <div className="absolute top-6 right-6 bg-black/60 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest text-white border border-white/10">
-                {selectedCard!.rarity}
-              </div>
-            </div>
-            
-            <div 
-              className="p-6 flex flex-col gap-4 text-center relative z-10 flex-1 overflow-hidden"
-              style={{ 
-                backgroundImage: selectedCard!.faceCard ? `url("${selectedCard!.faceCard}")` : 'none',
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-              }}
-            >
-              {/* Затемняющий слой только для нижней части, чтобы текст «горел» на фоне рубашки */}
-              <div 
-                className="absolute inset-0 -z-10" 
-                style={{ backgroundColor: (selectedCard!.bgCard || '#18181b') + 'D9' }} // ~85% непрозрачности
-              />
-
-              <div>
-                <h2 className="text-xl font-black text-white uppercase leading-tight">{selectedCard!.name}</h2>
-                <p className="text-sm text-white mt-2 font-medium leading-relaxed italic">"{selectedCard!.description}"</p>
-              </div>
-
-              <div className="flex flex-col gap-2 mt-2">
-                <button 
-                  onClick={() => { 
-                    if (selectedCard) {
-                      void handlers.handleUseCard(selectedCard);
-                      setSelectedCard(null);
-                    }
-                  }}
-                  className="text-white py-4 rounded-2xl font-black uppercase text-sm transition-all active:scale-95 shadow-lg hover:brightness-110"
-                  style={{ backgroundColor: selectedCard!.bgCard || '#6366f1' }}
-                >
-                  Использовать карту
-                </button>
-                <button 
-                  onClick={() => setSelectedCard(null)}
-                  className="text-zinc-500 hover:text-zinc-300 py-2 text-xs uppercase font-bold transition-colors"
-                >
-                  Закрыть
-                </button>
-              </div>
-            </div>
-          </div>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[10003]" onClick={() => setSelectedCard(null)}>
+          <GameCard 
+            card={selectedCard} 
+            index={0} 
+            totalCards={1} 
+            onUse={() => {
+              handleCardClick(selectedCard);
+              setSelectedCard(null);
+            }}
+          />
         </div>
       )}
 
-      {/* Полноэкранная лента "Руки" (всей колоды в ряд) */}
+      {/* Полноэкранная лента "Руки" */}
       {isHandOpen && (
         <div 
           className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[10002] flex items-end justify-center pb-20 animate-in fade-in duration-300"
@@ -289,69 +249,35 @@ function AppClean() {
             className="flex gap-8 overflow-x-auto px-20 py-10 max-w-full custom-scrollbar items-center select-none"
             onClick={e => e.stopPropagation()}
           >
-            {playerData?.inventory?.map((cardId, idx) => {
+            {/* Сначала выводим легендарные призы, потом всё остальное */}
+            {[
+              ...(playerData?.inventory?.filter(id => allCards[id]?.rarity === 'legendary') || []),
+              ...(playerData?.inventory?.filter(id => allCards[id]?.rarity !== 'legendary') || [])
+            ].map((cardId, idx, arr) => {
               const card = allCards[cardId];
               if (!card) return null;
-              
+
               return (
-                <div 
-                  key={`${cardId}-${idx}`}
-                  className="bg-zinc-900 border-2 rounded-[2.5rem] w-80 h-[520px] shrink-0 flex flex-col overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.8)] transition-all hover:scale-105 hover:-translate-y-6 relative group animate-in slide-in-from-bottom-10 duration-500"
-                  style={{ 
-                    borderColor: (card.bgCard || '#fac319') + '80',
-                    animationDelay: `${idx * 100}ms`
-                  }}
-                >
-                  {/* Верх: Арт */}
-                  <div 
-                    className="h-56 w-full relative flex items-center justify-center border-b border-white/5 z-10 overflow-hidden shrink-0"
-                    style={{ 
-                      backgroundImage: `linear-gradient(165deg, ${card.bgGradientStart || card.bgCard || '#1a1a1a'} 0%, ${card.bgGradientEnd || '#09090b'} 100%)` 
-                    }}
-                  >
-                    {card.artCard ? (
-                      <img src={card.artCard} alt="art" className="h-full w-full object-contain drop-shadow-2xl p-6" />
-                    ) : (
-                      <span className="text-zinc-700 text-[10px] font-black uppercase tracking-[0.3em] opacity-40">IMAGE_ZONE</span>
-                    )}
-                    <div className="absolute top-6 right-6 bg-black/60 px-3 py-1 rounded-full text-[10px] font-black uppercase text-white border border-white/10">
-                      {card.rarity}
+                <div key={`${cardId}-${idx}`} className="relative group">
+                  {card.rarity === 'legendary' && (
+                    <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-yellow-500 text-black px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest z-50 shadow-xl border-2 border-white animate-bounce">
+                      🏆 ПРИЗ
                     </div>
-                  </div>
-                  
-                  {/* Низ: Описание и Действие */}
-                  <div 
-                    className="p-8 flex flex-col gap-5 text-center relative z-10 flex-1"
-                    style={{ 
-                      backgroundImage: card.faceCard ? `url("${card.faceCard}")` : 'none',
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
+                  )}
+                  <GameCard
+                    card={card}
+                    index={idx}
+                    totalCards={arr.length}
+                    isInHand={true}
+                    onClick={() => {
+                      setSelectedCard(card);
+                      setIsHandOpen(false);
                     }}
-                  >
-                    <div className="absolute inset-0 bg-zinc-900/90 -z-10" 
-                         style={{ backgroundColor: (card.bgCard || '#18181b') + 'E6' }} />
-
-                    <div className="flex-1 flex flex-col justify-center gap-3">
-                      <h2 className="text-2xl font-black text-white uppercase leading-tight tracking-tight">{card.name}</h2>
-                      <p className="text-sm text-white/70 font-medium leading-relaxed italic line-clamp-4">"{card.description}"</p>
-                    </div>
-
-                    <button 
-                      onClick={() => {
-                        if (card) {
-                          void handlers.handleUseCard(card);
-                          setIsHandOpen(false);
-                        }
-                      }}
-                      className="text-white py-5 rounded-[1.5rem] font-black uppercase text-sm transition-all active:scale-95 shadow-2xl hover:brightness-110 shrink-0"
-                      style={{ 
-                        backgroundColor: card.bgCard || '#6366f1',
-                        boxShadow: `0 10px 30px ${(card.bgCard || '#6366f1')}40`
-                      }}
-                    >
-                      Использовать карту
-                    </button>
-                  </div>
+                    onUse={() => {
+                      handleCardClick(card);
+                      setIsHandOpen(false);
+                    }}
+                  />
                 </div>
               );
             })}
@@ -481,6 +407,60 @@ function AppClean() {
                 Отмена
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка выбора цели (игрока) */}
+      {pendingTargetCard && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[10005] p-4">
+          <div className="bg-zinc-900 border-2 border-purple-500/50 p-8 rounded-[2.5rem] w-full max-w-md flex flex-col gap-6 shadow-[0_0_50px_rgba(168,85,247,0.3)] animate-in zoom-in duration-300">
+            <div className="text-center">
+              <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">Выбор цели</h2>
+              <p className="text-purple-400 text-[10px] font-black uppercase tracking-[0.2em] mt-1">
+                Для карты "{pendingTargetCard.name}"
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
+              {players
+                .filter(p => p.id !== user?.uid && p.inGame && p.role !== 'admin')
+                .map(player => (
+                  <button
+                    key={player.id}
+                    onClick={() => {
+                      void handlers.handleUseCard(pendingTargetCard, player.id);
+                      setPendingTargetCard(null);
+                    }}
+                    className="flex items-center gap-4 bg-white/5 hover:bg-purple-500/20 border border-white/10 hover:border-purple-500/50 p-3 rounded-2xl transition-all group"
+                  >
+                    <div className="w-12 h-12 rounded-full p-[2px]" style={{ background: player.borderColor || '#fac319' }}>
+                      <img src={player.avatar || FALLBACK_AVATAR} className="w-full h-full rounded-full object-cover border-2 border-black" alt={player.login} />
+                    </div>
+                    <div className="flex flex-col items-start">
+                      <span className="text-white font-bold group-hover:text-purple-200 transition-colors" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+                        {player.login}
+                      </span>
+                      <span className="text-[10px] text-zinc-500 font-bold uppercase">
+                        Клетка {player.position ?? 0} • {player.tiltCoins ?? 0} 🦖
+                      </span>
+                    </div>
+                    <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-purple-400 font-black text-xs">
+                      ВЫБРАТЬ
+                    </div>
+                  </button>
+                ))}
+              {players.filter(p => p.id !== user?.uid && p.inGame && p.role !== 'admin').length === 0 && (
+                <div className="text-center py-4 text-zinc-500 italic">Нет доступных целей...</div>
+              )}
+            </div>
+
+            <button 
+              onClick={() => setPendingTargetCard(null)}
+              className="w-full py-4 text-zinc-500 hover:text-white font-bold uppercase text-xs tracking-widest transition-colors"
+            >
+              Отмена
+            </button>
           </div>
         </div>
       )}

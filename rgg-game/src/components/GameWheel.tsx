@@ -229,12 +229,13 @@ export const GameWheel: React.FC<Props> = ({
               <div
                 className="bg-yellow-500 text-black px-12 py-4 rounded-full font-black text-xl cursor-pointer hover:bg-white transition-all shadow-[0_0_30px_rgba(250,204,21,0.4)]"
                 onClick={spin}
+                style={{ fontFamily: "'Comfortaa', sans-serif" }}
               >
                 КРУТИТЬ!
               </div>
             )}
             {!spinning && (
-              <button onClick={onClose} className="text-zinc-500 hover:text-white hover:scale-105 active:scale-95 transition-all text-sm uppercase font-bold tracking-widest">
+              <button onClick={onClose} className="text-zinc-500 hover:text-white hover:scale-105 active:scale-95 transition-all text-sm uppercase font-bold tracking-widest" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
                 Закрыть
               </button>
             )}
@@ -284,7 +285,7 @@ export const GameWheel: React.FC<Props> = ({
         <div className="fixed inset-0 flex items-center justify-center z-[10000] bg-black/60 backdrop-blur-sm animate-in fade-in duration-300 px-4">
           <div className="bg-zinc-900 border-2 border-yellow-500 p-8 rounded-[2.5rem] shadow-[0_0_100px_rgba(0,0,0,1)] flex flex-col items-center gap-6 max-w-sm w-full transform animate-in zoom-in duration-300">
             <div className="text-center">
-              <p className="text-yellow-500 text-[10px] tracking-[0.4em] uppercase font-black mb-2 opacity-80">Выпала игра:</p>
+              <p className="text-yellow-500 text-[10px] tracking-[0.4em] uppercase font-black mb-2 opacity-80" style={{ fontFamily: "'Comfortaa', sans-serif" }}>Выпала игра:</p>
               <h2 className="text-4xl font-black text-white uppercase italic leading-tight drop-shadow-xl">{winner.name}</h2>
             </div>
             {winner.image && (
@@ -294,11 +295,11 @@ export const GameWheel: React.FC<Props> = ({
             )}
             <div className="flex flex-col w-full gap-3 mt-2">
               {canSpin && (
-                <button onClick={() => handleConfirmResult(winner)} className="w-full bg-yellow-500 text-black py-4 rounded-2xl font-black text-lg hover:bg-white transition-all uppercase">
+                <button onClick={() => handleConfirmResult(winner)} className="w-full bg-yellow-500 text-black py-4 rounded-2xl font-black text-lg hover:bg-white transition-all uppercase" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
                   Принять выбор
                 </button>
               )}
-              <button onClick={handleCloseWinner} className="w-full py-3 text-zinc-500 hover:text-white text-sm font-bold">
+              <button onClick={handleCloseWinner} className="w-full py-3 text-zinc-500 hover:text-white text-sm font-bold" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
                 <span className="hover:underline active:opacity-50 transition-all">Вернуться к колесу</span>
               </button>
             </div>
