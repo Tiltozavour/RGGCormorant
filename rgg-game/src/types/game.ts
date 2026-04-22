@@ -31,6 +31,7 @@ export interface Player {
   inGame?: boolean;
   inventory?: string[];   // Массив ID карточек
   role?: "admin" | "player";
+  isFrozen?: boolean;     // Флаг заморозки игрока (для Ледолуча)
   borderColor?: string;
   createdAt?: unknown;
 }
@@ -49,8 +50,11 @@ export interface GameState {
   showWheel: boolean;
   currentRoll: number | null;
   currentRollPlayerId: string | null;
+  lastBaseRoll: number | null; // Чистое значение кубика без бонусов
+  rollBonus: number; // Бонусные шаги от карт, использованных ДО броска
   rollConfirmed: boolean;
   gameHistory: GameHistoryEntry[];
+  revealedCards?: string[]; // Список ID карт, которые были "открыты" игроками
 }
 
 export const defaultGameState: GameState = {
@@ -67,6 +71,9 @@ export const defaultGameState: GameState = {
   showWheel: false,
   currentRoll: null,
   currentRollPlayerId: null,
+  lastBaseRoll: null,
+  rollBonus: 0,
   rollConfirmed: false,
   gameHistory: [],
+  revealedCards: [],
 };

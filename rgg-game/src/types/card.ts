@@ -15,7 +15,19 @@ export type CardAction =
   | 'freeze_player'    // Заморозить игрока
   | 'spin_wheel'       // Повторный запуск колеса
   | 'duel'             // Дуэль (PvP)
-  | 'challenge_gaben'; // Испытание Габена
+  | 'challenge_gaben'  // Испытание Габена (Агент Габена)
+  | 'prize'            // Призовая карта (легендарная)
+  | 'judge_coins'      // Судья душ (бросок кубика для +/- монет цели)
+  | 'deal_with_mage'   // Сделка с магом (бросок кубика для эффектов)
+  | 'discard_card'     // Сбросить карту противника (Оверпрайс)
+  | 'steal_card'       // Украсть карту (Лавка с сувенирами)
+  | 'reflect_debuff'   // Отразить дебафф (Уно реверс)
+  | 'move_target_for_coins' // Передвинуть цель за монеты (Заказное)
+  | 'discard_next_drawn' // Сбросить следующую полученную карту (Карт-бланш)
+  | 'move_target_and_self' // Двигает цель и себя (Подвинься!)
+  | 'pay_or_move_back' // Заплатить или отступить (Платити налоги!)
+  | 'take_next_card'   // Присвоить следующую выпавшую карту (Благодетель)
+  | 'give_next_card';  // Отдать следующую карту другому игроку (Такой себе пир)
 
 export interface GameCard {
   id: string;          // Уникальный ID (например, inv_001)
@@ -35,7 +47,6 @@ export interface GameCard {
   number: number;      // Порядковый номер в коллекции для удобства
   isUnique?: boolean;  // Флаг уникальности (для призовых карт)
   isWon?: boolean;     // Флаг: была ли карта уже выиграна
-  winnerId?: string;   // ID игрока, который выиграл карту
 }
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';

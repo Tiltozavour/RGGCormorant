@@ -32,7 +32,7 @@
   {
     "id": "inv_003",
     "name": "Энергетик 'Тильто-драйв'",
-    "description": "Дает возможность бросить кубик еще раз в текущем раунде.",
+    "description": "Дает возможность перебросить кубик еще раз после броска. Работает только в вашу очередь и до начала движения.",
     "deck": "inventory",
     "rarity": "epic",
     "action": "extra_roll",
@@ -53,7 +53,7 @@
     "action": "protection",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "artCard": "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExYnMzd3VyaGpvbncxbm9lYndoMmV2dnJ4anBmd3BwZHFpNzMzbjFsZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/OP4C9oeeSVIrwgFNAk/giphy.gif",
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
@@ -64,11 +64,11 @@
     "name": "Квантовый прыжок",
     "description": "Телепортирует вас на случайную ячейку b-shop впереди вас.",
     "deck": "inventory",
-    "rarity": "legendary",
+    "rarity": "epic",
     "action": "teleport_to_type",
     "value": 0,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "artCard": "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWJmamx0cjd3YjRjdzgza3hiYzdxYzlxNWRzbHNldDhlY2dwdWl3ZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/vaCfH4WZ6kE4Jel6K5/giphy.gif",
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
@@ -87,7 +87,7 @@
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 12
+    "number": 6
   },
   {
     "id": "inv_007",
@@ -98,43 +98,43 @@
     "action": "move_steps",
     "value": 2,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExYnhrYmhuaXNtYzRkbXJoMm1xYzZiMHVuOXRieTc1YTYya3ZvZDAxMyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/bjE9JbNSckM0w/giphy.gif",
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 11
+    "number": 7
   },
 
     {
     "id": "inv_008",
     "name": "Судья душ",
-    "description": "Выберете жертву и киньте кубик.  Решите,  пойдет жертва на +  ход или на - ход",
+    "description": "Выберете жертву и киньте кубик.  Решите,  получит жертва +2 монеты или потеряет",
     "deck": "inventory",
     "rarity": "rare",
-    "action": "move_steps",
+    "action": "judge_coins",
     "value": 2,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 13
+    "number": 8
   },
 
   {
     "id": "inv_009",
     "name": "Сделка с магом",
-    "description": "Киньте кубик : Если  1  - станьте проклятым (тяните негативную карточку),  2-4 -  получите +1 и станьте проклятым,  5-6 -  идите на +2",
+    "description": "Киньте кубик : Если  1  - станьте проклятым (тяните гемблинг карточку),  2-4 -  получите +2 монетки и станьте проклятым,  5-6 -  получите +2",
     "deck": "inventory",
     "rarity": "epic",
-    "action": "move_steps",
+    "action": "deal_with_mage",
     "value": 2,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 14
+    "number": 9
   },
 
   {
@@ -143,8 +143,87 @@
     "description": "Сбросьте одну карточку у другого игрока",
     "deck": "inventory",
     "rarity": "epic",
-    "action": "move_steps",
-    "value": 2,
+    "action": "discard_card",
+    "value": 1,
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": null,
+    "bgGradientStart": null,
+    "bgGradientEnd": null,
+    "number": 10
+  },
+
+    {
+    "id": "inv_011",
+    "name": "Лавка с сувенирами",
+    "description": "Заберите любую карту у другого игрока на ваш выбор",
+    "deck": "inventory",
+    "rarity": "epic",
+    "action": "steal_card",
+    "value": 1,
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": null,
+    "bgGradientStart": null,
+    "bgGradientEnd": null,
+    "number": 11
+  },
+
+   {
+    "id": "inv_012",
+    "name": "Уно реверс",
+    "description": "Отразите дебафф на наложившего",
+    "deck": "inventory",
+    "rarity": "epic",
+    "action": "reflect_debuff",
+    "value": 1,
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": null,
+    "bgGradientStart": null,
+    "bgGradientEnd": null,
+    "number": 12
+  },
+
+  {
+    "id": "inv_013",
+    "name": "Заказное",
+    "description": "Передвиньте другого игрока на столько клеток, сколько отдадите коинов",
+    "deck": "inventory",
+    "rarity": "common",
+    "action": "move_target_for_coins",
+    "value": 1,
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": null,
+    "bgGradientStart": null,
+    "bgGradientEnd": null,
+    "number": 13
+  },
+  {
+    "id": "inv_014",
+    "name": "Карт - бланш",
+    "description": "Сбросьте следующую полученную карточку",
+    "deck": "inventory",
+    "rarity": "rare",
+    "action": "discard_next_drawn",
+    "value": 1,
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "bgCard": null,
+    "bgGradientStart": null,
+    "bgGradientEnd": null,
+    "number": 14
+  },
+
+    {
+    "id": "inv_015",
+    "name": "Дуэль",
+    "description": "Вызовите кого-нибудь на битву, поставьте ставки и киньте кубик. Победитель забирает всю ставку",
+    "deck": "inventory",
+    "rarity": "rare",
+    "action": "duel",
+    "value": 1,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
@@ -153,14 +232,14 @@
     "number": 15
   },
 
-    {
-    "id": "inv_012",
-    "name": "Лавка с сувенирами",
-    "description": "Заберите любую карту у другого игрока на ваш выбор",
+  {
+    "id": "inv_016",
+    "name": "Подвинься!",
+    "description": " Двигайте любого игрока  на  +2,  а вы на  -1",
     "deck": "inventory",
-    "rarity": "epic",
-    "action": "move_steps",
-    "value": 2,
+    "rarity": "rare",
+    "action": "move_target_and_self",
+    "value": 1,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
@@ -168,15 +247,14 @@
     "bgGradientEnd": null,
     "number": 16
   },
-
-   {
-    "id": "inv_013",
-    "name": "Уно реверс",
-    "description": "Отразите дебафф на наложившего  (с тебя дебафф не снимается)",
+    {
+    "id": "inv_017",
+    "name": "Платити налоги!",
+    "description": "Заплатите 5 монет или двигайтесь на столько клеток назад, сколько скажет вытянувший карту(эффект на распространяется на всех кроме вытянувшего)",
     "deck": "inventory",
     "rarity": "epic",
-    "action": "move_steps",
-    "value": 2,
+    "action": "pay_or_move_back",
+    "value": 5,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
@@ -184,15 +262,14 @@
     "bgGradientEnd": null,
     "number": 17
   },
-
-  {
-    "id": "inv_014",
-    "name": "Жертвопредложение",
-    "description": "Передвиньте другого игрока на  -1 клетку",
+    {
+    "id": "inv_018",
+    "name": "Катжит не виноват!",
+    "description": "Киньте кубик,  4 или больше - украдите 10 коинов у другого игрока,  1-3 -  потеряете 10 коинов(нужно стоять или на одной клетки с игроком, или на соседней)",
     "deck": "inventory",
-    "rarity": "common",
-    "action": "move_steps",
-    "value": -1,
+    "rarity": "epic",
+    "action": "steal_coins",
+    "value": 10,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
@@ -200,13 +277,13 @@
     "bgGradientEnd": null,
     "number": 18
   },
-  {
-    "id": "inv_015",
-    "name": "Карт - бланш",
-    "description": "Сбросьте следующую полученную карточку",
+   {
+    "id": "inv_019",
+    "name": "Подкрутка",
+    "description": "Запустите колесо выбора игры еще раз",
     "deck": "inventory",
     "rarity": "rare",
-    "action": "move_steps",
+    "action": "spin_wheel",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
@@ -215,14 +292,13 @@
     "bgGradientEnd": null,
     "number": 19
   },
-
-    {
-    "id": "inv_016",
-    "name": "Дуэль",
-    "description": "Вызовите кого-нибудь на битву, поставьте ставки и киньте кубик. Победитель забирает всю ставку",
+     {
+    "id": "inv_020",
+    "name": "Ледолуч",
+    "description": "Заморозьте врага на той клетке где он сейчас, на этот ход если еще не ходил и на следующий если уже походил",
     "deck": "inventory",
-    "rarity": "rare",
-    "action": "move_steps",
+    "rarity": "epic",
+    "action": "freeze_player",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
@@ -231,90 +307,14 @@
     "bgGradientEnd": null,
     "number": 20
   },
-
-  {
-    "id": "inv_017",
-    "name": "Подвинься!",
-    "description": " Двигайте любого игрока  на  +2,  а вы на  -1",
-    "deck": "inventory",
-    "rarity": "rare",
-    "action": "move_steps",
-    "value": 1,
-    "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
-    "bgCard": null,
-    "bgGradientStart": null,
-    "bgGradientEnd": null,
-    "number": 21
-  },
-    {
-    "id": "inv_018",
-    "name": "Назад в будущее",
-    "description": "Вы отправляйтесь  на  -2,  а все остальные  -1",
-    "deck": "inventory",
-    "rarity": "epic",
-    "action": "move_steps",
-    "value": 1,
-    "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
-    "bgCard": null,
-    "bgGradientStart": null,
-    "bgGradientEnd": null,
-    "number": 21
-  },
-    {
-    "id": "inv_019",
-    "name": "ВОР МОНЕТ!",
-    "description": "Киньте кубик,  4 или больше - украдите 10 коинов у другого игрока,  1-3 -  потеряете 10 коинов",
-    "deck": "inventory",
-    "rarity": "epic",
-    "action": "move_steps",
-    "value": 1,
-    "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
-    "bgCard": null,
-    "bgGradientStart": null,
-    "bgGradientEnd": null,
-    "number": 22
-  },
-   {
-    "id": "inv_020",
-    "name": "Подкрутка",
-    "description": "Запустите колесо выбора игры еще раз",
-    "deck": "inventory",
-    "rarity": "rare",
-    "action": "move_steps",
-    "value": 1,
-    "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
-    "bgCard": null,
-    "bgGradientStart": null,
-    "bgGradientEnd": null,
-    "number": 23
-  },
-     {
-    "id": "inv_021",
-    "name": "Ледолуч",
-    "description": "Заморозьте врага на той клетке где он сейчас, на этот ход если езе не ходил и на следующий если уже походил",
-    "deck": "inventory",
-    "rarity": "epic",
-    "action": "move_steps",
-    "value": 1,
-    "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
-    "bgCard": null,
-    "bgGradientStart": null,
-    "bgGradientEnd": null,
-    "number": 24
-  },
        {
     "id": "inv_021",
     "name": "Монетка Континенталь",
-    "description": "Заплатите за проход по гемблинг клетки без последствий",
+    "description": "Заплатите за проход по гемблинг клетки без последствий (стоимость 3 монетки)",
     "deck": "inventory",
     "rarity": "epic",
-    "action": "move_steps",
-    "value": 1,
+    "action": "add_coins",
+    "value": -3,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
@@ -327,17 +327,17 @@
   {
     "id": "mom_001",
     "name": "Налоговая инспекция",
-    "description": "Ой! Придется заплатить штраф в казну общества. Теряете 20 коинов.",
+    "description": "Ой! Придется заплатить штраф в казну общества. Теряете 7 коинов.",
     "deck": "momental",
     "rarity": "common",
     "action": "add_coins",
-    "value": -20,
+    "value": -7,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 6
+    "number":22
   },
   {
     "id": "mom_002",
@@ -352,29 +352,29 @@
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 7
+    "number": 23
   },
   {
     "id": "mom_003",
-    "name": "Благословение Кометы",
-    "description": "Звезды сошлись удачно. Получите +50 коинов немедленно.",
+    "name": "Фортуна Николая",
+    "description": "Звезды сошлись удачно. Получите +15 коинов немедленно.",
     "deck": "momental",
     "rarity": "epic",
     "action": "add_coins",
-    "value": 50,
+    "value": 15,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 8
+    "number": 24
   },
   {
     "id": "mom_004",
     "name": "Черная дыра",
     "description": "Пространство искажается. Вы возвращаетесь на клетку 0.",
     "deck": "momental",
-    "rarity": "legendary",
+    "rarity": "epic",
     "action": "teleport",
     "value": 0,
     "faceCard": "/cards/card_back.svg",
@@ -382,7 +382,7 @@
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 9
+    "number": 25
   },
   {
     "id": "mom_005",
@@ -397,22 +397,22 @@
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 10
+    "number": 26
   }, 
     {
     "id": "mom_006",
     "name": "Благодетель",
-    "description": "Присвойте выпавшую карточку  следующего игрока",
+    "description": "Присвойте выпавшую карточку следующего игрока)",
     "deck": "momental",
     "rarity": "rare",
-    "action": "skip_turn",
+    "action": "take_next_card",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 11
+    "number": 27
   },
    {
     "id": "mom_007",
@@ -420,29 +420,46 @@
     "description": "Следующая карта вслепую отдаётся другому игроку ",
     "deck": "momental",
     "rarity": "rare",
-    "action": "skip_turn",
+    "action": "give_next_card",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 12
+    "number": 28
   },
     {
     "id": "mom_008",
     "name": "Агент Габена",
-    "description": "Продержитесь два хода на одной клетке, если вас никто не столкнет,  получите 10 коинов",  
+    "description": "Продержитесь два хода на одной клетке, если вас никто не столкнет,  получите 20 коинов, или тот кто вас столкнет получит 20 коинов",  
     "deck": "momental",
     "rarity": "epic",
-    "action": "skip_turn",
-    "value": 1,
+    "action": "challenge_gaben",
+    "value": 20,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
     "bgCard": null,
     "bgGradientStart": null,
     "bgGradientEnd": null,
-    "number": 12
+    "number": 29
+  },
+
+
+      {
+    "id": "leg_001",
+    "name": "Амадэхи",
+    "description": "Белый олень у моего порога всего лишь сулит перемены. Но готовы ли мы к ним?",  
+    "deck": "inventory",
+    "rarity": "legendary",
+    "action": "prize",
+    "value": 0,
+    "faceCard": "/cards/card_face_light.svg",
+    "artCard": "/cards/legend/amadehi.gif",
+    "bgCard": null,
+    "bgGradientStart": null,
+    "bgGradientEnd": null,
+    "number": 30
   }
 
 ]

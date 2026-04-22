@@ -23,10 +23,6 @@ const GameCard: React.FC<GameCardProps> = ({
   
   // Вычисляем эффективный фоновый цвет для кнопок и наложений
   const effectiveBg = isHexColor(card.bgCard) ? card.bgCard : config.bgCard;
-  
-  // Выравниваем карточки ровно в ряд (убираем поворот и наложение)
-  const rotation = 0;
-  const translateX = 0;
 
   return (
     <>
@@ -77,7 +73,7 @@ const GameCard: React.FC<GameCardProps> = ({
 
       {/* TOP SECTION (60%) */}
       <div 
-        className={`relative h-[60%] w-full flex items-center justify-center overflow-hidden bg-gradient-to-b ${config.artGradient}`}
+        className={`relative h-[60%] w-full flex ${card.rarity === 'legendary' ? 'items-end' : 'items-center'} justify-center overflow-hidden bg-gradient-to-b ${config.artGradient}`}
       >
         {/* Holographic Overlay for Legendary */}
         {card.rarity === 'legendary' && (
@@ -103,7 +99,7 @@ const GameCard: React.FC<GameCardProps> = ({
           <img 
             src={card.artCard} 
             alt={card.name} 
-            className="h-[80%] w-[80%] object-contain drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-20 transition-transform duration-500 group-hover:scale-110" 
+            className={`${card.rarity === 'legendary' ? 'h-full w-full' : 'h-[80%] w-[80%]'} object-contain ${card.rarity === 'legendary' ? 'object-bottom' : ''} drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-20 transition-transform duration-500 group-hover:scale-110`} 
           />
         ) : (
           <div className="text-white/10 font-black text-4xl italic tracking-tighter rotate-12 z-0">NO ART</div>
@@ -140,7 +136,7 @@ const GameCard: React.FC<GameCardProps> = ({
           <h2 className="text-2xl font-black text-white uppercase tracking-tight drop-shadow-sm line-clamp-1 italic">
             {card.name}
           </h2>
-          <p className="text-[11px] leading-relaxed text-zinc-400 font-medium italic line-clamp-3 px-2" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+          <p className="text-[11px] leading-relaxed text-white font-medium italic line-clamp-3 px-2" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
             "{card.description}"
           </p>
         </div>

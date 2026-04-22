@@ -132,7 +132,9 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
         ? "❄️ ЗАМОРОЖЕН"
         : gameState.phase !== "turn"
           ? "Ход недоступен"
-          : "Бросить кубик";
+          : (gameState.rollBonus ?? 0) > 0
+            ? `Бросить кубик (+${gameState.rollBonus})`
+            : "Бросить кубик";
 
   return (
     <div className="w-full h-40 border-t border-purple-500/20 bg-black/40 backdrop-blur-md flex flex-col" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
@@ -154,9 +156,17 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
         {gameState.currentRoll !== null &&
           !gameState.rollConfirmed &&
           canConfirmRoll && (
-            <div className="flex items-center gap-3 bg-yellow-900/40 border border-yellow-500/30 px-4 py-2 rounded">
-              <span className="text-lg text-yellow-200">
-                Выпало: <b>{gameState.currentRoll}</b>
+            <div className="flex items-center gap-3 bg-yellow-900/40 border border-yellow-500/30 px-4 py-2 rounded-xl shadow-[0_0_20px_rgba(250,195,25,0.2)]">
+              <span className="text-base text-yellow-200 flex items-center gap-2">
+                Выпало: 
+                <b className="text-2xl tracking-tighter">
+                  {gameState.lastBaseRoll}
+                  {gameState.currentRoll !== gameState.lastBaseRoll && (
+                    <span className="text-green-400 text-lg ml-1">
+                      + {gameState.currentRoll! - (gameState.lastBaseRoll || 0)}
+                    </span>
+                  )}
+                </b>
               </span>
               <button
                 onClick={onConfirmRoll}

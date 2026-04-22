@@ -136,13 +136,73 @@ export function useGameData() {
 
   const handleUseCard = async (card: GameCard, targetPlayerId?: string) => {
     if (!user || !playerData) return;
+
+    // Проверка прав и фаз игры (Админ может всё)
+    if (!isAdmin) {
+      const { phase, currentRoll } = gameState;
+
+      if (phase === 'next_game') {
+        // В фазе выбора игры можно только крутить колесо
+        if (card.action !== 'spin_wheel') {
+          alert("Эту карту можно использовать только во время хода на поле!");
+          return;
+        }
+      } else if (phase === 'turn') {
+        const isProtection = card.action === 'protection';
+        const isExtraRoll = card.action === 'extra_roll';
+        const isMovement = card.action === 'move_steps';
+
+        // Защиту можно использовать всегда
+        if (isProtection) return; 
+
+        // Карты перемещения и переброса требуют твоего хода
+        if (isExtraRoll || isMovement) {
+          if (!isCurrentPlayersTurn) {
+            alert("Сейчас не ваш ход!");
+            return;
+          }
+        } else {
+          // Все остальные карты — только в свой ход и ДО броска
+          if (!isCurrentPlayersTurn) {
+            alert("Сейчас не ваш ход!");
+            return;
+          }
+          if (currentRoll !== null) {
+            alert("Вы уже бросили кубик! Обычные карты используются ДО броска.");
+            return;
+          }
+        }
+
+        if (isExtraRoll && currentRoll === null) {
+          alert("Сначала бросьте кубик!");
+          return;
+        }
+      } else {
+        alert("Сейчас нельзя использовать карты. Дождитесь нужной фазы игры.");
+        return;
+      }
+    }
+
     try {
       const playerRef = doc(db, "players", user.uid);
       const targetRef = targetPlayerId ? doc(db, "players", targetPlayerId) : null;
 
       await updateDoc(playerRef, { inventory: arrayRemove(card.id) });
 
+      // Добавляем карту в глобальную коллекцию "открытых"
+      await updateDoc(doc(db, "gameState", "current"), {
+        revealedCards: arrayUnion(card.id)
+      });
+
       switch (card.action) {
+        case 'extra_roll':
+          await updateDoc(doc(db, "gameState", "current"), {
+            currentRoll: null,
+            rollConfirmed: false,
+          });
+          alert("Энергетик подействовал! Бросайте кубик еще раз.");
+          break;
+
         case 'add_coins':
           // Если есть цель (например, кража), можно добавить логику здесь, 
           // но обычно монеты добавляются себе
@@ -150,19 +210,44 @@ export function useGameData() {
           break;
 
         case 'move_steps':
-          // Если выбрана цель (Судья душ / Жертвопредложение)
-          const subjectRef = targetRef || playerRef;
-          const subjectData = targetPlayerId ? players.find(p => p.id === targetPlayerId) : playerData;
-          
-          // Для мгновенного перемещения через карту
-          const currentPos = subjectData?.position || 0;
-          const newPos = currentPos + card.value;
-          await updateDoc(subjectRef, { position: Math.max(0, newPos), prevCell: currentPos });
-          
-          if (targetPlayerId) {
-            alert(`Игрок ${subjectData?.login} перемещен на ${card.value} кл.`);
+          {
+            // Вместо телепортации по ID, мы добавляем шаги к текущему броску.
+            // Это заставит фишку "идти" по карте, учитывая стрелочки и развилки.
+            const targetId = targetPlayerId || user.uid;
+            const isForward = card.value > 0;
+
+            if (isForward && gameState.phase === 'turn') {
+              // Проверяем: есть ли активный бросок ИМЕННО ДЛЯ ТЕКУЩЕГО игрока
+              const isMyRollActive = gameState.currentRoll !== null && gameState.currentRollPlayerId === user.uid;
+
+              if (!isMyRollActive) {
+                // Если я еще не бросал — добавляем в скрытый бонус к будущему броску
+                await updateDoc(doc(db, "gameState", "current"), {
+                  rollBonus: increment(card.value)
+                });
+                alert(`Карта "${card.name}" активирована! К вашему следующему броску будет добавлено +${card.value} кл.`);
+              } else {
+                // Если я УЖЕ бросил кубик — увеличиваем текущее значение
+                await updateDoc(doc(db, "gameState", "current"), {
+                  currentRoll: increment(card.value),
+                  currentRollPlayerId: targetId,
+                  rollConfirmed: false 
+                });
+                alert(`Карта "${card.name}" добавила шаги! Теперь на счетчике: ${(gameState.currentRoll || 0) + card.value}`);
+              }
+            } else {
+              // Для отрицательных перемещений (назад) оставляем телепортацию, 
+              // так как карта обычно не поддерживает движение в обратную сторону по стрелкам.
+              const subjectRef = targetRef || playerRef;
+              const currentPos = (targetPlayerId ? players.find(p => p.id === targetPlayerId) : playerData)?.position || 0;
+              await updateDoc(subjectRef, { 
+                position: Math.max(0, currentPos + card.value), 
+                prevCell: null 
+              });
+              alert(targetPlayerId ? "Игрок отброшен назад!" : "Вас отбросило назад!");
+            }
+            break;
           }
-          break;
 
         case 'teleport':
           await updateDoc(playerRef, { position: card.value, prevCell: null });
@@ -208,6 +293,55 @@ export function useGameData() {
           await updateDoc(playerRef, { hasProtection: true });
           break;
 
+        case 'prize':
+          alert(`🏆 СУПЕР-ПРИЗ!\nКарта будет удалена из инвентаря. Свяжитесь с администратором, назовите карту ${card.name}.`);
+          break;
+        
+        case 'judge_coins':
+          if (targetRef) {
+            alert(`Судья душ: Игрок ${players.find(p => p.id === targetPlayerId)?.login} будет бросать кубик для +/- ${card.value} монет.`);
+            // TODO: Implement actual dice roll for target and conditional coin change
+          } else {
+            alert(`Судья душ: Выберите цель для применения эффекта.`);
+          }
+          break;
+
+        case 'deal_with_mage':
+          alert(`Сделка с магом: Бросьте кубик, чтобы узнать свою судьбу!`);
+          // TODO: Implement dice roll and apply effects (curse, add_coins)
+          break;
+
+        case 'discard_card':
+          if (targetRef) {
+            alert(`Оверпрайс: Игрок ${players.find(p => p.id === targetPlayerId)?.login} сбросит ${card.value} карту.`);
+            // TODO: Implement logic to make target discard a card
+          } else {
+            alert(`Оверпрайс: Выберите игрока, чтобы сбросить его карту.`);
+          }
+          break;
+
+        case 'steal_card':
+          if (targetRef) {
+            alert(`Лавка с сувенирами: Выберите карту у игрока ${players.find(p => p.id === targetPlayerId)?.login}.`);
+            // TODO: Implement UI for current player to choose a card from target's inventory
+          } else {
+            alert(`Лавка с сувенирами: Выберите игрока, у которого хотите украсть карту.`);
+          }
+          break;
+
+        case 'reflect_debuff':
+          alert(`Уно реверс: Следующий дебафф будет отражен!`);
+          // TODO: Implement a temporary status for reflecting debuffs
+          break;
+
+        // Для остальных новых действий пока оставим заглушки
+        case 'move_target_for_coins': alert(`Заказное: Передвиньте игрока за монеты.`); break;
+        case 'discard_next_drawn': alert(`Карт-бланш: Следующая карта будет сброшена.`); break;
+        case 'move_target_and_self': alert(`Подвинься!: Передвиньте игрока и себя.`); break;
+        case 'pay_or_move_back': alert(`Платити налоги!: Заплатите или отступите.`); break;
+        case 'take_next_card': alert(`Благодетель: Присвойте следующую карту.`); break;
+        case 'give_next_card': alert(`Такой себе пир: Отдайте следующую карту.`); break;
+
         default:
           console.warn("Действие карты не распознано:", card.action);
       }
@@ -252,10 +386,15 @@ export function useGameData() {
 
   const handleRoll = async () => {
     if (!user || !canRoll) return;
+    const bonus = gameState.rollBonus || 0;
+    const baseRoll = Math.floor(Math.random() * 6) + 1;
+    
     await updateDoc(doc(db, "gameState", "current"), {
-      currentRoll: Math.floor(Math.random() * 6) + 1,
+      currentRoll: baseRoll + bonus,
+      lastBaseRoll: baseRoll,
       currentRollPlayerId: user.uid,
       rollConfirmed: false,
+      rollBonus: 0, // Сбрасываем бонус после использования
     });
   };
 
@@ -280,6 +419,8 @@ export function useGameData() {
       currentTurnIndex: 0,
       currentRoll: null,
       currentRollPlayerId: null,
+      lastBaseRoll: null,
+      rollBonus: 0,
       rollConfirmed: false,
     };
   };
@@ -306,6 +447,8 @@ export function useGameData() {
     } else {
       payload.currentRoll = null;
       payload.currentRollPlayerId = null;
+      payload.lastBaseRoll = null;
+      payload.rollBonus = 0;
       payload.rollConfirmed = false;
     }
 

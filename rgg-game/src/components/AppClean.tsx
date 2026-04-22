@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Auth from "./Auth";
 import { syncWheelResult, syncWheelVisibility } from "./gameStateService";
 import BottomPanel from "./BottomPanelPhase";
-import GameBoard from "./GameBoard";
+import GameBoard from "./GameBoard"; // Corrected import path
 import PlayersSidebar from "./PlayersSidebar";
 import ScoresDetailsPage from "./ScoresDetailsPage";
 import type { Player } from "../types/game";
@@ -25,7 +25,88 @@ function AppClean() {
   const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(false);
   const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<GameCardType | null>(null);
+  const [isCollectionOpen, setIsCollectionOpen] = useState(false); // Состояние для музея карт
   const [isHandOpen, setIsHandOpen] = useState(false); // Состояние для открытия "руки" с картами
+  const [coinNotification, setCoinNotification] = useState<{ amount: number; type: 'gain' | 'loss' } | null>(null);
+  const [gameAlert, setGameAlert] = useState<{ title: string; message: string; type?: 'info' | 'success' | 'warning' } | null>(null);
+  const [pendingTargetCard, setPendingTargetCard] = useState<GameCardType | null>(null); // Карта, ожидающая выбора цели
+
+  // Логика отслеживания изменения монет для всплывающего уведомления
+  const prevCoinsRef = useRef<number | undefined>(playerData?.tiltCoins);
+
+  useEffect(() => {
+    if (playerData?.tiltCoins !== undefined && prevCoinsRef.current !== undefined) {
+      const diff = playerData.tiltCoins - prevCoinsRef.current;
+      if (diff !== 0) {
+        setCoinNotification({ amount: Math.abs(diff), type: diff > 0 ? 'gain' : 'loss' });
+        // Скрываем уведомление через 3 секунды
+        const timer = setTimeout(() => setCoinNotification(null), 3000);
+        return () => clearTimeout(timer);
+      }
+    }
+    prevCoinsRef.current = playerData?.tiltCoins;
+  }, [playerData?.tiltCoins]);
+
+  // Проверка: требует ли карта выбора цели?
+  const cardNeedsTarget = (card: GameCardType) => {
+    const targetActions: string[] = ['steal_coins', 'steal_card', 'discard_card', 'freeze_player', 'duel', 'judge_coins'];
+    // inv_007: Карта движения (может на себя или другого), inv_013: Заказное, inv_017: Налоги, inv_018: Катжит, inv_020: Ледолуч
+    const targetIds = ['inv_007', 'inv_013', 'inv_017', 'inv_018', 'inv_020']; 
+    return targetActions.includes(card.action) || targetIds.includes(card.id);
+  };
+
+  const handleCardClick = (card: GameCardType) => {
+    // Предварительная проверка правил использования (дублируем логику из хука для UI)
+    if (!isAdmin) {
+      const { phase, currentRoll } = gameState;
+      const isProtection = card.action === 'protection';
+      const isWheelCard = card.action === 'spin_wheel';
+      const isExtraRoll = card.action === 'extra_roll';
+      const isMovement = card.action === 'move_steps';
+
+      if (phase === 'next_game' && !isWheelCard) {
+        alert("В этой фазе можно использовать только карту 'Подкрутка'!");
+        return;
+      }
+      
+      if (phase === 'turn') {
+        // Защиту можно всегда. Остальное только в свой ход.
+        if (!isProtection && currentTurnPlayerId !== user?.uid) {
+          alert("Сейчас не ваш ход!");
+          return;
+        }
+
+        if (isMovement && gameState.rollConfirmed) {
+          alert("Вы уже начали движение! Использовать карту перемещения можно только до подтверждения хода.");
+          return;
+        }
+
+        // Обычные карты (не движение, не защита, не переброс) только ДО броска
+        const isSpecialAction = isProtection || isExtraRoll || isMovement;
+        const isMyRollDone = currentRoll !== null && gameState.currentRollPlayerId === user?.uid;
+
+        if (!isSpecialAction && isMyRollDone) {
+          alert("Ход уже начался (кубик брошен). Использование карт заблокировано.");
+          return;
+        }
+
+        if (isExtraRoll && currentRoll === null) {
+          alert("Сначала бросьте кубик, чтобы использовать переброс!");
+          return;
+        }
+      } else if (phase !== 'next_game') {
+        alert("Использование карт в этой фазе запрещено.");
+        return;
+      }
+    }
+
+    if (cardNeedsTarget(card)) {
+      setPendingTargetCard(card);
+    } else {
+      void handlers.handleUseCard(card);
+    }
+  };
+  
 
   // Автоматическое открытие панели при прокрутке вниз
   useEffect(() => {
@@ -113,7 +194,22 @@ function AppClean() {
                 {playerData.login}
               </span>
               {!isAdmin && (
-              <span className="text-sm text-green-400 font-black leading-none mt-1"  style={{ fontFamily: "'Comfortaa', sans-serif" }}>{playerData.tiltCoins ?? 0} 🦖</span>
+                <div className="relative">
+                  <span className="text-sm text-green-400 font-black leading-none mt-1 flex items-center gap-1" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+                    {playerData.tiltCoins ?? 0} 🦖
+                  </span>
+                  
+                  {/* Всплывающее уведомление об изменении коинов */}
+                  {coinNotification && (
+                    <div 
+                      className={`absolute -bottom-6 right-0 font-black text-sm animate-in fade-in slide-in-from-top-2 duration-500 pointer-events-none drop-shadow-md
+                        ${coinNotification.type === 'gain' ? 'text-green-400' : 'text-red-500'}`}
+                      style={{ fontFamily: "'Comfortaa', sans-serif" }}
+                    >
+                      {coinNotification.type === 'gain' ? '+' : '-'}{coinNotification.amount}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             
@@ -209,7 +305,7 @@ function AppClean() {
             index={0} 
             totalCards={1} 
             onUse={() => {
-              void handlers.handleUseCard(selectedCard);
+              handleCardClick(selectedCard);
               setSelectedCard(null);
             }}
           />
@@ -247,13 +343,73 @@ function AppClean() {
                     setIsHandOpen(false);
                   }}
                   onUse={() => {
-                    void handlers.handleUseCard(card);
+                    handleCardClick(card);
                     setIsHandOpen(false);
                   }}
                 />
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Экран МУЗЕЯ / КОЛЛЕКЦИИ */}
+      {isCollectionOpen && (
+        <div 
+          className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md z-[10002] flex flex-col items-center py-20 overflow-hidden animate-in fade-in duration-500"
+          onClick={() => setIsCollectionOpen(false)}
+        >
+          <div className="text-center mb-12 pointer-events-none">
+            <h2 className="text-5xl font-black text-yellow-500 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(234,179,8,0.3)]">Галерея Артефактов</h2>
+            <p className="text-white/40 text-xs font-bold uppercase tracking-[0.5em] mt-4">Карты открываются после использования игроками</p>
+          </div>
+
+          <div 
+            className="flex flex-wrap gap-10 justify-center overflow-y-auto px-10 pb-20 max-w-7xl custom-scrollbar"
+            onClick={e => e.stopPropagation()}
+          >
+            {Object.values(allCards)
+              .sort((a, b) => a.number - b.number)
+              .map((card) => {
+                const isRevealed = gameState.revealedCards?.includes(card.id);
+                
+                if (!isRevealed) {
+                  return (
+                    <div 
+                      key={card.id}
+                      className="w-80 h-[520px] rounded-[2.5rem] bg-zinc-900 border-2 border-white/5 flex flex-col items-center justify-center gap-4 relative group"
+                    >
+                      <img 
+                        src="/cards/card_back.svg" 
+                        className="w-full h-full object-cover rounded-[2.5rem] opacity-20 grayscale" 
+                        alt="locked" 
+                      />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-white/10 text-6xl font-black italic">?</span>
+                        <span className="text-zinc-700 text-[10px] font-black uppercase tracking-widest mt-4">Неизвестный артефакт</span>
+                        <span className="text-zinc-800 text-[8px] font-bold mt-1 italic">#{card.number}</span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={card.id} className="relative group">
+                    <GameCard
+                      card={card}
+                      index={0}
+                      totalCards={1}
+                      onClick={() => setSelectedCard(card)}
+                    />
+                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
+                      Раскрыто
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+          
+          <button className="mt-8 text-zinc-500 hover:text-white font-black uppercase text-xs tracking-widest transition-all">Нажмите в любое место, чтобы выйти</button>
         </div>
       )}
 
@@ -307,6 +463,18 @@ function AppClean() {
           </div>
 
           <div className="flex flex-col gap-5 w-full">
+            {/* Кнопка открытия коллекции */}
+            <button
+              onClick={() => {
+                setIsCollectionOpen(true);
+                setIsSidebarOpen(false);
+              }}
+              className="w-full py-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-center gap-3 group hover:bg-yellow-500/20 transition-all active:scale-95"
+            >
+              <span className="text-xl group-hover:rotate-12 transition-transform">🏺</span>
+              <span className="text-yellow-500 font-black uppercase text-xs tracking-widest">Галерея артефактов</span>
+            </button>
+
             <div className="flex flex-col gap-2">
               <label htmlFor="nickname-input" className="text-[10px] uppercase font-black text-zinc-500 tracking-[0.2em] px-1">Ваш позывной</label>
               <input 
@@ -379,6 +547,30 @@ function AppClean() {
                 Отмена
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* КРАСИВОЕ ИГРОВОЕ УВЕДОМЛЕНИЕ */}
+      {gameAlert && (
+        <div className="fixed inset-0 flex items-center justify-center z-[20000] p-6 animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setGameAlert(null)} />
+          <div className="relative bg-zinc-900 border-2 border-yellow-500/50 p-8 rounded-[2rem] max-w-sm w-full shadow-[0_0_50px_rgba(0,0,0,1)] text-center transform animate-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-yellow-500/20">
+              <span className="text-3xl">🔔</span>
+            </div>
+            <h3 className="text-xl font-black text-yellow-500 uppercase italic tracking-tighter mb-2">
+              {gameAlert.title}
+            </h3>
+            <p className="text-zinc-300 text-sm font-medium leading-relaxed mb-6" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+              {gameAlert.message}
+            </p>
+            <button 
+              onClick={() => setGameAlert(null)}
+              className="w-full py-4 bg-yellow-500 text-black rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-white transition-all active:scale-95"
+            >
+              Понятно
+            </button>
           </div>
         </div>
       )}
