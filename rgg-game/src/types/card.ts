@@ -34,6 +34,8 @@ export interface GameCard {
   bgGradientEnd?: string;   // Конечный цвет градиента
   number: number;      // Порядковый номер в коллекции для удобства
   isUnique?: boolean;  // Флаг уникальности (для призовых карт)
+  isWon?: boolean;     // Флаг: была ли карта уже выиграна
+  winnerId?: string;   // ID игрока, который выиграл карту
 }
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';

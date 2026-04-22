@@ -57,11 +57,21 @@ export function useGameData() {
   }, []);
 
   useEffect(() => {
-    return onSnapshot(collection(db, "cards"), (snap) => {
-      const cardMap: Record<string, GameCard> = {};
-      snap.docs.forEach((d) => { cardMap[d.id] = { id: d.id, ...d.data() } as GameCard; });
-      setAllCards(cardMap);
+    // Слушаем обычные карты
+    const unsubCards = onSnapshot(collection(db, "cards"), (snap) => {
+      const cards: Record<string, GameCard> = {};
+      snap.docs.forEach((d) => { cards[d.id] = { id: d.id, ...d.data() } as GameCard; });
+      setAllCards(prev => ({ ...prev, ...cards }));
     });
+
+    // Слушаем призовые карты
+    const unsubPrizes = onSnapshot(collection(db, "prizes"), (snap) => {
+      const prizes: Record<string, GameCard> = {};
+      snap.docs.forEach((d) => { prizes[d.id] = { id: d.id, ...d.data() } as GameCard; });
+      setAllCards(prev => ({ ...prev, ...prizes }));
+    });
+
+    return () => { unsubCards(); unsubPrizes(); };
   }, []);
 
   // Derived State
@@ -105,11 +115,23 @@ export function useGameData() {
   const grantPrizeCard = async (playerId: string, cardId: string) => {
     if (!isAdmin) return;
     const playerRef = doc(db, "players", playerId);
-    await updateDoc(playerRef, {
-      inventory: arrayUnion(cardId)
-    });
-    // Здесь можно добавить логику удаления карты из "пула доступных призов" в БД,
-    // если она помечена как isUnique
+    const prizeRef = doc(db, "prizes", cardId);
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const prizeSnap = await transaction.get(prizeRef);
+        if (!prizeSnap.exists()) return;
+
+        const prizeData = prizeSnap.data() as GameCard;
+        // Если карта уникальная и уже выиграна — отменяем
+        if (prizeData.isUnique && prizeData.isWon) return;
+
+        transaction.update(playerRef, { inventory: arrayUnion(cardId) });
+        transaction.update(prizeRef, { isWon: true, winnerId: playerId });
+      });
+    } catch (e) {
+      console.error("Ошибка при выдаче приза:", e);
+    }
   };
 
   const handleUseCard = async (card: GameCard, targetPlayerId?: string) => {

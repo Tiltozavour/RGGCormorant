@@ -14,9 +14,14 @@ export const uploadStarterCards = async () => {
     const batch = writeBatch(db);
     
     starterCards.forEach((card) => {
-      const cardRef = doc(db, "cards", card.id);
-      // Приводим тип из JSON к нашему интерфейсу GameCard
-      batch.set(cardRef, card as GameCard);
+      // Если карта легендарная, сохраняем её в отдельную коллекцию 'prizes'
+      if (card.rarity === 'legendary') {
+        const prizeRef = doc(db, "prizes", card.id);
+        batch.set(prizeRef, card as GameCard);
+      } else {
+        const cardRef = doc(db, "cards", card.id);
+        batch.set(cardRef, card as GameCard);
+      }
     });
 
     await batch.commit();

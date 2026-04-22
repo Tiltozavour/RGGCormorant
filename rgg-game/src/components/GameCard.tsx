@@ -24,10 +24,9 @@ const GameCard: React.FC<GameCardProps> = ({
   // Вычисляем эффективный фоновый цвет для кнопок и наложений
   const effectiveBg = isHexColor(card.bgCard) ? card.bgCard : config.bgCard;
   
-  // Эффект веера
-  const maxAngle = 15;
-  const rotation = isInHand ? (index - (totalCards - 1) / 2) * (maxAngle / Math.max(totalCards, 1)) : 0;
-  const translateX = isInHand ? (index - (totalCards - 1) / 2) * 20 : 0;
+  // Выравниваем карточки ровно в ряд (убираем поворот и наложение)
+  const rotation = 0;
+  const translateX = 0;
 
   return (
     <>
@@ -66,10 +65,9 @@ const GameCard: React.FC<GameCardProps> = ({
       `}} />
     <div 
       onClick={onClick}
-      className={`relative w-80 h-[520px] shrink-0 flex flex-col overflow-hidden rounded-[2.5rem] border-2 transition-all duration-500 cursor-pointer group select-none ${config.border} ${config.glow} bg-zinc-950 
-        ${card.rarity === 'legendary' ? 'animate-float animate-legendary-glow' : ''}`}
+      className={`relative w-80 h-[520px] shrink-0 flex flex-col overflow-hidden rounded-[2.5rem] border-2 transition-all duration-500 cursor-pointer group select-none ${config.border} ${config.glow} bg-zinc-950 hover:scale-105 hover:-translate-y-4 hover:shadow-[0_30px_60px_rgba(0,0,0,0.8)]
+        ${card.rarity === 'legendary' ? 'animate-float animate-legendary-glow hover:animate-none' : ''}`}
       style={{
-        transform: isInHand ? `rotate(${rotation}deg) translateX(${translateX}px)` : 'scale(1)',
         zIndex: isInHand ? index + 10 : 1,
         transitionDelay: isInHand ? `${index * 30}ms` : '0ms',
       }}

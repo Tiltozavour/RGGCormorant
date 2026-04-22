@@ -246,7 +246,7 @@ function AppClean() {
           </div>
 
           <div 
-            className="flex gap-8 overflow-x-auto px-20 py-10 max-w-full custom-scrollbar items-center select-none"
+            className="flex gap-8 overflow-x-auto px-20 py-20 max-w-full custom-scrollbar items-center select-none"
             onClick={e => e.stopPropagation()}
           >
             {/* Сначала выводим легендарные призы, потом всё остальное */}
