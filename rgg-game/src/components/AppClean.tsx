@@ -196,7 +196,7 @@ function AppClean() {
             <div className="flex flex-col items-end hidden sm:flex">
               <span 
                 className="text-sm font-black text-white tracking-tight"
-                style={{ fontFamily: "'Comfortaa', sans-serif" }}
+                style={{ fontFamily: "'Comfortaa', sans-serif" } as React.CSSProperties}
               >
                 {playerData.login}
               </span>
@@ -211,7 +211,7 @@ function AppClean() {
                     <div 
                       className={`absolute -bottom-6 right-0 font-black text-sm animate-in fade-in slide-in-from-top-2 duration-500 pointer-events-none drop-shadow-md
                         ${coinNotification.type === 'gain' ? 'text-green-400' : 'text-red-500'}`}
-                      style={{ fontFamily: "'Comfortaa', sans-serif" }}
+                      style={{ fontFamily: "'Comfortaa', sans-serif" } as React.CSSProperties}
                     >
                       {coinNotification.type === 'gain' ? '+' : '-'}{coinNotification.amount}
                     </div>

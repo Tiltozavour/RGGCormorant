@@ -195,13 +195,19 @@ export function useGameData() {
       });
 
       switch (card.action) {
-        case 'extra_roll':
+        case 'extra_roll': {
+          // Вычисляем суммарный бонус, который был у текущего броска 
+          // (разница между результатом с бонусами и чистым значением кубика)
+          const activeBonus = (gameState.currentRoll ?? 0) - (gameState.lastBaseRoll ?? 0);
+          
           await updateDoc(doc(db, "gameState", "current"), {
             currentRoll: null,
             rollConfirmed: false,
+            rollBonus: activeBonus // Возвращаем накопленный бонус обратно в буфер для переброса
           });
           alert("Энергетик подействовал! Бросайте кубик еще раз.");
           break;
+        }
 
         case 'add_coins':
           // Если есть цель (например, кража), можно добавить логику здесь, 
@@ -347,126 +353,88 @@ export function useGameData() {
       }
     } catch (e) {
       console.error(e);
-    }
+   }
   };
 
-  // Вспомогательная функция для выбора рандомных карт для Гемблинга и B-Shop
+  // Вспомогательная функция для выбора рандомных карт (теперь одна копия)
   const getRandomInteractionCards = useCallback((type: 'gambling' | 'bshop'): string[] => {
     const cardsArray = Object.values(allCards);
     if (cardsArray.length === 0) return [];
-    
     const result: string[] = [];
-    
     for (let i = 0; i < 3; i++) {
       if (type === 'bshop') {
         const pool = cardsArray.filter(c => c.deck === 'inventory' && c.rarity !== 'legendary');
-        if (pool.length > 0) {
-          result.push(pool[Math.floor(Math.random() * pool.length)].id);
-        }
+        if (pool.length > 0) result.push(pool[Math.floor(Math.random() * pool.length)].id);
       } else {
         const rand = Math.random();
-        if (rand < 0.02) {
-          const pool = cardsArray.filter(c => c.rarity === 'legendary');
-          result.push(pool[Math.floor(Math.random() * pool.length)]?.id || "");
-        } else if (rand < 0.35) {
-          const pool = cardsArray.filter(c => c.deck === 'inventory' && c.rarity !== 'legendary');
-          result.push(pool[Math.floor(Math.random() * pool.length)]?.id || "");
-        } else {
-          const pool = cardsArray.filter(c => c.deck === 'momental');
-          result.push(pool[Math.floor(Math.random() * pool.length)]?.id || "");
-        }
+        const pool = rand < 0.02 
+          ? cardsArray.filter(c => c.rarity === 'legendary') 
+          : rand < 0.35 
+            ? cardsArray.filter(c => c.deck === 'inventory' && c.rarity !== 'legendary')
+            : cardsArray.filter(c => c.deck === 'momental');
+        if (pool.length > 0) result.push(pool[Math.floor(Math.random() * pool.length)].id);
       }
     }
-    return result.filter(id => id !== "");
+    return result;
   }, [allCards]);
 
   const handleMoveComplete = useCallback(async (position: number, prevCell: number | null, cellType?: string) => {
     if (!user) return;
     const playerRef = doc(db, "players", user.uid);
     const gameStateRef = doc(db, "gameState", "current");
-
     await runTransaction(db, async (transaction) => {
       const gsSnap = await transaction.get(gameStateRef);
       if (!gsSnap.exists()) return;
-      const gsData = gsSnap.data();
-      const turnOrder: string[] = gsData.turnOrder || [];
-      const currentTurnIndex: number = gsData.currentTurnIndex || 0;
-
+      const { turnOrder = [], currentTurnIndex = 0 } = gsSnap.data() as GameState;
       transaction.update(playerRef, { position, prevCell });
-
       if (cellType === 'gambling' || cellType === 'bshop') {
-        const type = cellType as 'gambling' | 'bshop';
         transaction.update(gameStateRef, {
-          activeInteraction: {
-            playerId: user.uid,
-            type: type,
-            cards: getRandomInteractionCards(type)
-          }
+          activeInteraction: { playerId: user.uid, type: cellType as any, cards: getRandomInteractionCards(cellType as any) }
         });
         return;
       }
-
-      if (turnOrder.length > 0 && currentTurnIndex === turnOrder.length - 1) {
-        transaction.update(gameStateRef, {
-          phase: "next_game",
-          currentRoll: null,
-          currentRollPlayerId: null,
-          currentTurnIndex: 0,
-          rollConfirmed: false,
-        });
-      } else {
-        const nextTurnIndex = turnOrder.length > 0 ? (currentTurnIndex + 1) % turnOrder.length : currentTurnIndex;
-        transaction.update(gameStateRef, {
-          currentRoll: null,
-          currentRollPlayerId: null,
-          currentTurnIndex: nextTurnIndex,
-          rollConfirmed: false,
-        });
-      }
+      const isLast = currentTurnIndex === turnOrder.length - 1;
+      transaction.update(gameStateRef, {
+        phase: isLast ? "next_game" : "turn",
+        currentTurnIndex: isLast ? 0 : currentTurnIndex + 1,
+        currentRoll: null,
+        currentRollPlayerId: null,
+        rollConfirmed: false
+      });
     });
   }, [user, getRandomInteractionCards]);
 
   const handleFinishInteraction = async (cardId?: string, cost: number = 0) => {
     if (!user || !gameState.activeInteraction) return;
-    
     const playerRef = doc(db, "players", user.uid);
     const gameStateRef = doc(db, "gameState", "current");
-
     try {
       await runTransaction(db, async (transaction) => {
         const gsSnap = await transaction.get(gameStateRef);
         if (!gsSnap.exists()) return;
-        const gsData = gsSnap.data();
-        const currentTurnIndex = gsData.currentTurnIndex || 0;
-        const turnOrder = gsData.turnOrder || [];
-
+        const { turnOrder = [], currentTurnIndex = 0 } = gsSnap.data() as GameState;
         if (cardId) {
           const card = allCards[cardId];
           if (card.deck === 'inventory') {
-            transaction.update(playerRef, { 
-              inventory: arrayUnion(card.id),
-              tiltCoins: increment(-cost)
-            });
-            transaction.update(gameStateRef, {
-              revealedCards: arrayUnion(card.id)
-            });
+            transaction.update(playerRef, { inventory: arrayUnion(card.id), tiltCoins: increment(-cost) });
+          } else if (card.action === 'add_coins') {
+            transaction.update(playerRef, { tiltCoins: increment(card.value) });
           }
+          transaction.update(gameStateRef, { revealedCards: arrayUnion(cardId) });
         }
-
-        const isLastPlayer = currentTurnIndex === turnOrder.length - 1;
+        const isLast = currentTurnIndex === turnOrder.length - 1;
         transaction.update(gameStateRef, {
           activeInteraction: null,
-          phase: isLastPlayer ? "next_game" : "turn",
-          currentTurnIndex: isLastPlayer ? 0 : currentTurnIndex + 1,
+          phase: isLast ? "next_game" : "turn",
+          currentTurnIndex: isLast ? 0 : currentTurnIndex + 1,
           currentRoll: null,
           currentRollPlayerId: null,
           rollConfirmed: false
         });
       });
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
+
 
   const handleRoll = async () => {
     if (!user || !canRoll) return;

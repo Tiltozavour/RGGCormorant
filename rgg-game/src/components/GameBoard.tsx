@@ -308,33 +308,34 @@ const GameBoard: React.FC<GameBoardProps> = ({
               onClick={() => isStartPoint && chooseStart(cell.id)}
             >
               <div
+                title={cell.type === 'b-shop' ? "B-Shop" : cell.type === 'gambling' ? "Gambling" : undefined}
                 className={`
                   ${isStartPoint ? "w-24 h-24" : "w-14 h-14"}
                   ${
                     isStartPoint
                       ? "bg-purple-600/30 border-purple-400 shadow-[0_0_40px_rgba(168,85,247,0.6)] group-hover:bg-purple-500/50 group-hover:scale-110 active:scale-95 cursor-pointer transition-all duration-200"
                       : cell.type === 'gambling'
-                        ? "bg-[#00c8ff]/20 border-[#00c8ff]/60 shadow-[0_0_25px_rgba(0,200,255,0.3)]"
+                        ? "bg-[#ec4899]/20 border-[#ec4899]/60 shadow-[0_0_25px_rgba(236,72,153,0.3)]"
                         : cell.type === 'b-shop'
-                          ? "bg-[#ec4899]/20 border-[#ec4899]/60 shadow-[0_0_25px_rgba(236,72,153,0.3)]"
+                          ? "bg-[#00c8ff]/20 border-[#00c8ff]/60 shadow-[0_0_25px_rgba(0,200,255,0.3)]"
                           : "bg-[#001c69]/40 border-[#1e3a8a]/50"
                   } 
                   rounded-xl
                   border
                   backdrop-blur-md
-                  flex items-center justify-center
+                  flex items-center justify-center relative
                 `}
               >
                 <span 
-                  className={`absolute left-2 text-purple-300 font-black tracking-tighter ${isStartPoint ? "top-2 text-xs" : "top-1 text-[10px]"}`}
+                  className={`absolute right-2 font-black tracking-tighter ${isStartPoint ? "bottom-2 text-xs" : "bottom-1 text-[10px]"} text-purple-300/40`}
                   style={{ fontFamily: "'Comfortaa', sans-serif" }}
                 >
                   {cell.id}
                 </span>
 
                 {/* Иконки для спецклеток в режиме выбора старта */}
-                {cell.type === 'gambling' && <span className="text-xl">🎲</span>}
-                {cell.type === 'b-shop' && <span className="text-xl">🛍️</span>}
+                {cell.type === 'gambling' && <span className="absolute top-1.5 left-1.5 text-xs">🎲</span>}
+                {cell.type === 'b-shop' && <span className="absolute top-1.5 left-1.5 text-xs">💵</span>}
 
                 {isStartPoint && (
                   <span 
@@ -408,6 +409,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
             }}
           >
             <div
+              title={cell.type === 'b-shop' ? "B-Shop" : cell.type === 'gambling' ? "Gambling" : undefined}
               className={`
                 ${isStartPoint ? "w-24 h-24" : "w-14 h-14"}
                 ${
@@ -416,27 +418,27 @@ const GameBoard: React.FC<GameBoardProps> = ({
                     : isCurrent
                       ? "bg-purple-500/30 border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.6)]"
                       : cell.type === 'gambling'
-                        ? "bg-[#00c8ff]/20 border-[#00c8ff]/60 shadow-[0_0_20px_rgba(0,200,255,0.3)]"
+                        ? "bg-[#ec4899]/20 border-[#ec4899]/60 shadow-[0_0_20px_rgba(236,72,153,0.3)]"
                         : cell.type === 'b-shop'
-                          ? "bg-[#ec4899]/20 border-[#ec4899]/60 shadow-[0_0_20px_rgba(236,72,153,0.3)]"
+                          ? "bg-[#00c8ff]/20 border-[#00c8ff]/60 shadow-[0_0_20px_rgba(0,200,255,0.3)]"
                           : "bg-[#001c69]/40 border-[#1e3a8a]/50"
                 }
                 rounded-xl transition-all duration-200 hover:scale-110 hover:z-10
                 border
                 backdrop-blur-md
-                flex items-center justify-center
+                flex items-center justify-center relative
               `}
             >
               <span
-                className={`absolute left-2 text-purple-300 font-black tracking-tighter ${isStartPoint ? "top-2 text-xs" : "top-1 text-[10px]"}`}
+                className={`absolute right-2 font-black tracking-tighter ${isStartPoint ? "bottom-2 text-xs" : "bottom-1 text-[10px]"} text-purple-300/40`}
                 style={{ fontFamily: "'Comfortaa', sans-serif" }}
               >
                 {cell.id}
               </span>
 
               {/* Иконки для спецклеток */}
-              {cell.type === 'gambling' && <span className="text-xl drop-shadow-md">🎲</span>}
-              {cell.type === 'b-shop' && <span className="text-xl drop-shadow-md">🛍️</span>}
+              {cell.type === 'gambling' && <span className="absolute top-1.5 left-1.5 text-xs drop-shadow-md">🎲</span>}
+              {cell.type === 'b-shop' && <span className="absolute top-1.5 left-1.5 text-xs drop-shadow-md">💵</span>}
             </div>
           </div>
         );
