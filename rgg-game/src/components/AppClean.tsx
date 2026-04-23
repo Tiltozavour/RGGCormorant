@@ -18,6 +18,13 @@ function AppClean() {
     handlers
   } = useGameData();
 
+  const getCardPrice = (card: GameCardType) => {
+    if (card.rarity === 'common') return 3;
+    if (card.rarity === 'rare') return 7;
+    if (card.rarity === 'epic') return 15;
+    return 0;
+  };
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   const [newAvatarUrl, setNewAvatarUrl] = useState("");
@@ -65,19 +72,19 @@ function AppClean() {
       const isMovement = card.action === 'move_steps';
 
       if (phase === 'next_game' && !isWheelCard) {
-        alert("В этой фазе можно использовать только карту 'Подкрутка'!");
+        setGameAlert({ title: "Стоп!", message: "В этой фазе можно использовать только карту 'Подкрутка'!", type: 'warning' });
         return;
       }
       
       if (phase === 'turn') {
         // Защиту можно всегда. Остальное только в свой ход.
         if (!isProtection && currentTurnPlayerId !== user?.uid) {
-          alert("Сейчас не ваш ход!");
+          setGameAlert({ title: "Не твой ход", message: "Обычные карты можно использовать только в свою очередь.", type: 'info' });
           return;
         }
 
         if (isMovement && gameState.rollConfirmed) {
-          alert("Вы уже начали движение! Использовать карту перемещения можно только до подтверждения хода.");
+          setGameAlert({ title: "Движение начато", message: "Использовать карту перемещения можно только до подтверждения хода.", type: 'warning' });
           return;
         }
 
@@ -86,16 +93,16 @@ function AppClean() {
         const isMyRollDone = currentRoll !== null && gameState.currentRollPlayerId === user?.uid;
 
         if (!isSpecialAction && isMyRollDone) {
-          alert("Ход уже начался (кубик брошен). Использование карт заблокировано.");
+          setGameAlert({ title: "Кубик брошен", message: "Обычные карты (не движение и не защита) используются ДО броска.", type: 'warning' });
           return;
         }
 
         if (isExtraRoll && currentRoll === null) {
-          alert("Сначала бросьте кубик, чтобы использовать переброс!");
+          setGameAlert({ title: "Рано!", message: "Сначала бросьте кубик, чтобы использовать переброс!", type: 'info' });
           return;
         }
       } else if (phase !== 'next_game') {
-        alert("Использование карт в этой фазе запрещено.");
+        setGameAlert({ title: "Заблокировано", message: "Использование карт в этой фазе запрещено.", type: 'warning' });
         return;
       }
     }
@@ -173,10 +180,10 @@ function AppClean() {
 
           <div 
             className="bg-yellow-900/60 border border-yellow-500/40 px-4 py-1 rounded-lg backdrop-blur-xl animate-pulse flex items-center justify-center"
-            style={{ fontFamily: "'Comfortaa', sans-serif" }}
+            style={{ fontFamily: "'Comfortaa', sans-serif" } as React.CSSProperties}
           >
             <span className="text-yellow-200 text-xs font-black uppercase tracking-[0.2em]">
-              {PHASE_LABELS[gameState.phase]}
+              {PHASE_LABELS[gameState.phase as keyof typeof PHASE_LABELS]}
             </span>
           </div>
         </div>
@@ -327,7 +334,7 @@ function AppClean() {
             className="flex px-[10vw] py-20 overflow-x-auto overflow-y-hidden max-w-full custom-scrollbar items-end select-none scroll-smooth"
             onClick={e => e.stopPropagation()} // Предотвращаем закрытие при клике на саму ленту
           >
-            {playerData?.inventory?.map((cardId, idx, arr) => {
+            {playerData?.inventory?.map((cardId: string, idx: number, arr: string[]) => {
               const card = allCards[cardId];
               if (!card) return null;
 
@@ -368,9 +375,9 @@ function AppClean() {
             className="flex flex-wrap gap-10 justify-center overflow-y-auto px-10 pb-20 max-w-7xl custom-scrollbar"
             onClick={e => e.stopPropagation()}
           >
-            {Object.values(allCards)
-              .sort((a, b) => a.number - b.number)
-              .map((card) => {
+            {(Object.values(allCards) as GameCardType[])
+              .sort((a: GameCardType, b: GameCardType) => a.number - b.number)
+              .map((card: GameCardType) => {
                 const isRevealed = gameState.revealedCards?.includes(card.id);
                 
                 if (!isRevealed) {
@@ -548,6 +555,77 @@ function AppClean() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ЭКРАН ГЕМБЛИНГА (КАЗИНО) */}
+      {gameState.activeInteraction?.type === 'gambling' && gameState.activeInteraction.playerId === user?.uid && (
+        <div className="fixed inset-0 bg-blue-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
+          <div className="text-center mb-12">
+            <h2 className="text-6xl font-black text-blue-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]">Испытай удачу!</h2>
+            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">Выбери одну из трех карт</p>
+          </div>
+          
+          <div className="flex gap-10">
+            {gameState.activeInteraction.cards.map((cardId: string, idx: number) => (
+              <div 
+                key={idx}
+                onClick={() => {
+                  const card = allCards[cardId];
+                  setGameAlert({ title: "Выпала карта!", message: `Вы получили: ${card.name}. ${card.description}` });
+                  void handlers.handleFinishInteraction(cardId);
+                }}
+                className="w-64 h-[400px] rounded-[2rem] bg-blue-900/50 border-4 border-blue-400/30 cursor-pointer hover:scale-110 hover:border-blue-400 hover:shadow-[0_0_50px_rgba(59,130,246,0.4)] transition-all flex items-center justify-center group"
+              >
+                <img src="/cards/card_back.svg" className="w-full h-full object-cover rounded-[1.8rem] opacity-80 group-hover:opacity-100" alt="Back" />
+                <span className="absolute text-blue-200/20 text-8xl font-black italic">?</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ЭКРАН B-SHOP (МАГАЗИН) */}
+      {gameState.activeInteraction?.type === 'bshop' && gameState.activeInteraction.playerId === user?.uid && (
+        <div className="fixed inset-0 bg-pink-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
+          <div className="text-center mb-12">
+            <h2 className="text-6xl font-black text-pink-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(236,72,153,0.5)]">B-Shop</h2>
+            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">Ваши коины: {playerData.tiltCoins ?? 0} 🦖</p>
+          </div>
+          
+          <div className="flex gap-8 items-start">
+            {gameState.activeInteraction.cards.map((cardId: string, idx: number) => {
+              const card = allCards[cardId];
+              const price = getCardPrice(card as GameCardType);
+              const canAfford = (playerData.tiltCoins ?? 0) >= price;
+
+              return (
+                <div key={idx} className="flex flex-col gap-4 items-center">
+                  <div className="scale-90">
+                    <GameCard card={card} index={0} totalCards={1} />
+                  </div>
+                  <button 
+                    disabled={!canAfford}
+                    onClick={() => void handlers.handleFinishInteraction(cardId, price)}
+                    className={`w-full py-4 rounded-2xl font-black uppercase text-sm tracking-widest transition-all ${
+                      canAfford 
+                      ? "bg-pink-500 text-white hover:bg-pink-400 shadow-[0_10px_20px_rgba(236,72,153,0.3)]" 
+                      : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+                    }`}
+                  >
+                    {price} 🦖 КУПИТЬ
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <button 
+            onClick={() => void handlers.handleFinishInteraction()}
+            className="mt-12 text-white/30 hover:text-white font-black uppercase text-xs tracking-[0.3em] transition-all"
+          >
+            Ничего не покупать и уйти
+          </button>
         </div>
       )}
 

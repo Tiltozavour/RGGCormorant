@@ -40,7 +40,7 @@ export interface GameCard {
   
   // Визуальные поля
   faceCard: string;    // Путь к картинке (рубашка или арт)
-  bgCard: string;      // Цвет фона или градиент (HEX или CSS класс)
+  bgCard?: string | null; // Цвет фона или градиент (HEX или CSS класс)
   artCard?: string;    // GIF или PNG арт для лицевой стороны
   bgGradientStart?: string; // Начальный цвет градиента
   bgGradientEnd?: string;   // Конечный цвет градиента

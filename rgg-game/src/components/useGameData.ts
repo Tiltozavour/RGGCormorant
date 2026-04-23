@@ -5,11 +5,11 @@ import {
   collection,
   doc,
   onSnapshot,
-  runTransaction,
   updateDoc,
   arrayUnion,
   increment,
   arrayRemove,
+  runTransaction,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import type { GameCard } from "../types/card";
@@ -350,7 +350,37 @@ export function useGameData() {
     }
   };
 
-  const handleMoveComplete = useCallback(async (position: number, prevCell: number | null) => {
+  // Вспомогательная функция для выбора рандомных карт для Гемблинга и B-Shop
+  const getRandomInteractionCards = useCallback((type: 'gambling' | 'bshop'): string[] => {
+    const cardsArray = Object.values(allCards);
+    if (cardsArray.length === 0) return [];
+    
+    const result: string[] = [];
+    
+    for (let i = 0; i < 3; i++) {
+      if (type === 'bshop') {
+        const pool = cardsArray.filter(c => c.deck === 'inventory' && c.rarity !== 'legendary');
+        if (pool.length > 0) {
+          result.push(pool[Math.floor(Math.random() * pool.length)].id);
+        }
+      } else {
+        const rand = Math.random();
+        if (rand < 0.02) {
+          const pool = cardsArray.filter(c => c.rarity === 'legendary');
+          result.push(pool[Math.floor(Math.random() * pool.length)]?.id || "");
+        } else if (rand < 0.35) {
+          const pool = cardsArray.filter(c => c.deck === 'inventory' && c.rarity !== 'legendary');
+          result.push(pool[Math.floor(Math.random() * pool.length)]?.id || "");
+        } else {
+          const pool = cardsArray.filter(c => c.deck === 'momental');
+          result.push(pool[Math.floor(Math.random() * pool.length)]?.id || "");
+        }
+      }
+    }
+    return result.filter(id => id !== "");
+  }, [allCards]);
+
+  const handleMoveComplete = useCallback(async (position: number, prevCell: number | null, cellType?: string) => {
     if (!user) return;
     const playerRef = doc(db, "players", user.uid);
     const gameStateRef = doc(db, "gameState", "current");
@@ -363,6 +393,18 @@ export function useGameData() {
       const currentTurnIndex: number = gsData.currentTurnIndex || 0;
 
       transaction.update(playerRef, { position, prevCell });
+
+      if (cellType === 'gambling' || cellType === 'bshop') {
+        const type = cellType as 'gambling' | 'bshop';
+        transaction.update(gameStateRef, {
+          activeInteraction: {
+            playerId: user.uid,
+            type: type,
+            cards: getRandomInteractionCards(type)
+          }
+        });
+        return;
+      }
 
       if (turnOrder.length > 0 && currentTurnIndex === turnOrder.length - 1) {
         transaction.update(gameStateRef, {
@@ -382,7 +424,49 @@ export function useGameData() {
         });
       }
     });
-  }, [user]);
+  }, [user, getRandomInteractionCards]);
+
+  const handleFinishInteraction = async (cardId?: string, cost: number = 0) => {
+    if (!user || !gameState.activeInteraction) return;
+    
+    const playerRef = doc(db, "players", user.uid);
+    const gameStateRef = doc(db, "gameState", "current");
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        if (!gsSnap.exists()) return;
+        const gsData = gsSnap.data();
+        const currentTurnIndex = gsData.currentTurnIndex || 0;
+        const turnOrder = gsData.turnOrder || [];
+
+        if (cardId) {
+          const card = allCards[cardId];
+          if (card.deck === 'inventory') {
+            transaction.update(playerRef, { 
+              inventory: arrayUnion(card.id),
+              tiltCoins: increment(-cost)
+            });
+            transaction.update(gameStateRef, {
+              revealedCards: arrayUnion(card.id)
+            });
+          }
+        }
+
+        const isLastPlayer = currentTurnIndex === turnOrder.length - 1;
+        transaction.update(gameStateRef, {
+          activeInteraction: null,
+          phase: isLastPlayer ? "next_game" : "turn",
+          currentTurnIndex: isLastPlayer ? 0 : currentTurnIndex + 1,
+          currentRoll: null,
+          currentRollPlayerId: null,
+          rollConfirmed: false
+        });
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const handleRoll = async () => {
     if (!user || !canRoll) return;
@@ -483,6 +567,7 @@ export function useGameData() {
       handleUseCard,
       grantPrizeCard,
       handleMoveComplete,
+      handleFinishInteraction,
       handleRoll,
       handleConfirmRoll,
       handleStepPhase,

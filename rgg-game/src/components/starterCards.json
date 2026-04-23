@@ -446,7 +446,7 @@
   },
 
 
-      {
+  {
     "id": "leg_001",
     "name": "Амадэхи",
     "description": "Белый олень у моего порога всего лишь сулит перемены. Но готовы ли мы к ним?",  
@@ -460,6 +460,21 @@
     "bgGradientStart": null,
     "bgGradientEnd": null,
     "number": 30
+  },
+    {
+    "id": "leg_002",
+    "name": "Уильям Бейкер",
+    "description": "Ненавижу ирландцев",  
+    "deck": "inventory",
+    "rarity": "legendary",
+    "action": "prize",
+    "value": 0,
+    "faceCard": "/cards/card_face_light.svg",
+    "artCard": "/cards/legend/beiker.gif",
+    "bgCard": null,
+    "bgGradientStart": null,
+    "bgGradientEnd": null,
+    "number": 31
   }
 
 ]

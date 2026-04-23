@@ -55,6 +55,11 @@ export interface GameState {
   rollConfirmed: boolean;
   gameHistory: GameHistoryEntry[];
   revealedCards?: string[]; // Список ID карт, которые были "открыты" игроками
+  activeInteraction?: {
+    playerId: string;
+    type: 'gambling' | 'bshop';
+    cards: string[]; // ID трех карт
+  } | null;
 }
 
 export const defaultGameState: GameState = {

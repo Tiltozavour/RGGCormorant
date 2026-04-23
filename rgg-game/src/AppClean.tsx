@@ -110,10 +110,10 @@ function AppClean() {
 
           <div 
             className="bg-yellow-900/60 border border-yellow-500/40 px-4 py-1 rounded-lg backdrop-blur-xl animate-pulse flex items-center justify-center"
-            style={{ fontFamily: "'Comfortaa', sans-serif" }}
+            style={{ fontFamily: "'Comfortaa', sans-serif" } as React.CSSProperties}
           >
             <span className="text-yellow-200 text-xs font-black uppercase tracking-[0.2em]">
-              {PHASE_LABELS[gameState.phase]}
+              {PHASE_LABELS[gameState.phase as keyof typeof PHASE_LABELS]}
             </span>
           </div>
         </div>
