@@ -12,10 +12,23 @@ import {
   runTransaction,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import { gameMap } from "./gameMap";
 import type { GameCard } from "../types/card";
 import { defaultGameState } from "../types/game";
-import type { GamePhase, GameState, Player } from "../types/game";
+import type { GameState, Player } from "../types/game";
 import { PHASE_ORDER } from "./gameConstants";
+
+const rollD6 = () => Math.floor(Math.random() * 6) + 1;
+
+const pickRandom = <T,>(items: T[]): T | null => {
+  if (items.length === 0) return null;
+  return items[Math.floor(Math.random() * items.length)] ?? null;
+};
+
+const clearTemporaryStatus = {
+  customStatus: null,
+  statusDuration: 0,
+};
 
 export function useGameData() {
   const [user, setUser] = useState<User | null>(null);
@@ -25,7 +38,6 @@ export function useGameData() {
   const [gameState, setGameState] = useState<GameState>(defaultGameState);
   const [allCards, setAllCards] = useState<Record<string, GameCard>>({});
 
-  // Listeners
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -46,44 +58,90 @@ export function useGameData() {
 
   useEffect(() => {
     return onSnapshot(collection(db, "players"), (snap) => {
-      setPlayers(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      setPlayers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Player, "id">) })));
     });
   }, []);
 
   useEffect(() => {
     return onSnapshot(doc(db, "gameState", "current"), (snap) => {
-      if (snap.exists()) setGameState({ ...defaultGameState, ...snap.data() } as GameState);
+      if (snap.exists()) {
+        setGameState({ ...defaultGameState, ...snap.data() } as GameState);
+      }
     });
   }, []);
 
   useEffect(() => {
-    // Слушаем обычные карты
     const unsubCards = onSnapshot(collection(db, "cards"), (snap) => {
       const cards: Record<string, GameCard> = {};
-      snap.docs.forEach((d) => { cards[d.id] = { id: d.id, ...d.data() } as GameCard; });
-      setAllCards(prev => ({ ...prev, ...cards }));
+      snap.docs.forEach((d) => {
+        cards[d.id] = { id: d.id, ...d.data() } as GameCard;
+      });
+      setAllCards((prev) => ({ ...prev, ...cards }));
     });
 
-    // Слушаем призовые карты
     const unsubPrizes = onSnapshot(collection(db, "prizes"), (snap) => {
       const prizes: Record<string, GameCard> = {};
-      snap.docs.forEach((d) => { prizes[d.id] = { id: d.id, ...d.data() } as GameCard; });
-      setAllCards(prev => ({ ...prev, ...prizes }));
+      snap.docs.forEach((d) => {
+        prizes[d.id] = { id: d.id, ...d.data() } as GameCard;
+      });
+      setAllCards((prev) => ({ ...prev, ...prizes }));
     });
 
-    return () => { unsubCards(); unsubPrizes(); };
+    return () => {
+      unsubCards();
+      unsubPrizes();
+    };
   }, []);
 
-  // Derived State
   const isAdmin = playerData?.role === "admin";
   const currentTurnPlayerId = gameState.turnOrder[gameState.currentTurnIndex] ?? null;
   const isTurnPhase = gameState.phase === "turn";
   const isCurrentPlayersTurn = gameState.turnOrder.length === 0 || currentTurnPlayerId === user?.uid;
-  
-  const canRoll = !isAdmin && !!playerData?.inGame && isTurnPhase && isCurrentPlayersTurn && gameState.currentRoll === null && !playerData?.isFrozen;
-  const canConfirmRoll = !isAdmin && !!playerData?.inGame && isCurrentPlayersTurn && gameState.currentRoll !== null && !gameState.rollConfirmed;
 
-  // Handlers
+  const canRoll =
+    !isAdmin &&
+    !!playerData?.inGame &&
+    isTurnPhase &&
+    isCurrentPlayersTurn &&
+    gameState.currentRoll === null &&
+    !playerData?.isFrozen;
+
+  const canConfirmRoll =
+    !isAdmin &&
+    !!playerData?.inGame &&
+    isCurrentPlayersTurn &&
+    gameState.currentRoll !== null &&
+    !gameState.rollConfirmed;
+
+  const getPlayerById = useCallback(
+    (playerId?: string | null) => players.find((player) => player.id === playerId) ?? null,
+    [players],
+  );
+
+  const getNextPlayerId = useCallback(
+    (playerId: string) => {
+      const activeTurnOrder = gameState.turnOrder.filter((id) => id !== playerId);
+      if (gameState.turnOrder.length > 1) {
+        const currentIndex = gameState.turnOrder.indexOf(playerId);
+        if (currentIndex !== -1) {
+          for (let offset = 1; offset < gameState.turnOrder.length; offset += 1) {
+            const candidateId =
+              gameState.turnOrder[(currentIndex + offset) % gameState.turnOrder.length];
+            if (candidateId !== playerId) return candidateId;
+          }
+        }
+      }
+
+      if (activeTurnOrder.length > 0) return activeTurnOrder[0];
+
+      return (
+        players.find((player) => player.id !== playerId && player.inGame && player.role !== "admin")?.id ??
+        null
+      );
+    },
+    [gameState.turnOrder, players],
+  );
+
   const handleLogout = () => signOut(auth);
 
   const handleUpdateLogin = async (val: string) => {
@@ -102,7 +160,7 @@ export function useGameData() {
       position: cellId,
       prevCell: null,
       inGame: true,
-      inventory: ["inv_006", "inv_007"]
+      inventory: ["inv_006", "inv_007"],
     });
   };
 
@@ -111,7 +169,6 @@ export function useGameData() {
     await updateDoc(doc(db, "players", user.uid), { avatar: url });
   };
 
-  // Метод для выдачи призовой (легендарной) карты игроку (только для админа)
   const grantPrizeCard = async (playerId: string, cardId: string) => {
     if (!isAdmin) return;
     const playerRef = doc(db, "players", playerId);
@@ -123,7 +180,6 @@ export function useGameData() {
         if (!prizeSnap.exists()) return;
 
         const prizeData = prizeSnap.data() as GameCard;
-        // Если карта уникальная и уже выиграна — отменяем
         if (prizeData.isUnique && prizeData.isWon) return;
 
         transaction.update(playerRef, { inventory: arrayUnion(cardId) });
@@ -137,38 +193,27 @@ export function useGameData() {
   const handleUseCard = async (card: GameCard, targetPlayerId?: string) => {
     if (!user || !playerData) return;
 
-    // Проверка прав и фаз игры (Админ может всё)
     if (!isAdmin) {
       const { phase, currentRoll } = gameState;
 
-      if (phase === 'next_game') {
-        // В фазе выбора игры можно только крутить колесо
-        if (card.action !== 'spin_wheel') {
+      if (phase === "next_game") {
+        if (card.action !== "spin_wheel") {
           alert("Эту карту можно использовать только во время хода на поле!");
           return;
         }
-      } else if (phase === 'turn') {
-        const isProtection = card.action === 'protection';
-        const isExtraRoll = card.action === 'extra_roll';
-        const isMovement = card.action === 'move_steps';
+      } else if (phase === "turn") {
+        const isProtection = card.action === "protection";
+        const isExtraRoll = card.action === "extra_roll";
+        const isMovement = card.action === "move_steps";
 
-        // Защиту можно использовать всегда
-        if (isProtection) return; 
-
-        // Карты перемещения и переброса требуют твоего хода
-        if (isExtraRoll || isMovement) {
+        if (!isProtection) {
           if (!isCurrentPlayersTurn) {
             alert("Сейчас не ваш ход!");
             return;
           }
-        } else {
-          // Все остальные карты — только в свой ход и ДО броска
-          if (!isCurrentPlayersTurn) {
-            alert("Сейчас не ваш ход!");
-            return;
-          }
-          if (currentRoll !== null) {
-            alert("Вы уже бросили кубик! Обычные карты используются ДО броска.");
+
+          if (!isMovement && !isExtraRoll && currentRoll !== null) {
+            alert("Вы уже бросили кубик. Обычные карты используются до броска.");
             return;
           }
         }
@@ -183,245 +228,569 @@ export function useGameData() {
       }
     }
 
+    if (card.action === "protection" && playerData.hasProtection) {
+      alert("У вас уже активно Силовое поле.");
+      return;
+    }
+
     try {
       const playerRef = doc(db, "players", user.uid);
       const targetRef = targetPlayerId ? doc(db, "players", targetPlayerId) : null;
+      const targetPlayer = getPlayerById(targetPlayerId);
+      const targetHasReflect = targetPlayer?.customStatus === "reflect_debuff";
 
       await updateDoc(playerRef, { inventory: arrayRemove(card.id) });
-
-      // Добавляем карту в глобальную коллекцию "открытых"
-      await updateDoc(doc(db, "gameState", "current"), {
-        revealedCards: arrayUnion(card.id)
-      });
+      await updateDoc(doc(db, "gameState", "current"), { revealedCards: arrayUnion(card.id) });
 
       switch (card.action) {
-        case 'extra_roll': {
-          // Вычисляем суммарный бонус, который был у текущего броска 
-          // (разница между результатом с бонусами и чистым значением кубика)
+        case "extra_roll": {
           const activeBonus = (gameState.currentRoll ?? 0) - (gameState.lastBaseRoll ?? 0);
-          
           await updateDoc(doc(db, "gameState", "current"), {
             currentRoll: null,
             rollConfirmed: false,
-            rollBonus: activeBonus // Возвращаем накопленный бонус обратно в буфер для переброса
+            rollBonus: activeBonus,
           });
-          alert("Энергетик подействовал! Бросайте кубик еще раз.");
+          alert("Переброс активирован. Бросайте кубик еще раз.");
           break;
         }
 
-        case 'add_coins':
-          // Если есть цель (например, кража), можно добавить логику здесь, 
-          // но обычно монеты добавляются себе
+        case "add_coins":
           await updateDoc(playerRef, { tiltCoins: increment(card.value) });
           break;
 
-        case 'move_steps':
-          {
-            // Вместо телепортации по ID, мы добавляем шаги к текущему броску.
-            // Это заставит фишку "идти" по карте, учитывая стрелочки и развилки.
-            const targetId = targetPlayerId || user.uid;
-            const isForward = card.value > 0;
+        case "steal_coins":
+          if (targetRef && targetPlayerId) {
+            if (targetHasReflect) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+              await runTransaction(db, async (transaction) => {
+                const mySnap = await transaction.get(playerRef);
+                const currentCoins = mySnap.data()?.tiltCoins || 0;
+                const amount = Math.min(currentCoins, card.value);
+                transaction.update(playerRef, { tiltCoins: increment(-amount) });
+                transaction.update(targetRef, { tiltCoins: increment(amount) });
+              });
+              alert(`${targetPlayer?.login} отразил эффект и забрал ваши монеты.`);
+              break;
+            }
 
-            if (isForward && gameState.phase === 'turn') {
-              // Проверяем: есть ли активный бросок ИМЕННО ДЛЯ ТЕКУЩЕГО игрока
-              const isMyRollActive = gameState.currentRoll !== null && gameState.currentRollPlayerId === user.uid;
-
-              if (!isMyRollActive) {
-                // Если я еще не бросал — добавляем в скрытый бонус к будущему броску
-                await updateDoc(doc(db, "gameState", "current"), {
-                  rollBonus: increment(card.value)
+            if (card.id === "inv_018") {
+              const roll = rollD6();
+              if (roll >= 4) {
+                await runTransaction(db, async (transaction) => {
+                  const targetSnap = await transaction.get(targetRef);
+                  const amount = Math.min(targetSnap.data()?.tiltCoins || 0, 10);
+                  transaction.update(targetRef, { tiltCoins: increment(-amount) });
+                  transaction.update(playerRef, { tiltCoins: increment(amount) });
                 });
-                alert(`Карта "${card.name}" активирована! К вашему следующему броску будет добавлено +${card.value} кл.`);
+                alert(`Кубик: ${roll}. Удача. Вы украли 10 монет.`);
               } else {
-                // Если я УЖЕ бросил кубик — увеличиваем текущее значение
-                await updateDoc(doc(db, "gameState", "current"), {
-                  currentRoll: increment(card.value),
-                  currentRollPlayerId: targetId,
-                  rollConfirmed: false 
-                });
-                alert(`Карта "${card.name}" добавила шаги! Теперь на счетчике: ${(gameState.currentRoll || 0) + card.value}`);
+                await updateDoc(playerRef, { tiltCoins: increment(-10) });
+                alert(`Кубик: ${roll}. Неудача. Вы потеряли 10 монет.`);
               }
             } else {
-              // Для отрицательных перемещений (назад) оставляем телепортацию, 
-              // так как карта обычно не поддерживает движение в обратную сторону по стрелкам.
-              const subjectRef = targetRef || playerRef;
-              const currentPos = (targetPlayerId ? players.find(p => p.id === targetPlayerId) : playerData)?.position || 0;
-              await updateDoc(subjectRef, { 
-                position: Math.max(0, currentPos + card.value), 
-                prevCell: null 
+              await runTransaction(db, async (transaction) => {
+                const targetSnap = await transaction.get(targetRef);
+                const currentTargetCoins = targetSnap.data()?.tiltCoins || 0;
+                const stealAmount = Math.min(currentTargetCoins, card.value);
+                transaction.update(targetRef, { tiltCoins: increment(-stealAmount) });
+                transaction.update(playerRef, { tiltCoins: increment(stealAmount) });
               });
-              alert(targetPlayerId ? "Игрок отброшен назад!" : "Вас отбросило назад!");
             }
-            break;
           }
+          break;
 
-        case 'teleport':
+        case "move_steps": {
+          const targetId = targetPlayerId || user.uid;
+          const isForward = card.value > 0;
+
+          if (isForward && gameState.phase === "turn") {
+            const isMyRollActive =
+              gameState.currentRoll !== null && gameState.currentRollPlayerId === user.uid;
+
+            if (!isMyRollActive) {
+              await updateDoc(doc(db, "gameState", "current"), {
+                rollBonus: increment(card.value),
+              });
+              alert(`К следующему броску добавлено ${card.value} шагов.`);
+            } else {
+              await updateDoc(doc(db, "gameState", "current"), {
+                currentRoll: increment(card.value),
+                currentRollPlayerId: targetId,
+                rollConfirmed: false,
+              });
+              alert(`Текущий ход увеличен до ${(gameState.currentRoll || 0) + card.value}.`);
+            }
+          } else {
+            const subjectRef = targetRef || playerRef;
+            const currentPos =
+              (targetPlayerId ? getPlayerById(targetPlayerId) : playerData)?.position || 0;
+            await updateDoc(subjectRef, {
+              position: Math.max(0, currentPos + card.value),
+              prevCell: null,
+            });
+            alert(targetPlayerId ? "Игрок перемещен." : "Вы перемещены.");
+          }
+          break;
+        }
+
+        case "teleport":
           await updateDoc(playerRef, { position: card.value, prevCell: null });
           break;
 
-        case 'freeze_player':
-          if (targetRef) {
-            await updateDoc(targetRef, { 
-              isFrozen: true,
-              freezeDuration: card.value || 1 
+        case "teleport_to_type": {
+          const currentPos = playerData.position ?? 0;
+          const reachableBShops: number[] = [];
+          const visited = new Set<number>();
+          const queue = [...(gameMap.find((c) => c.id === currentPos)?.next || [])];
+
+          while (queue.length > 0) {
+            const currId = queue.shift()!;
+            if (visited.has(currId)) continue;
+            visited.add(currId);
+
+            const cell = gameMap.find((c) => c.id === currId);
+            if (!cell) continue;
+
+            if (cell.type === "b-shop" && currId !== currentPos) reachableBShops.push(currId);
+            queue.push(...cell.next);
+          }
+
+          if (reachableBShops.length > 0) {
+            const targetId = pickRandom(reachableBShops);
+            if (targetId === null) break;
+
+            await runTransaction(db, async (transaction) => {
+              transaction.update(playerRef, { position: targetId, prevCell: null });
+              transaction.update(doc(db, "gameState", "current"), {
+                activeInteraction: {
+                  playerId: user.uid,
+                  type: "bshop",
+                  cards: getRandomInteractionCards("bshop"),
+                },
+              });
             });
-            alert(`Игрок заморожен!`);
+            alert(`Квантовый прыжок на клетку ${targetId}.`);
+          } else {
+            alert("Впереди не найдено ни одного B-Shop.");
+          }
+          break;
+        }
+
+        case "freeze_player":
+          if (targetRef && targetPlayerId) {
+            if (targetHasReflect) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+              await updateDoc(playerRef, {
+                isFrozen: true,
+                freezeDuration: card.value || 1,
+              });
+              alert(`${targetPlayer?.login} отразил заморозку.`);
+            } else {
+              await updateDoc(targetRef, {
+                isFrozen: true,
+                freezeDuration: card.value || 1,
+              });
+              alert("Игрок заморожен.");
+            }
           }
           break;
 
-        case 'spin_wheel':
-          // Принудительно открываем колесо для всех (синхронизация через БД)
+        case "spin_wheel":
           await updateDoc(doc(db, "gameState", "current"), { showWheel: true });
           break;
 
-        case 'challenge_gaben':
-          // Реализация механики Габена: ставим статус испытания
-          await updateDoc(playerRef, { 
-            customStatus: 'gaben_challenge',
-            statusDuration: 2 
+        case "challenge_gaben":
+          await updateDoc(playerRef, {
+            customStatus: "gaben_challenge",
+            statusDuration: 2,
           });
-          alert("Испытание Габена принято! Не двигайтесь 2 хода.");
+          alert("Испытание Габена принято.");
           break;
 
-        case 'steal_coins':
-          if (targetRef) {
-            await runTransaction(db, async (transaction) => {
-              const targetSnap = await transaction.get(targetRef);
-              const currentTargetCoins = targetSnap.data()?.tiltCoins || 0;
-              const stealAmount = Math.min(currentTargetCoins, card.value);
-              transaction.update(targetRef, { tiltCoins: increment(-stealAmount) });
-              transaction.update(playerRef, { tiltCoins: increment(stealAmount) });
-            });
-          }
-          break;
-
-        case 'protection':
+        case "protection":
           await updateDoc(playerRef, { hasProtection: true });
           break;
 
-        case 'prize':
-          alert(`🏆 СУПЕР-ПРИЗ!\nКарта будет удалена из инвентаря. Свяжитесь с администратором, назовите карту ${card.name}.`);
+        case "prize":
+          alert(`Супер-приз: ${card.name}. Свяжитесь с администратором.`);
           break;
-        
-        case 'judge_coins':
-          if (targetRef) {
-            alert(`Судья душ: Игрок ${players.find(p => p.id === targetPlayerId)?.login} будет бросать кубик для +/- ${card.value} монет.`);
-            // TODO: Implement actual dice roll for target and conditional coin change
-          } else {
-            alert(`Судья душ: Выберите цель для применения эффекта.`);
+
+        case "judge_coins":
+          if (targetRef && targetPlayerId) {
+            const targetDoc = targetHasReflect ? playerRef : targetRef;
+            const targetLabel = targetHasReflect ? "Вы" : targetPlayer?.login || "Игрок";
+            if (targetHasReflect) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+            }
+            const roll = rollD6();
+            const delta = roll >= 4 ? card.value : -card.value;
+            await updateDoc(targetDoc, { tiltCoins: increment(delta) });
+            alert(`${targetLabel} ${delta >= 0 ? "получает" : "теряет"} ${Math.abs(delta)} монет. Кубик: ${roll}.`);
           }
           break;
 
-        case 'deal_with_mage':
-          alert(`Сделка с магом: Бросьте кубик, чтобы узнать свою судьбу!`);
-          // TODO: Implement dice roll and apply effects (curse, add_coins)
-          break;
-
-        case 'discard_card':
-          if (targetRef) {
-            alert(`Оверпрайс: Игрок ${players.find(p => p.id === targetPlayerId)?.login} сбросит ${card.value} карту.`);
-            // TODO: Implement logic to make target discard a card
+        case "deal_with_mage": {
+          const roll = rollD6();
+          if (roll === 1) {
+            await updateDoc(doc(db, "gameState", "current"), {
+              activeInteraction: {
+                playerId: user.uid,
+                type: "gambling",
+                cards: getRandomInteractionCards("gambling"),
+              },
+            });
+            alert(`Кубик: ${roll}. Вы прокляты и сразу тянете gambling-карту.`);
+          } else if (roll <= 4) {
+            await updateDoc(playerRef, { tiltCoins: increment(card.value) });
+            await updateDoc(doc(db, "gameState", "current"), {
+              activeInteraction: {
+                playerId: user.uid,
+                type: "gambling",
+                cards: getRandomInteractionCards("gambling"),
+              },
+            });
+            alert(`Кубик: ${roll}. Вы получили ${card.value} монет и тянете gambling-карту.`);
           } else {
-            alert(`Оверпрайс: Выберите игрока, чтобы сбросить его карту.`);
+            await updateDoc(playerRef, { tiltCoins: increment(card.value) });
+            alert(`Кубик: ${roll}. Вы получили ${card.value} монет.`);
+          }
+          break;
+        }
+
+        case "discard_card":
+          if (targetRef && targetPlayerId) {
+            const victimId = targetHasReflect ? user.uid : targetPlayerId;
+            const victimRef = doc(db, "players", victimId);
+            if (targetHasReflect) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+            }
+
+            await runTransaction(db, async (transaction) => {
+              const victimSnap = await transaction.get(victimRef);
+              const inventory = (victimSnap.data()?.inventory as string[] | undefined) ?? [];
+              const cardToDiscard = pickRandom(inventory);
+              if (!cardToDiscard) return;
+              transaction.update(victimRef, { inventory: arrayRemove(cardToDiscard) });
+            });
+            alert(targetHasReflect ? "Вашу карту сбросили отражением." : "Карта цели сброшена.");
           }
           break;
 
-        case 'steal_card':
-          if (targetRef) {
-            alert(`Лавка с сувенирами: Выберите карту у игрока ${players.find(p => p.id === targetPlayerId)?.login}.`);
-            // TODO: Implement UI for current player to choose a card from target's inventory
-          } else {
-            alert(`Лавка с сувенирами: Выберите игрока, у которого хотите украсть карту.`);
+        case "steal_card":
+          if (targetRef && targetPlayerId) {
+            const fromId = targetHasReflect ? user.uid : targetPlayerId;
+            const toId = targetHasReflect ? targetPlayerId : user.uid;
+            const fromRef = doc(db, "players", fromId);
+            const toRef = doc(db, "players", toId);
+
+            if (targetHasReflect) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+            }
+
+            await runTransaction(db, async (transaction) => {
+              const fromSnap = await transaction.get(fromRef);
+              const inventory = (fromSnap.data()?.inventory as string[] | undefined) ?? [];
+              const stolenCard = pickRandom(inventory);
+              if (!stolenCard) return;
+
+              transaction.update(fromRef, { inventory: arrayRemove(stolenCard) });
+              transaction.update(toRef, { inventory: arrayUnion(stolenCard) });
+            });
+            alert(targetHasReflect ? "Отражение сработало: карту украли у вас." : "Вы украли карту.");
           }
           break;
 
-        case 'reflect_debuff':
-          alert(`Уно реверс: Следующий дебафф будет отражен!`);
-          // TODO: Implement a temporary status for reflecting debuffs
+        case "reflect_debuff":
+          await updateDoc(playerRef, {
+            customStatus: "reflect_debuff",
+            statusDuration: 1,
+          });
+          alert("Следующий направленный дебафф будет отражен.");
           break;
 
-        // Для остальных новых действий пока оставим заглушки
-        case 'move_target_for_coins': alert(`Заказное: Передвиньте игрока за монеты.`); break;
-        case 'discard_next_drawn': alert(`Карт-бланш: Следующая карта будет сброшена.`); break;
-        case 'move_target_and_self': alert(`Подвинься!: Передвиньте игрока и себя.`); break;
-        case 'pay_or_move_back': alert(`Платити налоги!: Заплатите или отступите.`); break;
-        case 'take_next_card': alert(`Благодетель: Присвойте следующую карту.`); break;
-        case 'give_next_card': alert(`Такой себе пир: Отдайте следующую карту.`); break;
+        case "move_target_for_coins":
+          if (targetRef && targetPlayerId) {
+            const steps = Math.min(playerData.tiltCoins ?? 0, 3);
+            if (steps <= 0) {
+              alert("У вас нет монет для этой карты.");
+              break;
+            }
+            const actualTargetId = targetHasReflect ? user.uid : targetPlayerId;
+            const actualTargetRef = doc(db, "players", actualTargetId);
+            const actualTarget = getPlayerById(actualTargetId);
+
+            if (targetHasReflect) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+            }
+
+            await updateDoc(playerRef, { tiltCoins: increment(-steps) });
+            await updateDoc(actualTargetRef, {
+              position: (actualTarget?.position ?? 0) + steps,
+              prevCell: null,
+            });
+            alert(`Оплачено ${steps} монет за перемещение на ${steps} клеток.`);
+          }
+          break;
+
+        case "discard_next_drawn":
+          await updateDoc(playerRef, { discardNextDrawn: true });
+          alert("Следующая полученная карта будет сброшена.");
+          break;
+
+        case "duel":
+          if (targetRef && targetPlayerId) {
+            const targetCoins = targetPlayer?.tiltCoins ?? 0;
+            const myCoins = playerData.tiltCoins ?? 0;
+            const stake = Math.min(5, myCoins, targetCoins);
+            if (stake <= 0) {
+              alert("Для дуэли у одного из игроков недостаточно монет.");
+              break;
+            }
+
+            const myRoll = rollD6();
+            const enemyRoll = rollD6();
+
+            if (myRoll === enemyRoll) {
+              alert(`Ничья в дуэли: ${myRoll}:${enemyRoll}. Монеты остаются у игроков.`);
+            } else if (myRoll > enemyRoll) {
+              await updateDoc(playerRef, { tiltCoins: increment(stake) });
+              await updateDoc(targetRef, { tiltCoins: increment(-stake) });
+              alert(`Вы победили в дуэли ${myRoll}:${enemyRoll} и забрали ${stake} монет.`);
+            } else {
+              await updateDoc(playerRef, { tiltCoins: increment(-stake) });
+              await updateDoc(targetRef, { tiltCoins: increment(stake) });
+              alert(`Вы проиграли дуэль ${myRoll}:${enemyRoll} и потеряли ${stake} монет.`);
+            }
+          }
+          break;
+
+        case "move_target_and_self":
+          if (targetRef && targetPlayerId) {
+            await updateDoc(targetRef, {
+              position: (targetPlayer?.position ?? 0) + 2,
+              prevCell: null,
+            });
+            await updateDoc(playerRef, {
+              position: Math.max(0, (playerData.position ?? 0) - 1),
+              prevCell: null,
+            });
+            alert("Цель продвинута на 2 клетки, вы отступили на 1.");
+          }
+          break;
+
+        case "pay_or_move_back":
+          if (targetRef && targetPlayerId) {
+            const actualTargetId = targetHasReflect ? user.uid : targetPlayerId;
+            const actualTargetRef = doc(db, "players", actualTargetId);
+            const actualTarget = getPlayerById(actualTargetId) ?? playerData;
+
+            if (targetHasReflect) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+            }
+
+            const currentCoins = actualTarget?.tiltCoins ?? 0;
+            if (currentCoins >= card.value) {
+              await updateDoc(actualTargetRef, { tiltCoins: increment(-card.value) });
+              alert(`Игрок заплатил ${card.value} монет.`);
+            } else {
+              await updateDoc(actualTargetRef, {
+                position: Math.max(0, (actualTarget?.position ?? 0) - card.value),
+                prevCell: null,
+              });
+              alert(`Игрок отступил на ${card.value} клеток.`);
+            }
+          }
+          break;
+
+        case "take_next_card": {
+          const nextPlayerId = getNextPlayerId(user.uid);
+          if (!nextPlayerId) {
+            alert("Некому перенаправить следующую карту.");
+            break;
+          }
+          await updateDoc(doc(db, "players", nextPlayerId), {
+            redirectNextDrawnToPlayerId: user.uid,
+          });
+          alert("Следующая карта следующего игрока уйдет вам.");
+          break;
+        }
+
+        case "give_next_card": {
+          const nextPlayerId = getNextPlayerId(user.uid);
+          if (!nextPlayerId) {
+            alert("Некому отдать следующую карту.");
+            break;
+          }
+          await updateDoc(playerRef, { giveNextDrawnToPlayerId: nextPlayerId });
+          alert("Следующая ваша полученная карта уйдет другому игроку.");
+          break;
+        }
 
         default:
           console.warn("Действие карты не распознано:", card.action);
       }
     } catch (e) {
       console.error(e);
-   }
+    }
   };
 
-  // Вспомогательная функция для выбора рандомных карт (теперь одна копия)
-  const getRandomInteractionCards = useCallback((type: 'gambling' | 'bshop'): string[] => {
-    const cardsArray = Object.values(allCards);
-    if (cardsArray.length === 0) return [];
-    const result: string[] = [];
-    for (let i = 0; i < 3; i++) {
-      if (type === 'bshop') {
-        const pool = cardsArray.filter(c => c.deck === 'inventory' && c.rarity !== 'legendary');
-        if (pool.length > 0) result.push(pool[Math.floor(Math.random() * pool.length)].id);
-      } else {
-        const rand = Math.random();
-        const pool = rand < 0.02 
-          ? cardsArray.filter(c => c.rarity === 'legendary') 
-          : rand < 0.35 
-            ? cardsArray.filter(c => c.deck === 'inventory' && c.rarity !== 'legendary')
-            : cardsArray.filter(c => c.deck === 'momental');
-        if (pool.length > 0) result.push(pool[Math.floor(Math.random() * pool.length)].id);
-      }
-    }
-    return result;
-  }, [allCards]);
+  const getRandomInteractionCards = useCallback(
+    (type: "gambling" | "bshop"): string[] => {
+      const cardsArray = Object.values(allCards);
+      if (cardsArray.length === 0) return [];
+      const result: string[] = [];
 
-  const handleMoveComplete = useCallback(async (position: number, prevCell: number | null, cellType?: string) => {
-    if (!user) return;
-    const playerRef = doc(db, "players", user.uid);
-    const gameStateRef = doc(db, "gameState", "current");
-    await runTransaction(db, async (transaction) => {
-      const gsSnap = await transaction.get(gameStateRef);
-      if (!gsSnap.exists()) return;
-      const { turnOrder = [], currentTurnIndex = 0 } = gsSnap.data() as GameState;
-      transaction.update(playerRef, { position, prevCell });
-      if (cellType === 'gambling' || cellType === 'bshop') {
-        transaction.update(gameStateRef, {
-          activeInteraction: { playerId: user.uid, type: cellType as any, cards: getRandomInteractionCards(cellType as any) }
-        });
-        return;
+      for (let i = 0; i < 3; i += 1) {
+        if (type === "bshop") {
+          const pool = cardsArray.filter(
+            (card) => card.deck === "inventory" && card.rarity !== "legendary",
+          );
+          const selected = pickRandom(pool);
+          if (selected) result.push(selected.id);
+        } else {
+          const rand = Math.random();
+          const pool =
+            rand < 0.02
+              ? cardsArray.filter((card) => card.rarity === "legendary")
+              : rand < 0.35
+                ? cardsArray.filter(
+                    (card) => card.deck === "inventory" && card.rarity !== "legendary",
+                  )
+                : cardsArray.filter((card) => card.deck === "momental");
+          const selected = pickRandom(pool);
+          if (selected) result.push(selected.id);
+        }
       }
-      const isLast = currentTurnIndex === turnOrder.length - 1;
-      transaction.update(gameStateRef, {
-        phase: isLast ? "next_game" : "turn",
-        currentTurnIndex: isLast ? 0 : currentTurnIndex + 1,
-        currentRoll: null,
-        currentRollPlayerId: null,
-        rollConfirmed: false
-      });
-    });
-  }, [user, getRandomInteractionCards]);
 
-  const handleFinishInteraction = async (cardId?: string, cost: number = 0) => {
-    if (!user || !gameState.activeInteraction) return;
-    const playerRef = doc(db, "players", user.uid);
-    const gameStateRef = doc(db, "gameState", "current");
-    try {
+      return result;
+    },
+    [allCards],
+  );
+
+  const handleMoveComplete = useCallback(
+    async (position: number, prevCell: number | null, cellType?: string) => {
+      if (!user) return;
+      const playerRef = doc(db, "players", user.uid);
+      const gameStateRef = doc(db, "gameState", "current");
+
       await runTransaction(db, async (transaction) => {
         const gsSnap = await transaction.get(gameStateRef);
         if (!gsSnap.exists()) return;
         const { turnOrder = [], currentTurnIndex = 0 } = gsSnap.data() as GameState;
+        transaction.update(playerRef, { position, prevCell });
+
+        if (cellType === "gambling" || cellType === "bshop") {
+          transaction.update(gameStateRef, {
+            activeInteraction: {
+              playerId: user.uid,
+              type: cellType,
+              cards: getRandomInteractionCards(cellType),
+            },
+          });
+          return;
+        }
+
+        const isLast = currentTurnIndex === turnOrder.length - 1;
+        transaction.update(gameStateRef, {
+          phase: isLast ? "next_game" : "turn",
+          currentTurnIndex: isLast ? 0 : currentTurnIndex + 1,
+          currentRoll: null,
+          currentRollPlayerId: null,
+          rollConfirmed: false,
+        });
+      });
+    },
+    [user, getRandomInteractionCards],
+  );
+
+  const handleFinishInteraction = async (cardId?: string, cost: number = 0) => {
+    if (!user || !gameState.activeInteraction) return;
+
+    const playerRef = doc(db, "players", user.uid);
+    const gameStateRef = doc(db, "gameState", "current");
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        const pSnap = await transaction.get(playerRef);
+        if (!gsSnap.exists() || !pSnap.exists()) return;
+
+        const { turnOrder = [], currentTurnIndex = 0, activeInteraction } = gsSnap.data() as GameState;
+        const player = pSnap.data() as Player;
+
         if (cardId) {
           const card = allCards[cardId];
-          if (card.deck === 'inventory') {
-            transaction.update(playerRef, { inventory: arrayUnion(card.id), tiltCoins: increment(-cost) });
-          } else if (card.action === 'add_coins') {
-            transaction.update(playerRef, { tiltCoins: increment(card.value) });
+          if (card.deck === "inventory") {
+            if (cost > 0) {
+              transaction.update(playerRef, { tiltCoins: increment(-cost) });
+            }
+
+            let suppressCard = false;
+            let finalRecipientRef = playerRef;
+
+            if (player.discardNextDrawn) {
+              suppressCard = true;
+              transaction.update(playerRef, { discardNextDrawn: false });
+            } else if (player.redirectNextDrawnToPlayerId) {
+              finalRecipientRef = doc(db, "players", player.redirectNextDrawnToPlayerId);
+              transaction.update(playerRef, { redirectNextDrawnToPlayerId: null });
+            } else if (player.giveNextDrawnToPlayerId) {
+              finalRecipientRef = doc(db, "players", player.giveNextDrawnToPlayerId);
+              transaction.update(playerRef, { giveNextDrawnToPlayerId: null });
+            }
+
+            if (!suppressCard) {
+              transaction.update(finalRecipientRef, { inventory: arrayUnion(card.id) });
+            }
+          } else {
+            const isNegative =
+              (card.action === "add_coins" && card.value < 0) ||
+              (card.action === "move_steps" && card.value < 0) ||
+              card.action === "skip_turn" ||
+              (card.action === "teleport" && card.value === 0);
+
+            if (isNegative && player.hasProtection && activeInteraction?.type === "gambling") {
+              transaction.update(playerRef, { hasProtection: false });
+            } else {
+              if (card.action === "add_coins") {
+                transaction.update(playerRef, { tiltCoins: increment(card.value) });
+              } else if (card.action === "move_steps") {
+                const currentPos = player.position || 0;
+                transaction.update(playerRef, {
+                  position: Math.max(0, currentPos + card.value),
+                  prevCell: null,
+                });
+              } else if (card.action === "teleport") {
+                transaction.update(playerRef, { position: card.value, prevCell: null });
+              } else if (card.action === "skip_turn") {
+                transaction.update(playerRef, {
+                  isFrozen: true,
+                  freezeDuration: card.value || 1,
+                });
+              } else if (card.action === "challenge_gaben") {
+                transaction.update(playerRef, {
+                  customStatus: "gaben_challenge",
+                  statusDuration: 2,
+                });
+              } else if (card.action === "take_next_card") {
+                const nextPlayerId = getNextPlayerId(user.uid);
+                if (nextPlayerId) {
+                  transaction.update(doc(db, "players", nextPlayerId), {
+                    redirectNextDrawnToPlayerId: user.uid,
+                  });
+                }
+              } else if (card.action === "give_next_card") {
+                const nextPlayerId = getNextPlayerId(user.uid);
+                if (nextPlayerId) {
+                  transaction.update(playerRef, { giveNextDrawnToPlayerId: nextPlayerId });
+                }
+              }
+            }
           }
+
           transaction.update(gameStateRef, { revealedCards: arrayUnion(cardId) });
         }
+
         const isLast = currentTurnIndex === turnOrder.length - 1;
         transaction.update(gameStateRef, {
           activeInteraction: null,
@@ -429,24 +798,25 @@ export function useGameData() {
           currentTurnIndex: isLast ? 0 : currentTurnIndex + 1,
           currentRoll: null,
           currentRollPlayerId: null,
-          rollConfirmed: false
+          rollConfirmed: false,
         });
       });
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+    }
   };
-
 
   const handleRoll = async () => {
     if (!user || !canRoll) return;
     const bonus = gameState.rollBonus || 0;
-    const baseRoll = Math.floor(Math.random() * 6) + 1;
-    
+    const baseRoll = rollD6();
+
     await updateDoc(doc(db, "gameState", "current"), {
       currentRoll: baseRoll + bonus,
       lastBaseRoll: baseRoll,
       currentRollPlayerId: user.uid,
       rollConfirmed: false,
-      rollBonus: 0, // Сбрасываем бонус после использования
+      rollBonus: 0,
     });
   };
 
@@ -456,7 +826,7 @@ export function useGameData() {
   };
 
   const buildTurnState = () => {
-    const activePlayers = players.filter((p) => p.inGame && p.role !== "admin");
+    const activePlayers = players.filter((player) => player.inGame && player.role !== "admin");
     const sortedIds = [...activePlayers]
       .sort((a, b) => {
         const scoreA = a.tiltCoins ?? 0;
@@ -464,7 +834,7 @@ export function useGameData() {
         if (scoreB !== scoreA) return scoreB - scoreA;
         return gameState.turnOrder.indexOf(a.id) - gameState.turnOrder.indexOf(b.id);
       })
-      .map((p) => p.id);
+      .map((player) => player.id);
 
     return {
       turnOrder: sortedIds,
@@ -540,6 +910,6 @@ export function useGameData() {
       handleConfirmRoll,
       handleStepPhase,
       handlePrepareTurn,
-    }
+    },
   };
 }

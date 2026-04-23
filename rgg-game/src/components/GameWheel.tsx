@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { doc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import "./GameWheel.css";
@@ -30,7 +30,7 @@ export const GameWheel: React.FC<Props> = ({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null); // Состояние для наведения на таблицу
   const [removedGameId, setRemovedGameId] = useState<string | null>(null); // Новое состояние для анимации исчезновения
   const wheelRef = useRef<HTMLDivElement>(null); // Ref for the main wheel div
-  const requestRef = useRef<number>(); // Ref for animation frame ID
+  const requestRef = useRef<number | null>(null); // Ref for animation frame ID
 
   const angleStep = items.length > 0 ? 360 / items.length : 0;
 
@@ -64,28 +64,30 @@ export const GameWheel: React.FC<Props> = ({
     return () => unsub();
   }, [items, rotation]);
 
-  const updateActiveSegment = () => {
-    if (!wheelRef.current) return;
-    const style = window.getComputedStyle(wheelRef.current);
-    const matrix = new DOMMatrixReadOnly(style.transform);
-    const currentAngle = Math.atan2(matrix.b, matrix.a) * (180 / Math.PI);
-    const normalizedAngle = (currentAngle < 0 ? currentAngle + 360 : currentAngle) % 360;
-    const currentActive = Math.floor(((360 - normalizedAngle + 270) % 360) / angleStep) % items.length;
-    setActiveIndex(currentActive);
-    requestRef.current = requestAnimationFrame(updateActiveSegment);
-  };
+  const updateActiveSegment = useCallback(() => {
+    const tick = () => {
+      if (!wheelRef.current) return;
+      const style = window.getComputedStyle(wheelRef.current);
+      const matrix = new DOMMatrixReadOnly(style.transform);
+      const currentAngle = Math.atan2(matrix.b, matrix.a) * (180 / Math.PI);
+      const normalizedAngle = (currentAngle < 0 ? currentAngle + 360 : currentAngle) % 360;
+      const currentActive =
+        Math.floor(((360 - normalizedAngle + 270) % 360) / angleStep) % items.length;
+      setActiveIndex(currentActive);
+      requestRef.current = requestAnimationFrame(tick);
+    };
+
+    tick();
+  }, [angleStep, items.length]);
 
   useEffect(() => {
     if (spinning) {
       requestRef.current = requestAnimationFrame(updateActiveSegment);
     } else {
-      if (requestRef.current !== undefined) cancelAnimationFrame(requestRef.current);
+      if (requestRef.current !== null) cancelAnimationFrame(requestRef.current);
     }
-    return () => { if (requestRef.current !== undefined) cancelAnimationFrame(requestRef.current); };
-  }, [spinning]);
-
-  const getIndex = (rot: number) =>
-    Math.floor(((360 - (rot % 360) + 270) % 360) / angleStep) % items.length;
+    return () => { if (requestRef.current !== null) cancelAnimationFrame(requestRef.current); };
+  }, [spinning, updateActiveSegment]);
 
   const spin = async () => {
     if (spinning || items.length === 0 || winner) return;

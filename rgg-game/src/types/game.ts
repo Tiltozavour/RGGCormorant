@@ -24,14 +24,21 @@ export interface Player {
   login: string;
   avatar?: string;
   tiltCoins?: number;
-  lastTiltoCoins?: number; // Результат последнего раунда/голосования
-  bonusPoints?: number;   // Очки за голосование в текущем раунде
+  lastTiltoCoins?: number;
+  bonusPoints?: number;
   position?: number;
   prevCell?: number | null;
   inGame?: boolean;
-  inventory?: string[];   // Массив ID карточек
+  inventory?: string[];
   role?: "admin" | "player";
-  isFrozen?: boolean;     // Флаг заморозки игрока (для Ледолуча)
+  isFrozen?: boolean;
+  freezeDuration?: number;
+  hasProtection?: boolean;
+  customStatus?: string | null;
+  statusDuration?: number;
+  discardNextDrawn?: boolean;
+  redirectNextDrawnToPlayerId?: string | null;
+  giveNextDrawnToPlayerId?: string | null;
   borderColor?: string;
   createdAt?: unknown;
 }
@@ -46,19 +53,19 @@ export interface GameState {
   lastWheelResult: string | null;
   votes: Record<string, string>;
   scores: Record<string, number>;
-  currentResults: Record<string, number>; // Добавляем поле для текущих результатов
+  currentResults: Record<string, number>;
   showWheel: boolean;
   currentRoll: number | null;
   currentRollPlayerId: string | null;
-  lastBaseRoll: number | null; // Чистое значение кубика без бонусов
-  rollBonus: number; // Бонусные шаги от карт, использованных ДО броска
+  lastBaseRoll: number | null;
+  rollBonus: number;
   rollConfirmed: boolean;
   gameHistory: GameHistoryEntry[];
-  revealedCards?: string[]; // Список ID карт, которые были "открыты" игроками
+  revealedCards?: string[];
   activeInteraction?: {
     playerId: string;
-    type: 'gambling' | 'bshop';
-    cards: string[]; // ID трех карт
+    type: "gambling" | "bshop";
+    cards: string[];
   } | null;
 }
 
@@ -72,7 +79,7 @@ export const defaultGameState: GameState = {
   lastWheelResult: null,
   votes: {},
   scores: {},
-  currentResults: {}, // Инициализируем пустым объектом
+  currentResults: {},
   showWheel: false,
   currentRoll: null,
   currentRollPlayerId: null,

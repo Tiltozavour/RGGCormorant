@@ -58,9 +58,17 @@ function AppClean() {
   const cardNeedsTarget = (card: GameCardType) => {
     const targetActions: string[] = ['steal_coins', 'steal_card', 'discard_card', 'freeze_player', 'duel', 'judge_coins'];
     // inv_007: Карта движения (может на себя или другого), inv_013: Заказное, inv_017: Налоги, inv_018: Катжит, inv_020: Ледолуч
-    const targetIds = ['inv_007', 'inv_013', 'inv_017', 'inv_018', 'inv_020']; 
+    const targetIds = ['inv_007', 'inv_013', 'inv_016', 'inv_017', 'inv_018', 'inv_020']; 
     return targetActions.includes(card.action) || targetIds.includes(card.id);
   };
+
+  const canTargetSelf = (card: GameCardType) => card.id === "inv_007";
+
+  const selectableTargets = players.filter((player) => {
+    if (!player.inGame || player.role === "admin") return false;
+    if (player.id === user?.uid) return !!pendingTargetCard && canTargetSelf(pendingTargetCard);
+    return true;
+  });
 
   const handleCardClick = (card: GameCardType) => {
     // Предварительная проверка правил использования (дублируем логику из хука для UI)
@@ -105,6 +113,11 @@ function AppClean() {
         setGameAlert({ title: "Заблокировано", message: "Использование карт в этой фазе запрещено.", type: 'warning' });
         return;
       }
+    }
+
+    if (card.action === 'protection' && playerData?.hasProtection) {
+      setGameAlert({ title: "Уже защищен", message: "У вас уже активно Силовое поле! Не стоит тратить карту впустую.", type: 'info' });
+      return;
     }
 
     if (cardNeedsTarget(card)) {
@@ -420,6 +433,61 @@ function AppClean() {
         </div>
       )}
 
+      {pendingTargetCard && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[10005] p-4">
+          <div className="bg-zinc-900 border-2 border-purple-500/50 p-8 rounded-[2.5rem] w-full max-w-md flex flex-col gap-6 shadow-[0_0_50px_rgba(168,85,247,0.3)]">
+            <div className="text-center">
+              <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">Выбор цели</h2>
+              <p className="text-purple-400 text-[10px] font-black uppercase tracking-[0.2em] mt-1">
+                Для карты "{pendingTargetCard.name}"
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
+              {selectableTargets.map((player) => (
+                  <button
+                    key={player.id}
+                    onClick={() => {
+                      void handlers.handleUseCard(pendingTargetCard, player.id);
+                      setPendingTargetCard(null);
+                    }}
+                    className="flex items-center gap-4 bg-white/5 hover:bg-purple-500/20 border border-white/10 hover:border-purple-500/50 p-3 rounded-2xl transition-all group"
+                  >
+                    <div className="w-12 h-12 rounded-full p-[2px]" style={{ background: player.borderColor || "#fac319" }}>
+                      <img
+                        src={player.avatar || FALLBACK_AVATAR}
+                        className="w-full h-full rounded-full object-cover border-2 border-black"
+                        alt={player.login}
+                      />
+                    </div>
+                    <div className="flex flex-col items-start">
+                      <span className="text-white font-bold group-hover:text-purple-200 transition-colors" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+                        {player.login}
+                      </span>
+                      <span className="text-[10px] text-zinc-500 font-bold uppercase">
+                        Клетка {player.position ?? 0} • {player.tiltCoins ?? 0} coins
+                      </span>
+                    </div>
+                    <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-purple-400 font-black text-xs">
+                      Выбрать
+                    </div>
+                  </button>
+                ))}
+              {selectableTargets.length === 0 && (
+                <div className="text-center py-4 text-zinc-500 italic">Нет доступных целей</div>
+              )}
+            </div>
+
+            <button
+              onClick={() => setPendingTargetCard(null)}
+              className="w-full py-4 text-zinc-500 hover:text-white font-bold uppercase text-xs tracking-widest transition-colors"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
+
       <PlayersSidebar
         isOpen={isPlayersSidebarOpen}
         players={players}
@@ -431,6 +499,10 @@ function AppClean() {
           setIsPlayersSidebarOpen(false);
           setIsScoresDetailsOpen(true);
         }}
+        onOpenCollection={() => {
+          setIsPlayersSidebarOpen(false);
+          setIsCollectionOpen(true);
+        }}
       />
 
       {isSidebarOpen && (
@@ -441,7 +513,7 @@ function AppClean() {
       )}
 
       <aside
-        className={`fixed top-0 right-0 h-full w-80 backdrop-blur-xl border-l border-yellow-500/20 p-6 flex flex-col gap-8 z-50 transform transition-transform duration-500 ease-out ${
+        className={`fixed top-0 right-0 h-full w-80 backdrop-blur-xl border-l border-yellow-500/20 p-6 pt-24 flex flex-col gap-8 z-[70] transform transition-transform duration-500 ease-out ${
           isSidebarOpen ? "translate-x-0" : "translate-x-full"
         }`}
         style={{ fontFamily: "'Comfortaa', sans-serif" }}

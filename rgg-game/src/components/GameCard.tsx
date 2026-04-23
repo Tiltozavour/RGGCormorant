@@ -19,10 +19,11 @@ const GameCard: React.FC<GameCardProps> = ({
   onClick, 
   onUse 
 }) => {
-  const config = (RARITY_CONFIG as any)[card.rarity] || RARITY_CONFIG.default;
+  const config = RARITY_CONFIG[card.rarity] ?? RARITY_CONFIG.default;
+  void totalCards;
   
   // Вычисляем эффективный фоновый цвет для кнопок и наложений
-  const effectiveBg = isHexColor(card.bgCard) ? card.bgCard : config.bgCard;
+  const effectiveBg = (isHexColor(card.bgCard) ? card.bgCard : config.bgCard) ?? config.bgCard;
 
   return (
     <>

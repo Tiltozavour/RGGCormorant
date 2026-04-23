@@ -11,6 +11,7 @@ interface PlayersSidebarProps {
   currentUserId: string | null;
   onClose: () => void;
   onOpenDetails: () => void;
+  onOpenCollection: () => void;
 }
 
 const FALLBACK_AVATAR =
@@ -24,6 +25,7 @@ function PlayersSidebar({
   currentUserId,
   onClose,
   onOpenDetails,
+  onOpenCollection,
 }: PlayersSidebarProps) {
   const rows = buildPlayerScoreRows(players, totalScores, gameHistory);
   const latestGameName = gameHistory.length > 0 ? gameHistory[gameHistory.length - 1].gameName : null;
@@ -43,7 +45,7 @@ function PlayersSidebar({
       )}
 
       <aside
-        className={`fixed top-0 left-0 h-full w-[min(92vw,720px)] bg-black/65 backdrop-blur-xl border-r border-yellow-500/20 p-4 md:p-6 flex flex-col gap-4 z-50 transform transition-transform duration-300 ${
+        className={`fixed top-0 left-0 h-full w-[min(92vw,720px)] bg-black/65 backdrop-blur-xl border-r border-yellow-500/20 p-4 md:p-6 pt-24 flex flex-col gap-4 z-[70] transform transition-transform duration-300 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         style={{ fontFamily: "'Comfortaa', sans-serif" }}
@@ -146,6 +148,13 @@ function PlayersSidebar({
           className="self-start text-sm text-yellow-300 underline underline-offset-4 hover:text-yellow-200 active:opacity-50 transition-all font-bold uppercase tracking-widest"
         >
           Подробнее
+        </button>
+
+        <button
+          onClick={onOpenCollection}
+          className="self-start text-sm text-yellow-300 underline underline-offset-4 hover:text-yellow-200 active:opacity-50 transition-all font-bold uppercase tracking-widest"
+        >
+          Коллекция Легенд
         </button>
       </aside>
     </>
