@@ -59,10 +59,41 @@ const GameCard: React.FC<GameCardProps> = ({
         .animate-legendary-glow {
           animation: glow-pulse 3s ease-in-out infinite;
         }
+        .card-number-wrapper {
+          position: relative;
+          cursor: help;
+        }
+        .card-howtowork-tooltip {
+          pointer-events: none;
+          position: absolute;
+          bottom: 140%;
+          left: 50%;
+          transform: translateX(-50%) translateY(10px);
+          width: 220px;
+          padding: 12px;
+          background: rgba(18, 18, 22, 0.98);
+          border: 1px solid rgba(250, 171, 25, 0.5);
+          border-radius: 14px;
+          color: #fff;
+          font-size: 11px;
+          line-height: 1.4;
+          text-align: center;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+          opacity: 0;
+          visibility: hidden;
+          transition: all 0.3s ease;
+          backdrop-filter: blur(12px);
+          z-index: 1000;
+        }
+        .card-number-wrapper:hover .card-howtowork-tooltip {
+          opacity: 1;
+          visibility: visible;
+          transform: translateX(-50%) translateY(0);
+        }
       `}} />
     <div 
       onClick={onClick}
-      className={`relative w-80 h-[520px] shrink-0 flex flex-col overflow-hidden rounded-[2.5rem] border-2 transition-all duration-500 cursor-pointer group select-none ${config.border} ${config.glow} bg-zinc-950 hover:scale-105 hover:-translate-y-4 hover:shadow-[0_30px_60px_rgba(0,0,0,0.8)]
+      className={`relative w-80 h-[520px] shrink-0 flex flex-col overflow-visible rounded-[2.5rem] border-2 transition-all duration-500 cursor-pointer group select-none ${config.border} ${config.glow} bg-zinc-950 hover:scale-105 hover:-translate-y-4 hover:shadow-[0_30px_60px_rgba(0,0,0,0.8)]
         ${card.rarity === 'legendary' ? 'animate-float animate-legendary-glow hover:animate-none' : ''}`}
       style={{
         zIndex: isInHand ? index + 10 : 1,
@@ -72,9 +103,21 @@ const GameCard: React.FC<GameCardProps> = ({
       {/* Inner Highlight Border */}
       <div className="absolute inset-1 border border-white/10 rounded-[2.3rem] pointer-events-none z-5" />
 
+      {/* Top Right: Card Number & Tooltip - ВЫНЕСЕНО ИЗ СЕКЦИИ */}
+      <div className="absolute top-6 right-6 z-50">
+        <div className="card-number-wrapper w-10 h-10 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center shadow-2xl transition-transform hover:scale-110">
+          <span className="text-xs font-mono font-bold text-white/90">#{card.number}</span>
+          {card.howtowork && (
+            <div className="card-howtowork-tooltip">
+              {card.howtowork}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* TOP SECTION (60%) */}
       <div 
-        className={`relative h-[60%] w-full flex ${card.rarity === 'legendary' ? 'items-end' : 'items-center'} justify-center overflow-hidden bg-gradient-to-b ${config.artGradient}`}
+        className={`relative h-[60%] w-full flex ${card.rarity === 'legendary' ? 'items-end' : 'items-center'} justify-center overflow-hidden rounded-t-[2.3rem] bg-gradient-to-b ${config.artGradient}`}
       >
         {/* Holographic Overlay for Legendary */}
         {card.rarity === 'legendary' && (
@@ -112,18 +155,13 @@ const GameCard: React.FC<GameCardProps> = ({
           <span className="text-[10px] font-black uppercase tracking-widest text-white/90">{card.rarity}</span>
         </div>
 
-        {/* Top Right: Card Number */}
-        <div className="absolute top-6 right-6 z-30 w-10 h-10 rounded-full bg-white/5 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-xl">
-          <span className="text-xs font-mono font-bold text-white/60">#{card.number}</span>
-        </div>
-
         {/* Center Divider: Soft fade out */}
         <div className="absolute bottom-0 left-0 w-full h-24 bg-gradient-to-t from-zinc-950 to-transparent z-25" />
       </div>
 
       {/* BOTTOM SECTION (40%) */}
       <div 
-        className="relative h-[40%] w-full p-6 flex flex-col items-center text-center justify-between border-t border-white/5 z-40 bg-zinc-900/80 backdrop-blur-xl"
+        className="relative h-[40%] w-full p-6 flex flex-col items-center text-center justify-between border-t border-white/5 z-40 bg-zinc-900/80 backdrop-blur-xl rounded-b-[2.3rem]"
         style={{ 
           backgroundImage: card.faceCard ? `url("${card.faceCard}")` : 'none',
           backgroundSize: 'cover',
@@ -133,12 +171,12 @@ const GameCard: React.FC<GameCardProps> = ({
         {/* Tint overlay based on bgCard */}
         <div className="absolute inset-0 -z-10 opacity-30" style={{ backgroundColor: effectiveBg }} />
 
-        <div className="flex flex-col gap-2 mt-2">
-          <h2 className="text-2xl font-black text-white uppercase tracking-tight drop-shadow-sm line-clamp-1 italic">
+        <div className="flex flex-col h-full justify-between px-3">
+         <h3 className="text-2xl font-black text-white uppercase tracking-tight italic line-clamp-2 leading-tight min-h-[3.5rem] flex items-center justify-center text-center">
             {card.name}
-          </h2>
-          <p className="text-[11px] leading-relaxed text-white font-medium italic line-clamp-3 px-2" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
-            "{card.description}"
+          </h3>
+         <p className="text-[16px] leading-relaxed text-white font-medium italic line-clamp-3 font-comfortaa min-h-[3.5rem] flex items-start justify-center text-center">
+            {card.description}
           </p>
         </div>
 

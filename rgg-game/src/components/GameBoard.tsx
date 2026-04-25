@@ -508,6 +508,13 @@ const GameBoard: React.FC<GameBoardProps> = ({
                 />
               )}
 
+              {otherPlayer.customStatus === 'fish_shield' && (
+                <div
+                  className="absolute w-16 h-16 rounded-full blur-2xl opacity-80 animate-pulse"
+                  style={{ background: "rgba(37, 99, 235, 0.7)" }}
+                />
+              )}
+
               <div
                 className="absolute w-16 h-16 rounded-full blur-xl opacity-40"
                 style={{ background: otherPlayer.borderColor || "#a855f7" }}
@@ -519,6 +526,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
               >
                 {otherPlayer.login}
                 {otherPlayer.hasProtection && <span title="Силовое поле">🛡️</span>}
+                {otherPlayer.customStatus === 'fish_shield' && <span title="No, no mr. Fish">🐟</span>}
                 {isCurrentTurn && <span className="text-[8px] opacity-70">●</span>}
               </div>
 
@@ -563,6 +571,13 @@ const GameBoard: React.FC<GameBoardProps> = ({
             />
           )}
 
+          {playerData.customStatus === 'fish_shield' && (
+            <div
+              className="absolute w-16 h-16 rounded-full blur-2xl opacity-80 animate-pulse"
+              style={{ background: "rgba(37, 99, 235, 0.7)" }}
+            />
+          )}
+
           <div
             className="absolute w-16 h-16 rounded-full blur-xl opacity-40"
             style={{ background: playerData.borderColor || "#facc15" }}
@@ -574,6 +589,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
           >
             {playerData.login}
             {playerData.hasProtection && <span title="Силовое поле">🛡️</span>}
+            {playerData.customStatus === 'fish_shield' && <span title="No, no mr. Fish">🐟</span>}
             {playerData.id === currentTurnPlayerId && <span className="text-[8px] opacity-70">●</span>}
           </div>
 

@@ -27,7 +27,8 @@ export type CardAction =
   | 'move_target_and_self' // Двигает цель и себя (Подвинься!)
   | 'pay_or_move_back' // Заплатить или отступить (Платити налоги!)
   | 'take_next_card'   // Присвоить следующую выпавшую карту (Благодетель)
-  | 'give_next_card';  // Отдать следующую карту другому игроку (Такой себе пир)
+  | 'give_next_card'   // Отдать следующую карту другому игроку (Такой себе пир)
+  | 'fish_protection'; // Защита от игроков и отмена колеса
 
 export interface GameCard {
   id: string;          // Уникальный ID (например, inv_001)
@@ -47,6 +48,7 @@ export interface GameCard {
   number: number;      // Порядковый номер в коллекции для удобства
   isUnique?: boolean;  // Флаг уникальности (для призовых карт)
   isWon?: boolean;     // Флаг: была ли карта уже выиграна
+  howtowork?: string;  // Дополнительный текст, объясняющий механику работы карты
 }
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';

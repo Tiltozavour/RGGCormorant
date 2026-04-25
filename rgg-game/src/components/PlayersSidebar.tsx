@@ -149,13 +149,6 @@ function PlayersSidebar({
         >
           Подробнее
         </button>
-
-        <button
-          onClick={onOpenCollection}
-          className="self-start text-sm text-yellow-300 underline underline-offset-4 hover:text-yellow-200 active:opacity-50 transition-all font-bold uppercase tracking-widest"
-        >
-          Коллекция Легенд
-        </button>
       </aside>
     </>
   );

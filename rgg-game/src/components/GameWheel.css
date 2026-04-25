@@ -164,3 +164,42 @@
 .animate-shimmer {
   animation: shimmer 2.5s infinite linear;
 }
+
+/* ===== CARD TOOLTIP STYLES ===== */
+.card-number-wrapper {
+  position: relative;
+  display: inline-flex;
+  cursor: help;
+}
+
+.card-howtowork-tooltip {
+  pointer-events: none;
+  position: absolute;
+  bottom: 140%;
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  width: 220px;
+  padding: 12px;
+  background: rgba(18, 18, 22, 0.98);
+  border: 1px solid rgba(250, 171, 25, 0.5);
+  border-radius: 14px;
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(250, 171, 25, 0.1);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1000;
+  backdrop-blur: 12px;
+  font-family: 'Comfortaa', sans-serif;
+  text-transform: none;
+  white-space: normal;
+}
+
+.card-number-wrapper:hover .card-howtowork-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}

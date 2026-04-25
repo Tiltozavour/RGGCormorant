@@ -31,6 +31,7 @@ function AppClean() {
   const [isScoresDetailsOpen, setIsScoresDetailsOpen] = useState(false);
   const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(false);
   const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
+  const [isLegendsOpen, setIsLegendsOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<GameCardType | null>(null);
   const [isCollectionOpen, setIsCollectionOpen] = useState(false); // Состояние для музея карт
   const [isHandOpen, setIsHandOpen] = useState(false); // Состояние для открытия "руки" с картами
@@ -62,6 +63,10 @@ function AppClean() {
     return targetActions.includes(card.action) || targetIds.includes(card.id);
   };
 
+  const protectionCardsInInv = playerData?.inventory
+    ?.map((id: string) => allCards[id])
+    .filter((c): c is GameCardType => !!c && c.action === "protection") || [];
+
   const canTargetSelf = (card: GameCardType) => card.id === "inv_007";
 
   const selectableTargets = players.filter((player) => {
@@ -73,20 +78,21 @@ function AppClean() {
   const handleCardClick = (card: GameCardType) => {
     // Предварительная проверка правил использования (дублируем логику из хука для UI)
     if (!isAdmin) {
-      const { phase, currentRoll } = gameState;
+      const { phase, currentRoll, showWheel } = gameState;
       const isProtection = card.action === 'protection';
+      const isFish = card.action === 'fish_protection';
       const isWheelCard = card.action === 'spin_wheel';
       const isExtraRoll = card.action === 'extra_roll';
       const isMovement = card.action === 'move_steps';
 
-      if (phase === 'next_game' && !isWheelCard) {
+      if (phase === 'next_game' && !isWheelCard && !(isFish && showWheel)) {
         setGameAlert({ title: "Стоп!", message: "В этой фазе можно использовать только карту 'Подкрутка'!", type: 'warning' });
         return;
       }
       
       if (phase === 'turn') {
         // Защиту можно всегда. Остальное только в свой ход.
-        if (!isProtection && currentTurnPlayerId !== user?.uid) {
+        if (!isProtection && !isFish && currentTurnPlayerId !== user?.uid) {
           setGameAlert({ title: "Не твой ход", message: "Обычные карты можно использовать только в свою очередь.", type: 'info' });
           return;
         }
@@ -97,7 +103,7 @@ function AppClean() {
         }
 
         // Обычные карты (не движение, не защита, не переброс) только ДО броска
-        const isSpecialAction = isProtection || isExtraRoll || isMovement;
+        const isSpecialAction = isProtection || isFish || isExtraRoll || isMovement;
         const isMyRollDone = currentRoll !== null && gameState.currentRollPlayerId === user?.uid;
 
         if (!isSpecialAction && isMyRollDone) {
@@ -109,7 +115,7 @@ function AppClean() {
           setGameAlert({ title: "Рано!", message: "Сначала бросьте кубик, чтобы использовать переброс!", type: 'info' });
           return;
         }
-      } else if (phase !== 'next_game') {
+      } else if (phase !== 'next_game' && !isFish) {
         setGameAlert({ title: "Заблокировано", message: "Использование карт в этой фазе запрещено.", type: 'warning' });
         return;
       }
@@ -335,7 +341,7 @@ function AppClean() {
       {/* Полноэкранная лента "Руки" (всей колоды в ряд) */}
       {isHandOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-xl z-[10002] flex items-end justify-center pb-16 overflow-hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-xl z-[10002] flex items-end justify-center pb-16 overflow-y-auto"
           onClick={() => setIsHandOpen(false)} // Закрываем по клику на фон
         >
           <div className="absolute top-10 left-1/2 -translate-x-1/2 text-center pointer-events-none">
@@ -344,7 +350,7 @@ function AppClean() {
           </div>
 
           <div
-            className="flex px-[10vw] py-20 overflow-x-auto overflow-y-hidden max-w-full custom-scrollbar items-end select-none scroll-smooth"
+            className="flex gap-8 px-[10vw] pt-48 pb-20 overflow-x-auto overflow-y-visible max-w-full custom-scrollbar items-end select-none scroll-smooth"
             onClick={e => e.stopPropagation()} // Предотвращаем закрытие при клике на саму ленту
           >
             {playerData?.inventory?.map((cardId: string, idx: number, arr: string[]) => {
@@ -385,10 +391,11 @@ function AppClean() {
           </div>
 
           <div 
-            className="flex flex-wrap gap-10 justify-center overflow-y-auto px-10 pb-20 max-w-7xl custom-scrollbar"
+            className="flex flex-wrap gap-10 justify-center overflow-y-auto px-10 pt-24 pb-20 max-w-7xl custom-scrollbar"
             onClick={e => e.stopPropagation()}
           >
             {(Object.values(allCards) as GameCardType[])
+              .filter((card: GameCardType) => card.rarity !== 'legendary')
               .sort((a: GameCardType, b: GameCardType) => a.number - b.number)
               .map((card: GameCardType) => {
                 const isRevealed = gameState.revealedCards?.includes(card.id);
@@ -422,6 +429,67 @@ function AppClean() {
                       onClick={() => setSelectedCard(card)}
                     />
                     <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
+                      Раскрыто
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+          
+          <button className="mt-8 text-zinc-500 hover:text-white font-black uppercase text-xs tracking-widest transition-all">Нажмите в любое место, чтобы выйти</button>
+        </div>
+      )}
+
+      {/* Экран КОЛЛЕКЦИИ ЛЕГЕНД */}
+      {isLegendsOpen && (
+        <div 
+          className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md z-[10002] flex flex-col items-center py-20 overflow-hidden animate-in fade-in duration-500"
+          onClick={() => setIsLegendsOpen(false)}
+        >
+          <div className="text-center mb-12 pointer-events-none">
+            <h2 className="text-5xl font-black text-yellow-500 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(234,179,8,0.3)]">Коллекция Легенд</h2>
+            <p className="text-white/40 text-xs font-bold uppercase tracking-[0.5em] mt-4">Уникальные персонажи Cormorant Society</p>
+          </div>
+
+          <div 
+            className="flex flex-wrap gap-10 justify-center overflow-y-auto px-10 pt-24 pb-20 max-w-7xl custom-scrollbar"
+            onClick={e => e.stopPropagation()}
+          >
+            {(Object.values(allCards) as GameCardType[])
+              .filter((card: GameCardType) => card.rarity === 'legendary')
+              .sort((a: GameCardType, b: GameCardType) => a.number - b.number)
+              .map((card: GameCardType) => {
+                const isRevealed = gameState.revealedCards?.includes(card.id);
+                
+                if (!isRevealed) {
+                  return (
+                    <div 
+                      key={card.id}
+                      className="w-80 h-[520px] rounded-[2.5rem] bg-zinc-900 border-2 border-white/5 flex flex-col items-center justify-center gap-4 relative group"
+                    >
+                      <img 
+                        src="/cards/card_back.svg" 
+                        className="w-full h-full object-cover rounded-[2.5rem] opacity-20 grayscale" 
+                        alt="locked" 
+                      />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-white/10 text-6xl font-black italic">?</span>
+                        <span className="text-zinc-700 text-[10px] font-black uppercase tracking-widest mt-4">Скрытая Легенда</span>
+                        <span className="text-zinc-800 text-[8px] font-bold mt-1 italic">#{card.number}</span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={card.id} className="relative group">
+                    <GameCard
+                      card={card}
+                      index={0}
+                      totalCards={1}
+                      onClick={() => setSelectedCard(card)}
+                    />
+                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-3 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
                       Раскрыто
                     </div>
                   </div>
@@ -542,18 +610,7 @@ function AppClean() {
           </div>
 
           <div className="flex flex-col gap-5 w-full">
-            {/* Кнопка открытия коллекции */}
-            <button
-              onClick={() => {
-                setIsCollectionOpen(true);
-                setIsSidebarOpen(false);
-              }}
-              className="w-full py-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-center gap-3 group hover:bg-yellow-500/20 transition-all active:scale-95"
-            >
-              <span className="text-xl group-hover:rotate-12 transition-transform">🏺</span>
-              <span className="text-yellow-500 font-black uppercase text-xs tracking-widest">Галерея артефактов</span>
-            </button>
-
+    
             <div className="flex flex-col gap-2">
               <label htmlFor="nickname-input" className="text-[10px] uppercase font-black text-zinc-500 tracking-[0.2em] px-1">Ваш позывной</label>
               <input 
@@ -580,6 +637,32 @@ function AppClean() {
                   />
                 ))}
               </div>
+
+
+             {/* Кнопка открытия коллекции */}
+            <button
+              onClick={() => {
+                setIsLegendsOpen(true);
+                setIsSidebarOpen(false);
+              }}
+              className="w-full py-4 mt-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-center gap-3 group hover:bg-yellow-500/20 transition-all active:scale-95"
+            >
+              <span className="text-xl group-hover:rotate-12 transition-transform">👑</span>
+              <span className="text-yellow-500 font-black uppercase text-xs tracking-widest">Коллекция Легенд</span>
+            </button>
+
+                 {/* Кнопка открытия коллекции артефактов */}
+            <button
+              onClick={() => {
+                setIsCollectionOpen(true);
+                setIsSidebarOpen(false);
+              }}
+              className="w-full py-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-center gap-3 group hover:bg-yellow-500/20 transition-all active:scale-95"
+            >
+              <span className="text-xl group-hover:rotate-12 transition-transform">🏺</span>
+              <span className="text-yellow-500 font-black uppercase text-xs tracking-widest">Галерея Артефактов</span>
+            </button>
+
             </div>
           </div>
         </div>
@@ -654,6 +737,27 @@ function AppClean() {
               </div>
             ))}
           </div>
+
+          {/* Предложение использовать карточку защиты */}
+          {protectionCardsInInv.length > 0 && (
+            <div className="mt-12 flex flex-col items-center gap-4 bg-white/5 p-8 rounded-[2.5rem] border border-white/10 backdrop-blur-md shadow-2xl animate-in slide-in-from-bottom-5 duration-700">
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-[10px] font-black text-blue-300 uppercase tracking-[0.3em]">У вас есть защита</span>
+                <p className="text-white/40 text-[9px] font-medium">Вы можете избежать гемблинга, потратив карту</p>
+              </div>
+              <div className="flex gap-4">
+                {protectionCardsInInv.map((card) => (
+                  <button
+                    key={card.id}
+                    onClick={() => void handlers.handleFinishInteraction(undefined, 0, card.id)}
+                    className="bg-yellow-500 text-black px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white transition-all active:scale-95 shadow-[0_5px_0_#a16207] active:shadow-none active:translate-y-1"
+                  >
+                    Использовать "{card.name}"
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

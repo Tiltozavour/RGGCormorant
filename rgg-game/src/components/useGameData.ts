@@ -238,6 +238,7 @@ export function useGameData() {
       const targetRef = targetPlayerId ? doc(db, "players", targetPlayerId) : null;
       const targetPlayer = getPlayerById(targetPlayerId);
       const targetHasReflect = targetPlayer?.customStatus === "reflect_debuff";
+      const targetHasFish = targetPlayer?.customStatus === "fish_shield";
 
       await updateDoc(playerRef, { inventory: arrayRemove(card.id) });
       await updateDoc(doc(db, "gameState", "current"), { revealedCards: arrayUnion(card.id) });
@@ -260,6 +261,18 @@ export function useGameData() {
 
         case "steal_coins":
           if (targetRef && targetPlayerId) {
+            if (targetHasFish && card.id === "inv_018") {
+              // Проверяем успех броска для Катжита перед срабатыванием Рыбки
+              const roll = rollD6();
+              if (roll < 4) {
+                await updateDoc(playerRef, { tiltCoins: increment(-10) });
+                alert(`Кубик: ${roll}. Неудача. Вы потеряли 10 монет.`);
+                break;
+              }
+              await updateDoc(targetRef, clearTemporaryStatus);
+              alert(`${targetPlayer?.login} заблокировал кражу монет с помощью Рыбки!`);
+              break;
+            }
             if (targetHasReflect) {
               await updateDoc(targetRef, clearTemporaryStatus);
               await runTransaction(db, async (transaction) => {
@@ -302,10 +315,17 @@ export function useGameData() {
         case "move_steps": {
           const targetId = targetPlayerId || user.uid;
           const isForward = card.value > 0;
+          const isHostile = targetId !== user.uid;
 
           if (isForward && gameState.phase === "turn") {
             const isMyRollActive =
               gameState.currentRoll !== null && gameState.currentRollPlayerId === user.uid;
+
+            if (isHostile && targetHasFish) {
+              await updateDoc(targetRef!, clearTemporaryStatus);
+              alert(`${targetPlayer?.login} заблокировал перемещение Рыбкой!`);
+              break;
+            }
 
             if (!isMyRollActive) {
               await updateDoc(doc(db, "gameState", "current"), {
@@ -322,6 +342,11 @@ export function useGameData() {
             }
           } else {
             const subjectRef = targetRef || playerRef;
+            if (isHostile && targetHasFish) {
+              await updateDoc(targetRef!, clearTemporaryStatus);
+              alert(`${targetPlayer?.login} заблокировал перемещение Рыбкой!`);
+              break;
+            }
             const currentPos =
               (targetPlayerId ? getPlayerById(targetPlayerId) : playerData)?.position || 0;
             await updateDoc(subjectRef, {
@@ -378,6 +403,11 @@ export function useGameData() {
 
         case "freeze_player":
           if (targetRef && targetPlayerId) {
+            if (targetHasFish) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+              alert(`${targetPlayer?.login} заблокировал заморозку Рыбкой!`);
+              break;
+            }
             if (targetHasReflect) {
               await updateDoc(targetRef, clearTemporaryStatus);
               await updateDoc(playerRef, {
@@ -411,12 +441,30 @@ export function useGameData() {
           await updateDoc(playerRef, { hasProtection: true });
           break;
 
+        case "fish_protection":
+          if (gameState.showWheel) {
+            await updateDoc(doc(db, "gameState", "current"), { showWheel: false });
+            alert("Вы отменили прокрутку колеса!");
+          } else {
+            await updateDoc(playerRef, {
+              customStatus: "fish_shield",
+              statusDuration: 1,
+            });
+            alert("No no no mr. Fish активирован. Следующая атака игрока будет заблокирована.");
+          }
+          break;
+
         case "prize":
           alert(`Супер-приз: ${card.name}. Свяжитесь с администратором.`);
           break;
 
         case "judge_coins":
           if (targetRef && targetPlayerId) {
+            if (targetHasFish) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+              alert(`${targetPlayer?.login} заблокировал эффект судьи Рыбкой!`);
+              break;
+            }
             const targetDoc = targetHasReflect ? playerRef : targetRef;
             const targetLabel = targetHasReflect ? "Вы" : targetPlayer?.login || "Игрок";
             if (targetHasReflect) {
@@ -459,6 +507,11 @@ export function useGameData() {
 
         case "discard_card":
           if (targetRef && targetPlayerId) {
+            if (targetHasFish) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+              alert(`${targetPlayer?.login} заблокировал сброс карты Рыбкой!`);
+              break;
+            }
             const victimId = targetHasReflect ? user.uid : targetPlayerId;
             const victimRef = doc(db, "players", victimId);
             if (targetHasReflect) {
@@ -478,6 +531,11 @@ export function useGameData() {
 
         case "steal_card":
           if (targetRef && targetPlayerId) {
+            if (targetHasFish) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+              alert(`${targetPlayer?.login} заблокировал кражу карты Рыбкой!`);
+              break;
+            }
             const fromId = targetHasReflect ? user.uid : targetPlayerId;
             const toId = targetHasReflect ? targetPlayerId : user.uid;
             const fromRef = doc(db, "players", fromId);
@@ -510,6 +568,11 @@ export function useGameData() {
 
         case "move_target_for_coins":
           if (targetRef && targetPlayerId) {
+            if (targetHasFish) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+              alert(`${targetPlayer?.login} заблокировал перемещение Рыбкой!`);
+              break;
+            }
             const steps = Math.min(playerData.tiltCoins ?? 0, 3);
             if (steps <= 0) {
               alert("У вас нет монет для этой карты.");
@@ -539,6 +602,11 @@ export function useGameData() {
 
         case "duel":
           if (targetRef && targetPlayerId) {
+            if (targetHasFish) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+              alert(`${targetPlayer?.login} заблокировал дуэль Рыбкой!`);
+              break;
+            }
             const targetCoins = targetPlayer?.tiltCoins ?? 0;
             const myCoins = playerData.tiltCoins ?? 0;
             const stake = Math.min(5, myCoins, targetCoins);
@@ -566,6 +634,11 @@ export function useGameData() {
 
         case "move_target_and_self":
           if (targetRef && targetPlayerId) {
+            if (targetHasFish) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+              alert(`${targetPlayer?.login} заблокировал эффект Рыбкой!`);
+              break;
+            }
             await updateDoc(targetRef, {
               position: (targetPlayer?.position ?? 0) + 2,
               prevCell: null,
@@ -580,6 +653,11 @@ export function useGameData() {
 
         case "pay_or_move_back":
           if (targetRef && targetPlayerId) {
+            if (targetHasFish) {
+              await updateDoc(targetRef, clearTemporaryStatus);
+              alert(`${targetPlayer?.login} заблокировал налоги Рыбкой!`);
+              break;
+            }
             const actualTargetId = targetHasReflect ? user.uid : targetPlayerId;
             const actualTargetRef = doc(db, "players", actualTargetId);
             const actualTarget = getPlayerById(actualTargetId) ?? playerData;
@@ -703,7 +781,11 @@ export function useGameData() {
     [user, getRandomInteractionCards],
   );
 
-  const handleFinishInteraction = async (cardId?: string, cost: number = 0) => {
+  const handleFinishInteraction = async (
+    cardId?: string,
+    cost: number = 0,
+    skipWithCardId?: string
+  ) => {
     if (!user || !gameState.activeInteraction) return;
 
     const playerRef = doc(db, "players", user.uid);
@@ -718,7 +800,10 @@ export function useGameData() {
         const { turnOrder = [], currentTurnIndex = 0, activeInteraction } = gsSnap.data() as GameState;
         const player = pSnap.data() as Player;
 
-        if (cardId) {
+        if (skipWithCardId) {
+          transaction.update(playerRef, { inventory: arrayRemove(skipWithCardId) });
+          transaction.update(gameStateRef, { revealedCards: arrayUnion(skipWithCardId) });
+        } else if (cardId) {
           const card = allCards[cardId];
           if (card.deck === "inventory") {
             if (cost > 0) {

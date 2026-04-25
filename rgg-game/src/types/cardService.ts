@@ -2,16 +2,14 @@ import { doc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import type { GameCard } from "./card";
 import starterCards from "../components/starterCards.json";
+import { RARITY_CONFIG } from "../components/gameConstants";
 
 type StarterCardSeed = Omit<GameCard, "bgGradientStart" | "bgGradientEnd"> & {
   bgGradientStart?: string | null;
   bgGradientEnd?: string | null;
 };
 
-/**
- * Р¤СѓРЅРєС†РёСЏ РґР»СЏ РїРµСЂРІРёС‡РЅРѕР№ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё РєРѕР»Р»РµРєС†РёРё РєР°СЂС‚РѕС‡РµРє РІ Р‘Р”.
- * РњРѕР¶РЅРѕ РІС‹Р·РІР°С‚СЊ РѕРґРёРЅ СЂР°Р· РёР· РєРѕРЅСЃРѕР»Рё СЂР°Р·СЂР°Р±РѕС‚С‡РёРєР° РёР»Рё РІСЂРµРјРµРЅРЅРѕР№ РєРЅРѕРїРєРё Р°РґРјРёРЅР°.
- */
+
 export const uploadStarterCards = async () => {
   console.log("рџљЂ РќР°С‡РёРЅР°РµРј Р·Р°РіСЂСѓР·РєСѓ РєР°СЂС‚ РІ Firestore...");
 
@@ -19,10 +17,13 @@ export const uploadStarterCards = async () => {
     const batch = writeBatch(db);
 
     (starterCards as StarterCardSeed[]).forEach((rawCard) => {
+      const config = RARITY_CONFIG[rawCard.rarity as keyof typeof RARITY_CONFIG] || RARITY_CONFIG.default;
+
       const card: GameCard = {
         ...rawCard,
-        bgGradientStart: rawCard.bgGradientStart ?? undefined,
-        bgGradientEnd: rawCard.bgGradientEnd ?? undefined,
+        bgCard: rawCard.bgCard ?? config.bgCard,
+        bgGradientStart: rawCard.bgGradientStart ?? config.bgGradientStart,
+        bgGradientEnd: rawCard.bgGradientEnd ?? config.bgGradientEnd,
       };
 
       if (card.rarity === "legendary") {
