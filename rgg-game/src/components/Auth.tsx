@@ -3,7 +3,6 @@ import { auth, db } from "../firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  fetchSignInMethodsForEmail,
 } from "firebase/auth";
 import type { User } from "firebase/auth";
 import {
@@ -36,31 +35,11 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     }
 
     try {
-      const fakeEmail = `${login.trim()}@cormorant.dev`;
+      // Приводим к нижнему регистру для надежности Auth
+      const fakeEmail = `${login.trim().toLowerCase()}@cormorant.dev`;
 
       if (isRegister) {
         console.log("[Auth] Регистрация:", { login, inviteCode });
-
-        const loginQuery = query(
-          collection(db, "players"),
-          where("login", "==", login)
-        );
-        const loginSnapshot = await getDocs(loginQuery);
-
-        if (!loginSnapshot.empty) {
-          setError("Этот идентификатор уже используется");
-          return;
-        }
-
-        try {
-          const methods = await fetchSignInMethodsForEmail(auth, fakeEmail);
-          if (methods.length > 0) {
-            setError("Этот идентификатор уже зарегистрирован");
-            return;
-          }
-        } catch {
-          // Let Firebase return the canonical auth error on create if needed.
-        }
 
         const inviteQuery = query(
           collection(db, "invites"),
@@ -91,7 +70,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         const user = userCredential.user;
 
         await setDoc(doc(db, "players", user.uid), {
-          login,
+          login: login.trim(),
           position: 0,
           tiltCoins: 0,
           inGame: false,
@@ -113,22 +92,22 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         );
         onLogin(userCredential.user);
       }
-    } catch (error: unknown) {
-      const authError =
-        typeof error === "object" && error !== null
-          ? (error as { code?: string; message?: string })
-          : {};
+    } catch (err: any) {
+      const errorCode = err.code || "";
+      const errorMessage = err.message || "";
 
-      console.error("[Auth] Ошибка:", authError.code, authError.message);
+      console.error("[Auth] Детальная ошибка:", errorCode, errorMessage);
 
-      if (authError.code === "auth/email-already-in-use") {
+      if (errorCode === "auth/email-already-in-use") {
         setError("Этот идентификатор уже зарегистрирован, попробуйте войти");
-      } else if (authError.code === "auth/invalid-credential") {
+      } else if (errorCode === "auth/invalid-credential" || errorCode === "auth/user-not-found" || errorCode === "auth/wrong-password") {
         setError("Неверный идентификатор или пароль");
-      } else if (authError.code === "auth/weak-password") {
+      } else if (errorCode === "auth/weak-password") {
         setError("Пароль должен быть не менее 6 символов");
+      } else if (errorCode === "permission-denied") {
+        setError("Ошибка прав доступа (Rules). Проверьте консоль Firebase.");
       } else {
-        setError(`Ошибка: ${authError.message || "Доступ отклонен"}`);
+        setError(`Ошибка: ${errorMessage || "Доступ отклонен"}`);
       }
     }
   };

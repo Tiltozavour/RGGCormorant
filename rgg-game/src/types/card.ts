@@ -41,10 +41,8 @@ export interface GameCard {
   
   // Визуальные поля
   faceCard: string;    // Путь к картинке (рубашка или арт)
-  bgCard?: string | null; // Цвет фона или градиент (HEX или CSS класс)
   artCard?: string;    // GIF или PNG арт для лицевой стороны
-  bgGradientStart?: string; // Начальный цвет градиента
-  bgGradientEnd?: string;   // Конечный цвет градиента
+  price?: number | null; // Цена в B-Shop (null если не продается)
   number: number;      // Порядковый номер в коллекции для удобства
   isUnique?: boolean;  // Флаг уникальности (для призовых карт)
   isWon?: boolean;     // Флаг: была ли карта уже выиграна

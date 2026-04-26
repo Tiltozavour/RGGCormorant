@@ -6,6 +6,7 @@ import {
   doc,
   onSnapshot,
   updateDoc,
+  setDoc,
   arrayUnion,
   increment,
   arrayRemove,
@@ -57,20 +58,23 @@ export function useGameData() {
   }, [user]);
 
   useEffect(() => {
+    if (!user) return;
     return onSnapshot(collection(db, "players"), (snap) => {
       setPlayers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Player, "id">) })));
     });
-  }, []);
+  }, [user]);
 
   useEffect(() => {
+    if (!user) return;
     return onSnapshot(doc(db, "gameState", "current"), (snap) => {
       if (snap.exists()) {
         setGameState({ ...defaultGameState, ...snap.data() } as GameState);
       }
     });
-  }, []);
+  }, [user]);
 
   useEffect(() => {
+    if (!user) return;
     const unsubCards = onSnapshot(collection(db, "cards"), (snap) => {
       const cards: Record<string, GameCard> = {};
       snap.docs.forEach((d) => {
@@ -91,7 +95,7 @@ export function useGameData() {
       unsubCards();
       unsubPrizes();
     };
-  }, []);
+  }, [user]);
 
   const isAdmin = playerData?.role === "admin";
   const currentTurnPlayerId = gameState.turnOrder[gameState.currentTurnIndex] ?? null;
@@ -156,12 +160,12 @@ export function useGameData() {
 
   const chooseStart = async (cellId: number) => {
     if (!user) return;
-    await updateDoc(doc(db, "players", user.uid), {
+    await setDoc(doc(db, "players", user.uid), {
       position: cellId,
       prevCell: null,
       inGame: true,
       inventory: ["inv_006", "inv_007"],
-    });
+    }, { merge: true });
   };
 
   const updateAvatar = async (url: string) => {
@@ -721,7 +725,7 @@ export function useGameData() {
       for (let i = 0; i < 3; i += 1) {
         if (type === "bshop") {
           const pool = cardsArray.filter(
-            (card) => card.deck === "inventory" && card.rarity !== "legendary",
+            (card) => card.deck === "inventory" && typeof card.price === 'number',
           );
           const selected = pickRandom(pool);
           if (selected) result.push(selected.id);

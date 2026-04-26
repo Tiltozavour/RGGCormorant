@@ -19,6 +19,7 @@ function AppClean() {
   } = useGameData();
 
   const getCardPrice = (card: GameCardType) => {
+    if (typeof card.price === 'number') return card.price;
     if (card.rarity === 'common') return 3;
     if (card.rarity === 'rare') return 7;
     if (card.rarity === 'epic') return 15;
