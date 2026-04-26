@@ -31,8 +31,6 @@ export interface Player {
   inGame?: boolean;
   inventory?: string[];
   role?: "admin" | "player";
-  isFrozen?: boolean;
-  freezeDuration?: number;
   hasProtection?: boolean;
   customStatus?: string | null;
   statusDuration?: number;
@@ -58,6 +56,7 @@ export interface GameState {
   currentRoll: number | null;
   currentRollPlayerId: string | null;
   lastBaseRoll: number | null;
+  forcedMovePlayerId: string | null;
   rollBonus: number;
   rollConfirmed: boolean;
   gameHistory: GameHistoryEntry[];
@@ -84,6 +83,7 @@ export const defaultGameState: GameState = {
   currentRoll: null,
   currentRollPlayerId: null,
   lastBaseRoll: null,
+  forcedMovePlayerId: null,
   rollBonus: 0,
   rollConfirmed: false,
   gameHistory: [],

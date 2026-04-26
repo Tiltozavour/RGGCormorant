@@ -124,10 +124,6 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
   const rollLabel =
     gameState.currentRoll !== null
       ? `Выпало: ${gameState.currentRoll}`
-      : me?.isFrozen
-        ? "Заморожен"
-        : gameState.phase !== "turn"
-          ? "Ход недоступен"
           : (gameState.rollBonus ?? 0) > 0
             ? `Бросить кубик (+${gameState.rollBonus})`
             : "Бросить кубик";

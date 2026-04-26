@@ -35,3 +35,18 @@ export const syncWheelResult = async (gameId: string, selectedGame: string) => {
     console.error("Ошибка при сохранении результата колеса:", error);
   }
 };
+
+/**
+ * Устанавливает или сбрасывает ID игрока для удаленного управления перемещением.
+ */
+export const syncForcedMove = async (gameId: string, playerId: string | null) => {
+  const gameRef = doc(db, "gameState", gameId);
+  try {
+    console.log(`[Firebase] Обновляем forcedMovePlayerId в ${playerId}...`);
+    await updateDoc(gameRef, {
+      forcedMovePlayerId: playerId
+    });
+  } catch (error) {
+    console.error("Ошибка при синхронизации удаленного управления:", error);
+  }
+};

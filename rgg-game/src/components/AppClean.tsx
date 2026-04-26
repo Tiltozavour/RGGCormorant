@@ -58,9 +58,9 @@ function AppClean() {
 
   // Проверка: требует ли карта выбора цели?
   const cardNeedsTarget = (card: GameCardType) => {
-    const targetActions: string[] = ['steal_coins', 'steal_card', 'discard_card', 'freeze_player', 'duel', 'judge_coins'];
-    // inv_007: Карта движения (может на себя или другого), inv_013: Заказное, inv_017: Налоги, inv_018: Катжит, inv_020: Ледолуч
-    const targetIds = ['inv_007', 'inv_013', 'inv_016', 'inv_017', 'inv_018', 'inv_020']; 
+    const targetActions: string[] = ['steal_coins', 'steal_card', 'discard_card', 'freeze_player', 'duel', 'judge_coins', 'reflect_debuff'];
+    // inv_007: Карта движения, inv_013: Коррупция, inv_016: Подвинься!, inv_018: Катжит, inv_020: Брейн фриз
+    const targetIds = ['inv_007', 'inv_013', 'inv_016', 'inv_018', 'inv_020']; 
     return targetActions.includes(card.action) || targetIds.includes(card.id);
   };
 
@@ -79,12 +79,12 @@ function AppClean() {
   const handleCardClick = (card: GameCardType) => {
     // Предварительная проверка правил использования (дублируем логику из хука для UI)
     if (!isAdmin) {
-      const { phase, currentRoll, showWheel } = gameState;
+      const { phase, currentRoll, showWheel, forcedMovePlayerId } = gameState;
       const isProtection = card.action === 'protection';
       const isFish = card.action === 'fish_protection';
       const isWheelCard = card.action === 'spin_wheel';
       const isExtraRoll = card.action === 'extra_roll';
-      const isMovement = card.action === 'move_steps';
+      const isMovement = card.action === 'move_steps' || card.action === 'move_target_for_coins' || card.action === 'move_target_and_self';
 
       if (phase === 'next_game' && !isWheelCard && !(isFish && showWheel)) {
         setGameAlert({ title: "Стоп!", message: "В этой фазе можно использовать только карту 'Подкрутка'!", type: 'warning' });
@@ -262,6 +262,40 @@ function AppClean() {
       </div>
 
       <div className="relative flex-1">
+        {/* Индикатор удаленного управления фишкой */}
+        {gameState.forcedMovePlayerId && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[55] flex flex-col items-center gap-2 pointer-events-none">
+            {gameState.forcedMovePlayerId === user?.uid ? (
+              <div className="bg-red-500/20 border border-red-500/50 backdrop-blur-md px-6 py-2 rounded-full animate-bounce shadow-[0_0_20px_rgba(239,68,68,0.3)]">
+                <span className="text-red-200 text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                  <span className="animate-pulse">⚠️</span> Вашей фишкой управляет другой игрок!
+                </span>
+              </div>
+            ) : gameState.currentRollPlayerId === user?.uid ? (
+              <div className="bg-purple-600/30 border border-purple-400/50 backdrop-blur-md px-6 py-2 rounded-full shadow-[0_0_20px_rgba(168,85,247,0.3)] flex flex-col items-center gap-2 pointer-events-auto">
+                <span className="text-purple-200 text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                  <span className="text-lg">🎮</span> Вы управляете фишкой игрока{" "}
+                  <b className="text-white">{players.find(p => p.id === gameState.forcedMovePlayerId)?.login}</b>
+                </span>
+                {!gameState.rollConfirmed && (
+                  <button 
+                    onClick={handlers.handleConfirmRoll}
+                    className="mt-1 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase px-4 py-1 rounded-full transition-all active:scale-95 shadow-lg"
+                  >
+                    Начать перемещение
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="bg-zinc-800/80 border border-white/10 backdrop-blur-md px-6 py-2 rounded-full">
+                <span className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">
+                  Происходит удаленное перемещение...
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="relative h-[calc(100vh-73px)] w-full">
           <GameBoard
             playerData={
@@ -274,6 +308,7 @@ function AppClean() {
             currentRollPlayerId={gameState.currentRollPlayerId}
             rollConfirmed={gameState.rollConfirmed}
             currentTurnPlayerId={currentTurnPlayerId}
+            forcedMovePlayerId={gameState.forcedMovePlayerId}
             chooseStart={handlers.chooseStart}
             onMoveComplete={handlers.handleMoveComplete}
             showWheel={gameState.showWheel}

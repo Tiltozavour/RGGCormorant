@@ -66,7 +66,7 @@
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWJmamx0cjd3YjRjdzgza3hiYzdxYzlxNWRzbHNldDhlY2dwdWl3ZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/vaCfH4WZ6kE4Jel6K5/giphy.gif",
     "price": 8,
-    "howtowork": "Мгновенно перемещает вас на ближайшую клетку 'B-Shop' по ходу движения.",
+    "howtowork": "Мгновенно перемещает вас на ближайшую клетку 'B-Shop' по ходу движения. Использовать ДО броска кубика. Ход завершается моментально",
     "number": 5
   },
   {

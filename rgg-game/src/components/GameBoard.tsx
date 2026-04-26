@@ -15,11 +15,12 @@ interface GameBoardProps {
   rollConfirmed: boolean;
   currentTurnPlayerId: string | null;
   chooseStart: (id: number) => void;
-  onMoveComplete: (position: number, prevCell: number | null, cellType?: string) => Promise<void>;
+  onMoveComplete: (position: number, prevCell: number | null, cellType?: string, playerId?: string) => Promise<void>;
   showWheel?: boolean;
   onWheelResult?: (gameName: string) => void;
   onCloseWheel?: () => void;
   round: number;
+  forcedMovePlayerId?: string | null;
 }
 
 interface MapCell {
@@ -42,6 +43,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   currentRollPlayerId,
   rollConfirmed,
   currentTurnPlayerId,
+  forcedMovePlayerId,
   chooseStart,
   onMoveComplete,
   showWheel,
@@ -63,6 +65,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const onMoveCompleteRef = useRef(onMoveComplete);
   const lastPosRef = useRef<number | undefined>(playerData.position);
   const activeMovementRef = useRef<number | null>(null);
+  const isLoopRunningRef = useRef(false);
   const movementCounterRef = useRef(0);
   const processedRollsRef = useRef<Set<string>>(new Set());
 
@@ -83,11 +86,18 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const getCell = (id: number) => map.find((cell) => cell.id === id);
 
   useEffect(() => {
-    const currentPos = playerData.position ?? 0;
+    // Определяем, за чьей позицией следит локальный стейт анимации.
+    // Если мы двигаем другого игрока (forcedMovePlayerId), инициализируем анимацию для него.
+    const isRemoteControl = currentRollPlayerId === playerData.id && forcedMovePlayerId;
+    const targetPlayer = isRemoteControl 
+      ? players.find(p => p.id === forcedMovePlayerId) 
+      : playerData;
+
+    const currentPos = targetPlayer?.position ?? 0;
 
     // Детекция прыжка (телепортации): не анимируемся, prevCell сброшен, позиция изменилась
     const isJump = !isAnimating && 
-                   playerData.prevCell === null && 
+                   targetPlayer?.prevCell === null && 
                    currentPos !== lastPosRef.current && 
                    lastPosRef.current !== undefined;
 
@@ -107,8 +117,8 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
     lastPosRef.current = currentPos;
     startPosRef.current = currentPos;
-    startPrevRef.current = playerData.prevCell ?? null;
-  }, [playerData.position, playerData.prevCell, isAnimating]);
+    startPrevRef.current = targetPlayer?.prevCell ?? null;
+  }, [playerData.position, playerData.prevCell, isAnimating, currentRollPlayerId, forcedMovePlayerId, players]);
 
   const animateTo = (target: { x: number; y: number }): Promise<void> =>
     new Promise((resolve) => {
@@ -141,20 +151,37 @@ const GameBoard: React.FC<GameBoardProps> = ({
     const isMyRoll = currentRollPlayerId === playerData.id;
     if (!currentRoll || currentRoll <= 0 || !isMyRoll || !rollConfirmed) return;
 
-    const rollKey = `${currentRoll}-${currentRollPlayerId}`;
+    const targetId = forcedMovePlayerId || playerData.id;
+    // Находим актуальные данные цели, чтобы не зависеть от stale-состояний
+    const targetPlayer = players.find(p => p.id === targetId) || playerData;
+    if (!targetPlayer) return;
+
+    const rollKey = `${currentRoll}-${currentRollPlayerId}-${targetId}`;
     if (processedRollsRef.current.has(rollKey)) return;
+    
+    // Если цикл уже запущен для этого броска, не входим второй раз
+    if (isLoopRunningRef.current) return;
+
     processedRollsRef.current.add(rollKey);
 
     const myId = ++movementCounterRef.current;
     activeMovementRef.current = myId;
 
+    isLoopRunningRef.current = true;
     let cancelled = false;
-    let currentPosition = startPosRef.current;
-    let cameFrom = startPrevRef.current;
+    let currentPosition = targetPlayer.position ?? 0;
+    let cameFrom = targetPlayer.prevCell ?? null;
 
     const doMove = async () => {
       setIsAnimating(true);
       let stepsLeft = currentRoll;
+
+      // Синхронизируем начальную позицию анимации с текущей позицией цели
+      // Чтобы фишка не прыгала от игрока-инициатора к цели
+      const startCell = getCell(currentPosition);
+      if (startCell) {
+        setPiecePos({ x: startCell.x, y: startCell.y });
+      }
 
       while (stepsLeft > 0 && !cancelled) {
         if (activeMovementRef.current !== myId) return;
@@ -181,7 +208,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
           stepsLeft--;
 
           if (activeMovementRef.current === myId && !cancelled) {
-            await updateDoc(doc(db, "players", playerData.id), {
+            await updateDoc(doc(db, "players", targetId), {
               position: currentPosition,
               prevCell: cameFrom,
             });
@@ -203,7 +230,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
         stepsLeft--;
 
         if (activeMovementRef.current === myId && !cancelled) {
-          await updateDoc(doc(db, "players", playerData.id), {
+          await updateDoc(doc(db, "players", targetId), {
             position: currentPosition,
             prevCell: cameFrom,
           });
@@ -215,29 +242,22 @@ const GameBoard: React.FC<GameBoardProps> = ({
       if (activeMovementRef.current === myId && !cancelled) {
         activeMovementRef.current = null;
         setIsAnimating(false);
+        isLoopRunningRef.current = false;
         
         const finalCell = getCell(currentPosition);
         // Нормализуем 'b-shop' в 'bshop' для синхронизации с useGameData
         const cellType = finalCell?.type === 'b-shop' ? 'bshop' : finalCell?.type;
-        await onMoveCompleteRef.current(currentPosition, cameFrom, cellType);
+        await onMoveCompleteRef.current(currentPosition, cameFrom, cellType, targetId);
+      } else {
+        isLoopRunningRef.current = false;
       }
     };
 
     void doMove();
 
     return () => {
-      cancelled = true;
-      setIsAnimating(false);
-      if (choiceResolveRef.current) {
-        const cell = getCell(currentPosition);
-        if (cell && cell.next.length > 0) {
-          choiceResolveRef.current(cell.next[0]);
-        }
-        choiceResolveRef.current = null;
-      }
-      setChoice(null);
     };
-  }, [currentRoll, currentRollPlayerId, rollConfirmed, playerData.id]);
+  }, [currentRoll, currentRollPlayerId, rollConfirmed, playerData.id, forcedMovePlayerId]);
 
   useEffect(() => {
     if (!currentRoll || !currentRollPlayerId) {
@@ -266,6 +286,9 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const isAdminView = playerData.id === "__admin__";
   // Визуальная позиция теперь всегда управляется локальным стейтом для плавности
   const displayedPiecePos = piecePos;
+
+  // Флаг: мы сейчас управляем чужой фишкой (например, картой "Только вперед")
+  const isControllingOther = !!(currentRollPlayerId === playerData.id && forcedMovePlayerId);
 
   // Собираем всех активных игроков в один список для расчета смещения на клетках
   const allActivePlayers = [
@@ -310,6 +333,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
         {map.map((cell) => {
           const isStartPoint = cell.id === 6 || cell.id === 15;
+          if (!isStartPoint) return null;
 
           return (
             <div
@@ -462,22 +486,40 @@ const GameBoard: React.FC<GameBoardProps> = ({
       })}
 
       {choice && (
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-3 z-50">
-          {choice.map((id) => (
-            <button
-              key={id}
-              onClick={() => handleChoice(id)}
-              className="bg-purple-600 hover:bg-purple-500 hover:scale-110 active:scale-95 transition-all px-6 py-2 rounded-xl font-black uppercase text-sm shadow-xl shadow-purple-500/20 border border-white/10"
-              style={{ fontFamily: "'Comfortaa', sans-serif" }}
-            >
-              В сторону {id}
-            </button>
-          ))}
+        <div className="absolute bottom-48 left-1/2 -translate-x-1/2 flex flex-col items-center gap-4 z-[10015] animate-in fade-in zoom-in duration-300">
+          <div className="bg-black/80 backdrop-blur-md border border-white/20 px-4 py-1.5 rounded-full shadow-2xl">
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white">
+              {isControllingOther 
+                ? `Управление игроком: ${players.find(p => p.id === forcedMovePlayerId)?.login}` 
+                : "Выберите направление"}
+            </span>
+          </div>
+          <div className="flex gap-3">
+            {choice.map((id) => (
+              <button
+                key={id}
+                onClick={() => handleChoice(id)}
+                className={`${
+                  isControllingOther 
+                    ? "bg-red-600 hover:bg-red-500 shadow-red-500/40 animate-pulse" 
+                    : "bg-purple-600 hover:bg-purple-500 shadow-purple-500/20"
+                } hover:scale-110 active:scale-95 transition-all px-6 py-2 rounded-xl font-black uppercase text-sm shadow-xl border border-white/10 text-white`}
+                style={{ fontFamily: "'Comfortaa', sans-serif" }}
+              >
+                В сторону {id}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
       {players
-        .filter((player) => player.id !== playerData.id && player.inGame && player.position !== undefined)
+        .filter((player) => {
+          if (player.id === playerData.id || !player.inGame || player.position === undefined) return false;
+          // Если мы анимируем этого игрока как цель, не рисуем его здесь статично
+          if (isControllingOther && player.id === forcedMovePlayerId) return false;
+          return true;
+        })
         .map((otherPlayer) => {
           const pos = otherPlayer.position!;
           const cell = getCell(pos);
@@ -545,33 +587,36 @@ const GameBoard: React.FC<GameBoardProps> = ({
           );
         })}
 
-      {!isAdminView && (
+      {!isAdminView && (() => {
+        const isTargetingSelf = !isControllingOther;
+        const activePlayer = isTargetingSelf ? playerData : players.find(p => p.id === forcedMovePlayerId);
+        if (!activePlayer) return null;
+
+        return (
         <div
           className={`absolute flex flex-col items-center group transition-all duration-500 ${
-            playerData.id === currentTurnPlayerId ? "z-40" : "z-30"
+            activePlayer.id === currentTurnPlayerId ? "z-40" : "z-30"
           } ${isTeleporting ? "scale-0 opacity-0 blur-2xl" : "scale-100 opacity-100 blur-0"}`}
           style={{
-            // Если мы анимируемся, берем координаты из displayedPiecePos, иначе из карты для офсета
-            left: isAnimating ? `${displayedPiecePos.x}%` : `${getCell(playerData.position ?? 0)?.x}%`,
-            top: isAnimating ? `${displayedPiecePos.y}%` : `${getCell(playerData.position ?? 0)?.y}%`,
+            left: isAnimating ? `${displayedPiecePos.x}%` : `${getCell(activePlayer.position ?? 0)?.x}%`,
+            top: isAnimating ? `${displayedPiecePos.y}%` : `${getCell(activePlayer.position ?? 0)?.y}%`,
             transform: isAnimating 
               ? "translate(-50%, -50%)" 
-              : `translate(calc(-50% + ${getPlayerOffset(playerData.id, playerData.position ?? 0).x}px), calc(-50% + ${getPlayerOffset(playerData.id, playerData.position ?? 0).y}px))`,
+              : `translate(calc(-50% + ${getPlayerOffset(activePlayer.id, activePlayer.position ?? 0).x}px), calc(-50% + ${getPlayerOffset(activePlayer.id, activePlayer.position ?? 0).y}px))`,
           }}
         >
-          {/* Всплывающее количество коинов для себя */}
           <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-all duration-300 bg-black/90 border border-yellow-500/50 px-2 py-0.5 rounded text-[10px] font-bold text-yellow-400 whitespace-nowrap pointer-events-none z-[60] shadow-xl transform translate-y-2 group-hover:translate-y-0">
-            🦖 {playerData.tiltCoins ?? 0}
+            🦖 {activePlayer.tiltCoins ?? 0}
           </div>
 
-          {playerData.hasProtection && (
+          {activePlayer.hasProtection && (
             <div
               className="absolute w-16 h-16 rounded-full blur-xl opacity-70 animate-pulse"
               style={{ background: "rgba(0, 200, 255, 0.6)" }}
             />
           )}
 
-          {playerData.customStatus === 'fish_shield' && (
+          {activePlayer.customStatus === 'fish_shield' && (
             <div
               className="absolute w-16 h-16 rounded-full blur-2xl opacity-80 animate-pulse"
               style={{ background: "rgba(37, 99, 235, 0.7)" }}
@@ -580,34 +625,56 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
           <div
             className="absolute w-16 h-16 rounded-full blur-xl opacity-40"
-            style={{ background: playerData.borderColor || "#facc15" }}
+            style={{ background: activePlayer.borderColor || "#facc15" }}
           />
 
           <div 
             className={`mb-1 px-2 text-[10px] rounded bg-black/70 border flex items-center gap-1 font-black uppercase ${playerData.id === currentTurnPlayerId ? "text-yellow-400 border-yellow-500/50" : "text-zinc-300 border-white/10"}`}
             style={{ fontFamily: "'Comfortaa', sans-serif" }}
           >
-            {playerData.login}
-            {playerData.hasProtection && <span title="Силовое поле">🛡️</span>}
-            {playerData.customStatus === 'fish_shield' && <span title="No, no mr. Fish">🐟</span>}
-            {playerData.id === currentTurnPlayerId && <span className="text-[8px] opacity-70">●</span>}
+            {activePlayer.login}
+            {activePlayer.hasProtection && <span title="Силовое поле">🛡️</span>}
+            {activePlayer.customStatus === 'fish_shield' && <span title="No, no mr. Fish">🐟</span>}
+            {activePlayer.id === currentTurnPlayerId && <span className="text-[8px] opacity-70">●</span>}
           </div>
 
           <div className="transition-transform duration-300 group-hover:scale-125">
             <div
               className={`w-10 h-10 rounded-full p-[2px] ${
-                playerData.id === currentTurnPlayerId ? "animate-piece-bounce" : ""
+                activePlayer.id === currentTurnPlayerId ? "animate-piece-bounce" : ""
               }`}
-              style={{ background: playerData.borderColor || "#facc15" }}
+              style={{ background: activePlayer.borderColor || "#facc15" }}
             >
               <img
-                src={playerData.avatar || FALLBACK_AVATAR}
+                src={activePlayer.avatar || FALLBACK_AVATAR}
                 className="w-full h-full rounded-full object-cover"
               />
             </div>
           </div>
         </div>
-      )}
+      )})()}
+
+      {/* Если мы управляем чужой фишкой, рисуем свою статично и полупрозрачно */}
+      {isControllingOther && (() => {
+         const pos = playerData.position ?? 0;
+         const cell = getCell(pos);
+         if (!cell) return null;
+         const offset = getPlayerOffset(playerData.id, pos);
+         return (
+           <div
+             className="absolute flex flex-col items-center z-30 opacity-50 grayscale"
+             style={{
+               left: `${cell.x}%`,
+               top: `${cell.y}%`,
+               transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
+             }}
+           >
+             <div className="w-10 h-10 rounded-full p-[2px]" style={{ background: playerData.borderColor || "#facc15" }}>
+               <img src={playerData.avatar || FALLBACK_AVATAR} className="w-full h-full rounded-full object-cover" />
+             </div>
+           </div>
+         );
+      })()}
     </div>
     </div>
   );

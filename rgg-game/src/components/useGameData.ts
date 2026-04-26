@@ -107,13 +107,12 @@ export function useGameData() {
     !!playerData?.inGame &&
     isTurnPhase &&
     isCurrentPlayersTurn &&
-    gameState.currentRoll === null &&
-    !playerData?.isFrozen;
+    gameState.currentRoll === null;
 
   const canConfirmRoll =
     !isAdmin &&
     !!playerData?.inGame &&
-    isCurrentPlayersTurn &&
+    (isCurrentPlayersTurn || gameState.currentRollPlayerId === user?.uid) &&
     gameState.currentRoll !== null &&
     !gameState.rollConfirmed;
 
@@ -322,7 +321,26 @@ export function useGameData() {
           const isHostile = targetId !== user.uid;
 
           if (isForward && gameState.phase === "turn") {
-            const isMyRollActive =
+            // Логика карты "Только вперед!" (inv_007) при использовании на другого игрока
+            if (card.id === "inv_007" && isHostile) {
+              if (targetHasFish) {
+                await updateDoc(targetRef!, clearTemporaryStatus);
+                alert(`${targetPlayer?.login} заблокировал перемещение Рыбкой!`);
+                break;
+              }
+              
+              await updateDoc(doc(db, "gameState", "current"), {
+                forcedMovePlayerId: targetId,
+                currentRoll: card.value,
+                currentRollPlayerId: user.uid,
+                rollConfirmed: false
+              });
+              
+              alert(`Вы управляете перемещением игрока ${targetPlayer?.login} на ${card.value} шага.`);
+              break;
+            }
+
+            const isMyRollActive = 
               gameState.currentRoll !== null && gameState.currentRollPlayerId === user.uid;
 
             if (isHostile && targetHasFish) {
@@ -750,9 +768,10 @@ export function useGameData() {
   );
 
   const handleMoveComplete = useCallback(
-    async (position: number, prevCell: number | null, cellType?: string) => {
+    async (position: number, prevCell: number | null, cellType?: string, playerId?: string) => {
       if (!user) return;
-      const playerRef = doc(db, "players", user.uid);
+      const targetPlayerId = playerId || user.uid;
+      const playerRef = doc(db, "players", targetPlayerId);
       const gameStateRef = doc(db, "gameState", "current");
 
       await runTransaction(db, async (transaction) => {
@@ -763,11 +782,12 @@ export function useGameData() {
 
         if (cellType === "gambling" || cellType === "bshop") {
           transaction.update(gameStateRef, {
-            activeInteraction: {
-              playerId: user.uid,
+            activeInteraction: { 
+              playerId: targetPlayerId,
               type: cellType,
               cards: getRandomInteractionCards(cellType),
             },
+            forcedMovePlayerId: null, // Сбрасываем удаленное управление
           });
           return;
         }
@@ -779,6 +799,7 @@ export function useGameData() {
           currentRoll: null,
           currentRollPlayerId: null,
           rollConfirmed: false,
+          forcedMovePlayerId: null, // Сбрасываем удаленное управление
         });
       });
     },
@@ -851,11 +872,6 @@ export function useGameData() {
                 });
               } else if (card.action === "teleport") {
                 transaction.update(playerRef, { position: card.value, prevCell: null });
-              } else if (card.action === "skip_turn") {
-                transaction.update(playerRef, {
-                  isFrozen: true,
-                  freezeDuration: card.value || 1,
-                });
               } else if (card.action === "challenge_gaben") {
                 transaction.update(playerRef, {
                   customStatus: "gaben_challenge",
@@ -933,6 +949,7 @@ export function useGameData() {
       lastBaseRoll: null,
       rollBonus: 0,
       rollConfirmed: false,
+      forcedMovePlayerId: null,
     };
   };
 
