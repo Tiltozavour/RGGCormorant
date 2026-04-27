@@ -40,11 +40,12 @@ export interface GameCard {
   // Визуальные поля
   faceCard: string;    // Путь к картинке (рубашка или арт)
   artCard?: string;    // GIF или PNG арт для лицевой стороны
-  price?: number | null; // Цена в B-Shop (null если не продается)
+  price: number | null; // Цена в B-Shop (null если не продается)
   number: number;      // Порядковый номер в коллекции для удобства
   isUnique?: boolean;  // Флаг уникальности (для призовых карт)
   isWon?: boolean;     // Флаг: была ли карта уже выиграна
   howtowork?: string;  // Дополнительный текст, объясняющий механику работы карты
+  requiresTarget?: boolean; // Нужно ли выбирать игрока-цель при использовании
 }
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';

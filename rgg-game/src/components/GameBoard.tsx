@@ -207,8 +207,9 @@ const GameBoard: React.FC<GameBoardProps> = ({
           currentPosition = chosen;
           stepsLeft--;
 
+          // ОБНОВЛЕНИЕ: Записываем в БД, что мы дошли до развилки
           if (activeMovementRef.current === myId && !cancelled) {
-            await updateDoc(doc(db, "players", targetId), {
+            void updateDoc(doc(db, "players", targetId), {
               position: currentPosition,
               prevCell: cameFrom,
             });
@@ -227,14 +228,16 @@ const GameBoard: React.FC<GameBoardProps> = ({
         await animateTo(nextCell);
         cameFrom = currentPosition;
         currentPosition = nextId;
-        stepsLeft--;
 
-        if (activeMovementRef.current === myId && !cancelled) {
-          await updateDoc(doc(db, "players", targetId), {
-            position: currentPosition,
-            prevCell: cameFrom,
-          });
+        // ОПТИМИЗАЦИЯ: Если осталось много шагов, можно обновлять БД раз в 2 шага
+        if (activeMovementRef.current === myId && !cancelled && (stepsLeft % 2 === 0 || stepsLeft === 1)) {
+             void updateDoc(doc(db, "players", targetId), {
+               position: currentPosition,
+               prevCell: cameFrom,
+             });
         }
+
+        stepsLeft--;
 
         await wait(STEP_DELAY);
       }
@@ -531,10 +534,11 @@ const GameBoard: React.FC<GameBoardProps> = ({
           return (
             <div
               key={otherPlayer.id}
-              className={`absolute flex flex-col items-center transition-all duration-500 group ${isCurrentTurn ? "z-40" : "z-30"}`}
+              className={`absolute flex flex-col items-center group ${isCurrentTurn ? "z-40" : "z-30"}`}
               style={{
                 left: `${cell.x}%`,
                 top: `${cell.y}%`,
+                transition: 'left 0.4s ease-in-out, top 0.4s ease-in-out', // Плавное скольжение для чужих фишек
                 transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
               }}
             >
@@ -594,10 +598,11 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
         return (
         <div
-          className={`absolute flex flex-col items-center group transition-all duration-500 ${
+          className={`absolute flex flex-col items-center group ${
             activePlayer.id === currentTurnPlayerId ? "z-40" : "z-30"
           } ${isTeleporting ? "scale-0 opacity-0 blur-2xl" : "scale-100 opacity-100 blur-0"}`}
           style={{
+            transition: isAnimating ? 'none' : 'left 0.4s ease-in-out, top 0.4s ease-in-out, transform 0.5s, opacity 0.5s',
             left: isAnimating ? `${displayedPiecePos.x}%` : `${getCell(activePlayer.position ?? 0)?.x}%`,
             top: isAnimating ? `${displayedPiecePos.y}%` : `${getCell(activePlayer.position ?? 0)?.y}%`,
             transform: isAnimating 

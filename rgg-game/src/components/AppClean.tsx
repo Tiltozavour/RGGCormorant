@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import Auth from "./Auth";
 import { syncWheelResult, syncWheelVisibility } from "./gameStateService";
-import BottomPanel from "./BottomPanelPhase";
-import GameBoard from "./GameBoard"; // Corrected import path
+import BottomPanel from "./BottomPanel";
+import GameBoard from "./GameBoard";
 import PlayersSidebar from "./PlayersSidebar";
 import ScoresDetailsPage from "./ScoresDetailsPage";
 import type { Player } from "../types/game";
@@ -20,11 +20,9 @@ function AppClean() {
   } = useGameData();
 
   const getCardPrice = (card: GameCardType) => {
-    if (typeof card.price === 'number') return card.price;
-    if (card.rarity === 'common') return 3;
-    if (card.rarity === 'rare') return 7;
-    if (card.rarity === 'epic') return 15;
-    return 0;
+    if (card.price !== null) return card.price;
+    const defaultPrices = { common: 3, rare: 7, epic: 15, legendary: 0, default: 0 };
+    return defaultPrices[card.rarity] || defaultPrices.default;
   };
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -108,6 +106,7 @@ function AppClean() {
         const rollPlayer = players.find(p => p.id === gameState.currentRollPlayerId);
         const playerName = rollPlayer?.login || "Кто-то";
 
+
         setVisualRoll({ value: rollValue, rolling: true, playerName });
         
         // Трясем кубик 1 секунду, потом останавливаем на нужном значении
@@ -131,11 +130,8 @@ function AppClean() {
 
   // Проверка: требует ли карта выбора цели?
   const cardNeedsTarget = (card: GameCardType) => {
-    const targetActions = ['steal_coins', 'steal_card', 'discard_card', 'freeze_player', 'duel', 'judge_coins', 'reflect_debuff'];
-    // Специальные случаи для карт, чьи экшены могут быть общими (например, move_steps), 
-    // но именно эти ID требуют выбора игрока.
-    const specificTargetIds = ['inv_007', 'inv_013', 'inv_016']; 
-    return targetActions.includes(card.action) || specificTargetIds.includes(card.id);
+    const targetActions = ['steal_coins', 'steal_card', 'discard_card', 'duel', 'judge_coins', 'freeze_player', 'reflect_debuff', 'move_target_for_coins', 'move_target_and_self'];
+    return card.requiresTarget || targetActions.includes(card.action);
   };
 
   const protectionCardsInInv = playerData?.inventory
