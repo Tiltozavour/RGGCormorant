@@ -9,6 +9,7 @@ import type { Player } from "../types/game";
 import type { GameCard as GameCardType } from "../types/card";
 import { useGameData } from "./useGameData";
 import GameCard from "./GameCard";
+import DiceVisual from "./DiceVisual";
 import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS } from "./gameConstants";
 
 function AppClean() {
@@ -34,11 +35,49 @@ function AppClean() {
   const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
   const [isLegendsOpen, setIsLegendsOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<GameCardType | null>(null);
-  const [isCollectionOpen, setIsCollectionOpen] = useState(false); // Состояние для музея карт
-  const [isHandOpen, setIsHandOpen] = useState(false); // Состояние для открытия "руки" с картами
+  const [isCollectionOpen, setIsCollectionOpen] = useState(false);
+  const [isHandOpen, setIsHandOpen] = useState(false);
   const [coinNotification, setCoinNotification] = useState<{ amount: number; type: 'gain' | 'loss' } | null>(null);
-  const [gameAlert, setGameAlert] = useState<{ title: string; message: string; type?: 'info' | 'success' | 'warning' } | null>(null);
+  const [gameAlert, setGameAlert] = useState<{ 
+    title: string; 
+    message: string; 
+    type?: 'info' | 'success' | 'warning';
+    cardId?: string;
+  } | null>(null);
   const [pendingTargetCard, setPendingTargetCard] = useState<GameCardType | null>(null); // Карта, ожидающая выбора цели
+
+  const [visualRoll, setVisualRoll] = useState<{ value: number; rolling: boolean; playerName: string } | null>(null);
+  const lastProcessedRollRef = useRef<string | null>(null);
+  const lastShownNotifRef = useRef<number>(0);
+
+  const [isShuffling, setIsShuffling] = useState(false);
+
+  // Логика анимации перемешивания при открытии экрана выбора карты
+  useEffect(() => {
+    if (gameState.activeInteraction?.type === 'discard_selection') {
+      setIsShuffling(true);
+      const timer = setTimeout(() => setIsShuffling(false), 1200); // 1.2 секунды на "тасовку"
+      return () => {
+        clearTimeout(timer);
+        setIsShuffling(false);
+      };
+    }
+  }, [gameState.activeInteraction?.type]);
+
+  // Логика отслеживания уведомлений от других игроков (например, когда у вас сбросили карту)
+  useEffect(() => {
+    const notif = playerData?.lastNotification;
+    // Показываем только если уведомление свежее (проверяем по timestamp)
+    if (notif && notif.timestamp > lastShownNotifRef.current) {
+      lastShownNotifRef.current = notif.timestamp;
+      setGameAlert({
+        title: "Внимание!",
+        message: notif.message,
+        type: 'warning',
+        cardId: notif.cardId
+      });
+    }
+  }, [playerData]);
 
   // Логика отслеживания изменения монет для всплывающего уведомления
   const prevCoinsRef = useRef<number | undefined>(playerData?.tiltCoins);
@@ -56,12 +95,47 @@ function AppClean() {
     prevCoinsRef.current = playerData?.tiltCoins;
   }, [playerData?.tiltCoins]);
 
+  // Логика визуального броска кубика
+  useEffect(() => {
+    // Срабатывает, когда есть бросок, но он еще не подтвержден
+    if (gameState.currentRoll !== null && !gameState.rollConfirmed && gameState.currentRollPlayerId) {
+      // Если lastBaseRoll еще не долетел, берем currentRoll (но не более 6 для визуала)
+      const rollValue = gameState.lastBaseRoll || (gameState.currentRoll > 6 ? 6 : gameState.currentRoll);
+      const rollKey = `${gameState.currentRollPlayerId}-${gameState.round}-${rollValue}`;
+      
+      if (lastProcessedRollRef.current !== rollKey) {
+        lastProcessedRollRef.current = rollKey;
+        const rollPlayer = players.find(p => p.id === gameState.currentRollPlayerId);
+        const playerName = rollPlayer?.login || "Кто-то";
+
+        setVisualRoll({ value: rollValue, rolling: true, playerName });
+        
+        // Трясем кубик 1 секунду, потом останавливаем на нужном значении
+        setTimeout(() => {
+          setVisualRoll(prev => {
+            if (prev && prev.value === rollValue) return { ...prev, rolling: false };
+            return prev;
+          });
+        }, 1000);
+
+        // Полностью скрываем через 4 секунды (даем время рассмотреть результат)
+        setTimeout(() => {
+          setVisualRoll(prev => (prev && prev.value === rollValue) ? null : prev);
+        }, 4000);
+      }
+    } else if (gameState.currentRoll === null && !visualRoll?.rolling) {
+      // Сбрасываем реф только когда кубиков нет на экране
+      lastProcessedRollRef.current = null;
+    }
+  }, [gameState.currentRoll, gameState.lastBaseRoll, gameState.rollConfirmed, gameState.currentRollPlayerId, players, gameState.round, visualRoll?.rolling]);
+
   // Проверка: требует ли карта выбора цели?
   const cardNeedsTarget = (card: GameCardType) => {
-    const targetActions: string[] = ['steal_coins', 'steal_card', 'discard_card', 'freeze_player', 'duel', 'judge_coins', 'reflect_debuff'];
-    // inv_007: Карта движения, inv_013: Коррупция, inv_016: Подвинься!, inv_018: Катжит, inv_020: Брейн фриз
-    const targetIds = ['inv_007', 'inv_013', 'inv_016', 'inv_018', 'inv_020']; 
-    return targetActions.includes(card.action) || targetIds.includes(card.id);
+    const targetActions = ['steal_coins', 'steal_card', 'discard_card', 'freeze_player', 'duel', 'judge_coins', 'reflect_debuff'];
+    // Специальные случаи для карт, чьи экшены могут быть общими (например, move_steps), 
+    // но именно эти ID требуют выбора игрока.
+    const specificTargetIds = ['inv_007', 'inv_013', 'inv_016']; 
+    return targetActions.includes(card.action) || specificTargetIds.includes(card.id);
   };
 
   const protectionCardsInInv = playerData?.inventory
@@ -84,6 +158,7 @@ function AppClean() {
       const isFish = card.action === 'fish_protection';
       const isWheelCard = card.action === 'spin_wheel';
       const isExtraRoll = card.action === 'extra_roll';
+      const isReflect = card.action === 'reflect_debuff';
       const isMovement = card.action === 'move_steps' || card.action === 'move_target_for_coins' || card.action === 'move_target_and_self';
 
       if (phase === 'next_game' && !isWheelCard && !(isFish && showWheel)) {
@@ -92,8 +167,8 @@ function AppClean() {
       }
       
       if (phase === 'turn') {
-        // Защиту можно всегда. Остальное только в свой ход.
-        if (!isProtection && !isFish && currentTurnPlayerId !== user?.uid) {
+        // Защиту и Отражение можно всегда. Остальное только в свой ход.
+        if (!isProtection && !isFish && !isReflect && currentTurnPlayerId !== user?.uid) {
           setGameAlert({ title: "Не твой ход", message: "Обычные карты можно использовать только в свою очередь.", type: 'info' });
           return;
         }
@@ -154,6 +229,17 @@ function AppClean() {
     setIsAvatarModalOpen(false);
     setNewAvatarUrl("");
   }
+
+  // Блокировка прокрутки фона при открытых полноэкранных окнах (магазин, гемблинг, выбор карты)
+  useEffect(() => {
+    const shouldLock = !!gameState.activeInteraction || isHandOpen || isCollectionOpen || isLegendsOpen;
+    if (shouldLock) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [gameState.activeInteraction, isHandOpen, isCollectionOpen, isLegendsOpen]);
 
   if (loading) {
     return <div className="h-screen flex items-center justify-center bg-black text-white">Проверка доступа...</div>;
@@ -352,6 +438,7 @@ function AppClean() {
             onConfirmRoll={handlers.handleConfirmRoll}
             canConfirmRoll={canConfirmRoll}
             onToggleWheel={() => void syncWheelVisibility("current", !gameState.showWheel)}
+            isDiceRolling={visualRoll?.rolling ?? false}
             allCards={allCards}
             onCardClick={(card) => setSelectedCard(card)}
             onOpenHand={() => setIsHandOpen(true)} // Передаем функцию для открытия "руки"
@@ -749,6 +836,76 @@ function AppClean() {
         </div>
       )}
 
+      {/* ЭКРАН СБРОСА КАРТЫ СОПЕРНИКА (inv_010) */}
+      {gameState.activeInteraction?.type === 'discard_selection' && gameState.activeInteraction.playerId === user?.uid && (
+        <div className="fixed inset-0 bg-red-950/95 backdrop-blur-xl z-[10010] flex flex-col items-center justify-start overflow-y-auto py-20 px-10 animate-in fade-in duration-500">
+          <div className="text-center mb-12">
+            <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/30 animate-pulse">
+              <span className="text-4xl">✂️</span>
+            </div>
+            <h2 className="text-6xl font-black text-red-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(239,68,68,0.5)] min-h-[1.2em]">
+               {isShuffling ? 'Перемешиваем...' : (gameState.activeInteraction.actingCardId === 'inv_011' ? 'Забираем!' : 'Выкидываем!')}
+            </h2>
+            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">
+               {gameState.activeInteraction.actingCardId === 'inv_011' ? 'Выберите карту, которую хотите ЗАБРАТЬ у игрока ' : 'Выберите карту, которую хотите УДАЛИТЬ у игрока '}
+              <span className="text-white">{players.find(p => p.id === gameState.activeInteraction?.targetPlayerId)?.login}</span>
+            </p>
+          </div>
+          
+          <div className="flex-1 flex flex-col items-center justify-center min-h-[400px] w-full">
+            {isShuffling ? (
+              /* Анимация тасовки стопки */
+              <div className="relative scale-110 mb-20">
+                {[...Array(5)].map((_, i) => (
+                  <div 
+                    key={i}
+                    className="absolute inset-0 w-48 h-[300px] bg-zinc-900 border-4 border-red-500/40 rounded-[1.5rem] shadow-2xl animate-pulse"
+                    style={{ 
+                      transform: `rotate(${i * 6 - 12}deg) translate(${i * 4}px, ${i * 2}px)`,
+                      zIndex: 50 - i
+                    }}
+                  >
+                    <img src="/cards/card_back.svg" className="w-full h-full object-cover rounded-[1.1rem] opacity-60" alt="Shuffling" />
+                  </div>
+                ))}
+                <div className="absolute -inset-20 bg-red-500/10 blur-[100px] rounded-full animate-pulse" />
+              </div>
+            ) : (
+              /* Сетка карт после перемешивания */
+              <div className="flex flex-wrap gap-8 justify-center max-w-7xl pb-20 animate-in zoom-in-95 duration-500">
+                {gameState.activeInteraction.cards.map((cardId: string, idx: number) => (
+                  <button 
+                    key={`${cardId}-${idx}`}
+                    type="button"
+                    onClick={() => {
+                      if (gameState.activeInteraction?.targetPlayerId) {
+                        void handlers.handleSelectOpponentCard(gameState.activeInteraction.targetPlayerId, cardId);
+                      }
+                    }}
+                    className="w-48 h-[300px] rounded-[1.5rem] bg-zinc-900 border-4 border-red-500/30 cursor-pointer hover:scale-105 hover:border-red-500 hover:shadow-[0_0_40px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center relative group pointer-events-auto"
+                  >
+                    <img src="/cards/card_back.svg" className="w-full h-full object-cover rounded-[1.1rem] opacity-80 group-hover:opacity-100" alt="Back" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-red-200/10 text-8xl font-black italic group-hover:text-red-200/20 transition-colors">?</span>
+                    </div>
+                    <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[10px] font-black px-4 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-xl whitespace-nowrap">
+                      ВЫБРАТЬ
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button 
+            onClick={() => void handlers.handleCancelInteraction()}
+            className="mt-12 text-white/30 hover:text-red-400 font-black uppercase text-xs tracking-[0.3em] transition-all flex items-center gap-2 group"
+          >
+            <span className="group-hover:rotate-90 transition-transform text-lg">✕</span> Отменить и вернуть карту
+          </button>
+        </div>
+      )}
+
       {/* ЭКРАН ГЕМБЛИНГА (КАЗИНО) */}
       {gameState.activeInteraction?.type === 'gambling' && gameState.activeInteraction.playerId === user?.uid && (
         <div className="fixed inset-0 bg-blue-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
@@ -855,6 +1012,23 @@ function AppClean() {
             <p className="text-zinc-300 text-sm font-medium leading-relaxed mb-6" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
               {gameAlert.message}
             </p>
+
+            {gameAlert.cardId && allCards[gameAlert.cardId] && (
+              <div className="mb-6 relative group inline-block">
+                <div 
+                  className="bg-red-500/10 border border-red-500/30 px-4 py-2 rounded-xl cursor-help transition-all hover:bg-red-500/20"
+                >
+                  <span className="text-red-400 font-bold text-sm tracking-wide uppercase">
+                    {allCards[gameAlert.cardId].name}
+                  </span>
+                </div>
+                {/* Всплывающее превью карты при наведении */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 opacity-0 group-hover:opacity-100 transition-all pointer-events-none z-[20001] scale-[0.6] origin-bottom invisible group-hover:visible drop-shadow-2xl">
+                  <GameCard card={allCards[gameAlert.cardId]} index={0} totalCards={1} />
+                </div>
+              </div>
+            )}
+
             <button 
               onClick={() => setGameAlert(null)}
               className="w-full py-4 bg-yellow-500 text-black rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-white transition-all active:scale-95"

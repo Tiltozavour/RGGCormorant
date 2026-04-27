@@ -21,6 +21,7 @@ interface BottomPanelPhaseProps {
   canConfirmRoll: boolean;
   onToggleWheel?: () => void;
   onCardClick?: (card: GameCard) => void;
+  isDiceRolling?: boolean;
   onOpenHand: () => void;
   allCards: Record<string, GameCard>;
 }
@@ -40,6 +41,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
   canConfirmRoll,
   onToggleWheel,
   onCardClick,
+  isDiceRolling,
   onOpenHand,
   allCards,
 }) => {
@@ -122,7 +124,9 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
   const me = players.find((player) => player.id === currentUser?.uid);
 
   const rollLabel =
-    gameState.currentRoll !== null
+    isDiceRolling
+      ? "Бросаем..."
+      : gameState.currentRoll !== null
       ? `Выпало: ${gameState.currentRoll}`
           : (gameState.rollBonus ?? 0) > 0
             ? `Бросить кубик (+${gameState.rollBonus})`
@@ -154,7 +158,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
           <div className="text-sm text-yellow-400 font-bold">{turnLabel}</div>
         )}
 
-        {gameState.currentRoll !== null && !gameState.rollConfirmed && canConfirmRoll && (
+        {gameState.currentRoll !== null && !gameState.rollConfirmed && canConfirmRoll && !isDiceRolling && (
           <div className="flex items-center gap-3 bg-yellow-900/40 border border-yellow-500/30 px-4 py-2 rounded-xl shadow-[0_0_20px_rgba(250,195,25,0.2)]">
             <span className="text-base text-yellow-200 flex items-center gap-2">
               Выпало:
@@ -176,7 +180,7 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
           </div>
         )}
 
-        {gameState.currentRoll !== null && !gameState.rollConfirmed && !canConfirmRoll && (
+        {gameState.currentRoll !== null && !gameState.rollConfirmed && !canConfirmRoll && !isDiceRolling && (
           <div className="flex items-center gap-2 bg-yellow-900/20 border border-yellow-500/10 px-3 py-1 rounded">
             <span className="text-sm text-yellow-400">Игрок выбирает ход...</span>
           </div>
@@ -191,9 +195,9 @@ const BottomPanelPhase: React.FC<BottomPanelPhaseProps> = ({
         {!isAdmin && (
           <button
             onClick={onRoll}
-            disabled={!canRoll}
+            disabled={!canRoll || isDiceRolling}
             className={`px-6 py-2 rounded text-base font-bold transition ${
-              canRoll
+              canRoll && !isDiceRolling
                 ? "bg-purple-600 hover:bg-purple-500"
                 : "bg-zinc-700 text-zinc-400 cursor-not-allowed"
             }`}

@@ -38,6 +38,11 @@ export interface Player {
   redirectNextDrawnToPlayerId?: string | null;
   giveNextDrawnToPlayerId?: string | null;
   borderColor?: string;
+  lastNotification?: {
+    message: string;
+    timestamp: number;
+    cardId?: string;
+  };
   createdAt?: unknown;
 }
 
@@ -63,8 +68,11 @@ export interface GameState {
   revealedCards?: string[];
   activeInteraction?: {
     playerId: string;
-    type: "gambling" | "bshop";
+    type: "gambling" | "bshop" | "discard_selection";
     cards: string[];
+    targetPlayerId?: string;
+    recipientId?: string;
+    actingCardId?: string;
   } | null;
 }
 

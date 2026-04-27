@@ -146,7 +146,7 @@
     {
     "id": "inv_011",
     "name": "Иди нахуй, я на мид пойду",
-    "description": "Заберитеслучайную карту у другого игрока",
+    "description": "Заберите случайную карту у другого игрока",
     "deck": "inventory",
     "rarity": "epic",
     "action": "steal_card",
@@ -154,7 +154,7 @@
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdnJnOWNwNWtqeDNjYXV5dW9hYndlaHNrcGw3MnpyZ2d0ejB0NGMxaSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/AxRjMaovFNBztkPtxd/giphy.gif",
     "price": 8,
-    "howtowork": "Позволяет забрать случайную любую одну карту из инвентаря другого игрока себе.",
+    "howtowork": "Выберите оппонента и заберите одну любую его карту (на ваш выбор) себе.",
     "number": 11
   },
 
@@ -294,7 +294,7 @@
     "description": "Цены в магазине для вас дешевле",
     "deck": "inventory",
     "rarity": "epic",
-    "action": "add_coins",
+    "action": "passive_benefit",
     "value": null,
     "faceCard": "/cards/card_back.svg",
     "artCard": "/cards/faces/coolest.gif",

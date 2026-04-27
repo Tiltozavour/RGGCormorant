@@ -26,6 +26,15 @@ const pickRandom = <T,>(items: T[]): T | null => {
   return items[Math.floor(Math.random() * items.length)] ?? null;
 };
 
+const shuffle = <T,>(array: T[]): T[] => {
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j]!, result[i]!];
+  }
+  return result;
+};
+
 const clearTemporaryStatus = {
   customStatus: null,
   statusDuration: 0,
@@ -252,6 +261,7 @@ export function useGameData() {
           await updateDoc(doc(db, "gameState", "current"), {
             currentRoll: null,
             rollConfirmed: false,
+            lastBaseRoll: null,
             rollBonus: activeBonus,
           });
           alert("Переброс активирован. Бросайте кубик еще раз.");
@@ -534,20 +544,31 @@ export function useGameData() {
               alert(`${targetPlayer?.login} заблокировал сброс карты Рыбкой!`);
               break;
             }
+
             const victimId = targetHasReflect ? user.uid : targetPlayerId;
-            const victimRef = doc(db, "players", victimId);
+            const victim = getPlayerById(victimId);
+
+            if (!victim || !victim.inventory || victim.inventory.length === 0) {
+              alert("У игрока нет карт для сброса.");
+              break;
+            }
+
             if (targetHasReflect) {
               await updateDoc(targetRef, clearTemporaryStatus);
             }
 
-            await runTransaction(db, async (transaction) => {
-              const victimSnap = await transaction.get(victimRef);
-              const inventory = (victimSnap.data()?.inventory as string[] | undefined) ?? [];
-              const cardToDiscard = pickRandom(inventory);
-              if (!cardToDiscard) return;
-              transaction.update(victimRef, { inventory: arrayRemove(cardToDiscard) });
+            // Вместо случайного удаления, открываем режим выбора карты
+            await updateDoc(doc(db, "gameState", "current"), {
+              activeInteraction: {
+                playerId: user.uid,
+                type: "discard_selection",
+                targetPlayerId: victimId,
+                // Перемешиваем карты перед показом игроку
+                cards: shuffle(victim.inventory),
+                actingCardId: card.id,
+              }
             });
-            alert(targetHasReflect ? "Вашу карту сбросили отражением." : "Карта цели сброшена.");
+            if (targetHasReflect) alert("Эффект отражен! Вы должны выбрать карту из своего инвентаря для сброса.");
           }
           break;
 
@@ -558,25 +579,33 @@ export function useGameData() {
               alert(`${targetPlayer?.login} заблокировал кражу карты Рыбкой!`);
               break;
             }
-            const fromId = targetHasReflect ? user.uid : targetPlayerId;
-            const toId = targetHasReflect ? targetPlayerId : user.uid;
-            const fromRef = doc(db, "players", fromId);
-            const toRef = doc(db, "players", toId);
+
+            const victimId = targetHasReflect ? user.uid : targetPlayerId;
+            const victim = getPlayerById(victimId);
+            const recipientId = targetHasReflect ? targetPlayerId : user.uid;
+
+            if (!victim || !victim.inventory || victim.inventory.length === 0) {
+              alert("У игрока нет карт для кражи.");
+              break;
+            }
 
             if (targetHasReflect) {
               await updateDoc(targetRef, clearTemporaryStatus);
             }
 
-            await runTransaction(db, async (transaction) => {
-              const fromSnap = await transaction.get(fromRef);
-              const inventory = (fromSnap.data()?.inventory as string[] | undefined) ?? [];
-              const stolenCard = pickRandom(inventory);
-              if (!stolenCard) return;
-
-              transaction.update(fromRef, { inventory: arrayRemove(stolenCard) });
-              transaction.update(toRef, { inventory: arrayUnion(stolenCard) });
+            // Открываем режим выбора карты (теперь идентично discard_card)
+            await updateDoc(doc(db, "gameState", "current"), {
+              activeInteraction: {
+                playerId: user.uid,
+                type: "discard_selection",
+                targetPlayerId: victimId,
+                recipientId: recipientId,
+                // Перемешиваем карты перед показом игроку
+                cards: shuffle(victim.inventory),
+                actingCardId: card.id,
+              }
             });
-            alert(targetHasReflect ? "Отражение сработало: карту украли у вас." : "Вы украли карту.");
+            if (targetHasReflect) alert("Эффект отражен! Вы выбираете карту у себя (и отдаете её сопернику).");
           }
           break;
 
@@ -767,6 +796,82 @@ export function useGameData() {
     [allCards],
   );
 
+  const handleSelectOpponentCard = async (targetPlayerId: string, cardId: string) => {
+    if (!user || !playerData) return;
+
+    console.log("Запуск handleSelectOpponentCard для:", targetPlayerId, "Карта:", cardId);
+    const targetRef = doc(db, "players", targetPlayerId);
+    const cardName = allCards[cardId]?.name || "Неизвестная карта";
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const gsRef = doc(db, "gameState", "current");
+        const gsSnap = await transaction.get(gsRef);
+        if (!gsSnap.exists()) return;
+
+        const interaction = (gsSnap.data() as GameState).activeInteraction;
+        const isSteal = interaction?.actingCardId === "inv_011";
+        const recipientId = interaction?.recipientId;
+
+        // 1. Удаляем карту у цели
+        transaction.update(targetRef, {
+          inventory: arrayRemove(cardId),
+          // Добавляем уведомление, которое UI на стороне цели может отловить
+          lastNotification: {
+            message: isSteal 
+              ? `Игрок "${playerData.login}" украл у вас карту "${cardName}"`
+              : `Игрок "${playerData.login}" выбрасывает из вашего инвентаря карту "${cardName}"`,
+            timestamp: Date.now(),
+            cardId: cardId
+          }
+        });
+
+        // 2. Если это кража (11 карта), добавляем карту получателю
+        if (isSteal && recipientId) {
+          const recipientRef = doc(db, "players", recipientId);
+          transaction.update(recipientRef, {
+            inventory: arrayUnion(cardId)
+          });
+        }
+
+        // 3. Закрываем интерактив выбора
+        transaction.update(gsRef, {
+          activeInteraction: null
+        });
+
+        // 4. Добавляем в историю разыгранных карт
+        transaction.update(gsRef, {
+          revealedCards: arrayUnion(cardId)
+        });
+      });
+    } catch (e) {
+      console.error("Ошибка при удалении карты соперника:", e);
+      alert("Не удалось удалить карту. Проверьте права доступа в консоли Firebase.");
+    }
+  };
+
+  const handleCancelInteraction = async () => {
+    if (!user || !gameState.activeInteraction) return;
+
+    const { actingCardId } = gameState.activeInteraction;
+    const playerRef = doc(db, "players", user.uid);
+    const gsRef = doc(db, "gameState", "current");
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        // 1. Возвращаем карту игроку и убираем её из раскрытых в галерее
+        if (actingCardId) {
+          transaction.update(playerRef, { inventory: arrayUnion(actingCardId) });
+          transaction.update(gsRef, { revealedCards: arrayRemove(actingCardId) });
+        }
+        // 2. Закрываем окно взаимодействия
+        transaction.update(gsRef, { activeInteraction: null });
+      });
+    } catch (e) {
+      console.error("Ошибка при отмене действия:", e);
+    }
+  };
+
   const handleMoveComplete = useCallback(
     async (position: number, prevCell: number | null, cellType?: string, playerId?: string) => {
       if (!user) return;
@@ -798,6 +903,7 @@ export function useGameData() {
           currentTurnIndex: isLast ? 0 : currentTurnIndex + 1,
           currentRoll: null,
           currentRollPlayerId: null,
+          lastBaseRoll: null,
           rollConfirmed: false,
           forcedMovePlayerId: null, // Сбрасываем удаленное управление
         });
@@ -903,6 +1009,7 @@ export function useGameData() {
           currentTurnIndex: isLast ? 0 : currentTurnIndex + 1,
           currentRoll: null,
           currentRollPlayerId: null,
+          lastBaseRoll: null,
           rollConfirmed: false,
         });
       });
@@ -1016,6 +1123,8 @@ export function useGameData() {
       handleConfirmRoll,
       handleStepPhase,
       handlePrepareTurn,
+      handleSelectOpponentCard,
+      handleCancelInteraction,
     },
   };
 }
