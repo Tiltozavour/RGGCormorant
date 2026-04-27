@@ -1034,6 +1034,15 @@ function AppClean() {
           </div>
         </div>
       )}
+
+      {/* Визуализация броска кубика */}
+      {visualRoll && (
+        <DiceVisual 
+          value={visualRoll.value} 
+          isRolling={visualRoll.rolling} 
+          playerName={visualRoll.playerName} 
+        />
+      )}
     </div>
   );
 }
