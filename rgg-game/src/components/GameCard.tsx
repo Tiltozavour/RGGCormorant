@@ -174,7 +174,10 @@ const GameCard: React.FC<GameCardProps> = ({
          <h3 className="text-2xl font-black text-white uppercase tracking-tight italic line-clamp-2 leading-tight min-h-[3.5rem] flex items-center justify-center text-center">
             {card.name}
           </h3>
-         <p className="text-[16px] leading-relaxed text-white font-medium italic line-clamp-3 font-comfortaa min-h-[3.5rem] flex items-start justify-center text-center">
+         <p
+            className="text-[16px] leading-relaxed text-white font-medium italic line-clamp-3 min-h-[3.5rem] flex items-start justify-center text-center"
+            style={{ fontFamily: "'Comfortaa', sans-serif" }}
+          >
             {card.description}
           </p>
         </div>

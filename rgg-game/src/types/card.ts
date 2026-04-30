@@ -29,7 +29,7 @@ export type CardAction =
   | 'give_next_card'   // Отдать следующую карту другому игроку (Такой себе пир)
   | 'fish_protection'; // Защита от игроков и отмена колеса
 
-export type DuelWeapon = 'dice' | 'custom';
+export type DuelWeapon = 'dice' | 'game';
 
 export interface DuelState {
   id: string;

@@ -18,6 +18,7 @@ interface BottomPanelProps {
   onPrevPhase: () => void;
   onNextPhase: () => void;
   onPrepareTurn: () => void;
+  onResetGame?: () => void | Promise<void>;
   onConfirmRoll: () => void;
   canConfirmRoll: boolean;
   onToggleWheel?: () => void;
@@ -38,6 +39,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   onPrevPhase,
   onNextPhase,
   onPrepareTurn,
+  onResetGame,
   onConfirmRoll,
   canConfirmRoll,
   onToggleWheel,
@@ -199,6 +201,17 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
             </button>
             <button onClick={handleGiveAllCards} className="bg-slate-800 hover:bg-slate-700 border border-purple-500/30 px-3 py-1 rounded text-[10px] uppercase text-purple-300">
               Give All
+            </button>
+            <button
+              onClick={() => {
+                if (window.confirm("Сбросить gameState, поле, игроков и пересоздать карты в Firebase?")) {
+                  void handleAction(async () => onResetGame?.());
+                }
+              }}
+              disabled={isPending}
+              className="bg-red-950 hover:bg-red-900 border border-red-500/40 px-3 py-1 rounded text-[10px] uppercase text-red-300 disabled:opacity-50"
+            >
+              Reset
             </button>
 
             {gameState.phase === "results" && (

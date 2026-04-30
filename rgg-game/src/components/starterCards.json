@@ -164,7 +164,7 @@
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2prOHd1dnhiNnNobzh4aTk5MXJzaTF2NHR3djRuNDZ0Mmw4OGk2ciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/9YPudRhbu5eWwBtFlU/giphy.gif",
     "price": 7,
-    "howtowork": "Используется как ответ на карту другого игрока. Отражает негативный эффект обратно на него. (не работает на no, no mr. Fish)",
+    "howtowork": "Используется как ответ на карту другого игрока. Отражает негативный эффект обратно на него. (не работает на no, no mr. Fish, Дуэль)",
     "number": 12
   },
   {
@@ -196,6 +196,7 @@
     "howtowork": "Выберите оппонента и ставку. Оба бросают кубик, победитель забирает всё.",
     "requiresTarget": true,
     "number": 15
+
   },
   {
     "id": "inv_017",

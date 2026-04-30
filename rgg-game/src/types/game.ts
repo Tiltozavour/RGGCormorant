@@ -25,7 +25,7 @@ export interface DuelState {
   id: string;
   challengerId: string;
   targetId: string;
-  status: "pending" | "accepted" | "betting" | "ready" | "rolling" | "admin_wait" | "finished";
+  status: "pending" | "accepted" | "betting" | "ready_to_roll" | "rolling" | "admin_wait" | "finished";
   weapon: DuelWeapon | null;
   bets: Record<string, number>;
   isReady: Record<string, boolean>;
@@ -40,7 +40,9 @@ export interface ActiveInteraction {
     | "discard_selection"
     | "move_for_coins_selection"
     | "duel_challenge_response"
-    | "duel_weapon_selection";
+    | "duel_weapon_selection"
+    | "duel_betting"
+    | "duel_ready_to_roll";
   cards: string[];
   targetPlayerId?: string;
   recipientId?: string;
@@ -94,9 +96,15 @@ export interface GameState {
   lastBaseRoll: number | null;
   forcedMovePlayerId: string | null;
   cardMove: {
+    id: string;
     controllerId: string;
+    controllerName?: string;
     targetId: string;
     steps: number;
+    position?: number;
+    prevCell?: number | null;
+    cardId?: string;
+    cardName?: string;
   } | null;
   rollBonus: number;
   rollConfirmed: boolean;
@@ -104,6 +112,11 @@ export interface GameState {
   revealedCards?: string[];
   activeInteraction?: ActiveInteraction | null;
   activeDuels: Record<string, DuelState>;
+  notifications?: Record<string, {
+    message: string;
+    timestamp: number;
+    cardId?: string;
+  }>;
 }
 
 export const defaultGameState: GameState = {
@@ -127,5 +140,6 @@ export const defaultGameState: GameState = {
   rollConfirmed: false,
   gameHistory: [],
   revealedCards: [],
+  notifications: {},
   activeDuels: {}, // Инициализируем активные дуэли
 };

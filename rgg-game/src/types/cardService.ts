@@ -1,4 +1,4 @@
-import { doc, writeBatch } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import type { GameCard } from "./card";
 import starterCards from "../components/starterCards.json";
@@ -41,4 +41,18 @@ export const uploadStarterCards = async () => {
     console.error("вќЊ РћС€РёР±РєР° РїСЂРё Р·Р°РіСЂСѓР·РєРµ РєР°СЂС‚:", error);
     throw error;
   }
+};
+
+export const resetStarterCards = async () => {
+  const [cardsSnap, prizesSnap] = await Promise.all([
+    getDocs(collection(db, "cards")),
+    getDocs(collection(db, "prizes")),
+  ]);
+
+  await Promise.all([
+    ...cardsSnap.docs.map((cardDoc) => deleteDoc(cardDoc.ref)),
+    ...prizesSnap.docs.map((prizeDoc) => deleteDoc(prizeDoc.ref)),
+  ]);
+
+  await uploadStarterCards();
 };

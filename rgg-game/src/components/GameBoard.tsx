@@ -22,9 +22,15 @@ interface GameBoardProps {
   round: number;
   forcedMovePlayerId?: string | null;
   cardMove?: {
+    id: string;
     controllerId: string;
+    controllerName?: string;
     targetId: string;
     steps: number;
+    position?: number;
+    prevCell?: number | null;
+    cardId?: string;
+    cardName?: string;
   } | null;
 }
 
@@ -40,6 +46,26 @@ const map = gameMap as MapCell[];
 
 const FALLBACK_AVATAR =
   "https://i.pinimg.com/736x/6f/8d/ce/6f8dcedfc7102d5e88e0af7b88634fc2.jpg";
+
+const syncMovePosition = async (
+  targetId: string,
+  position: number,
+  prevCell: number | null,
+  isCardMove: boolean,
+) => {
+  if (isCardMove) {
+    await updateDoc(doc(db, "gameState", "current"), {
+      "cardMove.position": position,
+      "cardMove.prevCell": prevCell,
+    });
+    return;
+  }
+
+  await updateDoc(doc(db, "players", targetId), {
+    position,
+    prevCell,
+  });
+};
 
 const GameBoard: React.FC<GameBoardProps> = ({
   playerData,
@@ -170,7 +196,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
     if (!targetPlayer) return;
 
     const rollKey = isCardMove
-      ? `card-${cardMove.controllerId}-${cardMove.targetId}-${cardMove.steps}`
+      ? `card-${cardMove.id}`
       : `${currentRoll}-${currentRollPlayerId}-${targetId}`;
     if (processedRollsRef.current.has(rollKey)) return;
     
@@ -224,10 +250,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
           // ОБНОВЛЕНИЕ: Записываем в БД, что мы дошли до развилки
           if (activeMovementRef.current === myId && !cancelled) {
-            void updateDoc(doc(db, "players", targetId), {
-              position: currentPosition,
-              prevCell: cameFrom,
-            });
+            await syncMovePosition(targetId, currentPosition, cameFrom, isCardMove);
           }
 
           await wait(STEP_DELAY);
@@ -246,10 +269,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
         // ОПТИМИЗАЦИЯ: Если осталось много шагов, можно обновлять БД раз в 2 шага
         if (activeMovementRef.current === myId && !cancelled && (stepsLeft % 2 === 0 || stepsLeft === 1)) {
-             void updateDoc(doc(db, "players", targetId), {
-               position: currentPosition,
-               prevCell: cameFrom,
-             });
+             await syncMovePosition(targetId, currentPosition, cameFrom, isCardMove);
         }
 
         stepsLeft--;
@@ -265,6 +285,8 @@ const GameBoard: React.FC<GameBoardProps> = ({
         const finalCell = getCell(currentPosition);
         // Нормализуем 'b-shop' в 'bshop' для синхронизации с useGameData
         const cellType = finalCell?.type === 'b-shop' ? 'bshop' : finalCell?.type;
+        await syncMovePosition(targetId, currentPosition, cameFrom, isCardMove);
+        if (isCardMove) await wait(150);
         await onMoveCompleteRef.current(currentPosition, cameFrom, cellType, targetId, isCardMove);
       } else {
         isLoopRunningRef.current = false;

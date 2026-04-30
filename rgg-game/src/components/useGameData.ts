@@ -1,10 +1,12 @@
 /* eslint-disable react-hooks/purity, @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import type { User } from "firebase/auth";
 import {
   collection,
+  deleteField,
   doc,
+  getDocs,
   onSnapshot,
   updateDoc,
   setDoc,
@@ -14,8 +16,9 @@ import {
   runTransaction,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import { resetStarterCards } from "../types/cardService";
 import { gameMap } from "./gameMap";
-import type { CardRarity, GameCard } from "../types/card";
+import type { CardRarity, GameCard, DuelWeapon } from "../types/card";
 import { defaultGameState } from "../types/game";
 import type { DuelState, GameState, Player } from "../types/game";
 import { PHASE_ORDER } from "./gameConstants";
@@ -75,6 +78,7 @@ export function useGameData() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [gameState, setGameState] = useState<GameState>(defaultGameState);
   const [allCards, setAllCards] = useState<Record<string, GameCard>>({});
+  const lastAppliedCardMoveRef = useRef<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -109,6 +113,27 @@ export function useGameData() {
       }
     });
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const cardMove = gameState.cardMove;
+    if (
+      !cardMove ||
+      cardMove.targetId !== user.uid ||
+      typeof cardMove.position !== "number"
+    ) {
+      return;
+    }
+
+    const key = `${cardMove.id}:${cardMove.position}:${cardMove.prevCell ?? "null"}`;
+    if (lastAppliedCardMoveRef.current === key) return;
+    lastAppliedCardMoveRef.current = key;
+
+    void updateDoc(doc(db, "players", user.uid), {
+      position: cardMove.position,
+      prevCell: cardMove.prevCell ?? null,
+    });
+  }, [gameState.cardMove, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -718,9 +743,9 @@ export function useGameData() {
                 cardId: duelCardId
               }
             });
-            // Уведомляем цель
-            await updateDoc(targetRef, {
-              lastNotification: {
+            // Уведомляем цель через общий gameState, не записывая в чужой players-документ.
+            await updateDoc(doc(db, "gameState", "current"), {
+              [`notifications.${duelTargetId}`]: {
                 message: `Вас вызвали на дуэль! Подготовьтесь отстоять свою честь. (Карты, позволяющие избежать дуэль: inv_006)`,
                 timestamp: Date.now(),
                 cardId: duelCardId
@@ -750,8 +775,8 @@ export function useGameData() {
                 cardId: duelCardId
               }
             });
-            await updateDoc(targetRef, {
-              lastNotification: {
+            await updateDoc(doc(db, "gameState", "current"), {
+              [`notifications.${duelTargetId}`]: {
                 message: `${playerData.login} вызвал вас на дуэль! Выберите оружие.`,
                 timestamp: Date.now(),
                 cardId: duelCardId
@@ -941,6 +966,10 @@ export function useGameData() {
     }
 
     const { targetPlayerId, actingCardId, playerId } = gameState.activeInteraction;
+    if (!targetPlayerId) {
+      console.error("Target player not found for active interaction");
+      return;
+    }
     if (!actingCardId) {
       console.error("Card not found for active interaction:", actingCardId);
       return;
@@ -971,13 +1000,32 @@ export function useGameData() {
         // Add the card to revealed cards
         transaction.update(gameStateRef, { revealedCards: arrayUnion(card.id) });
 
+        const timestamp = Date.now();
+
+        transaction.update(playerRef, {
+          lastNotification: {
+            message: `Вы управляете фишкой игрока "${getPlayerById(targetPlayerId)?.login ?? "игрок"}" на ${steps} шаг(ов) картой "${card.name}".`,
+            timestamp,
+            cardId: card.id,
+          },
+        });
+
         // Trigger card-controlled movement without touching the dice roll.
         transaction.update(gameStateRef, {
           cardMove: {
+            id: `${card.id}_${timestamp}`,
             controllerId: playerId,
+            controllerName: playerData.login,
             targetId: targetPlayerId,
             steps,
+            cardId: card.id,
+            cardName: card.name,
           },
+          currentRoll: null,
+          currentRollPlayerId: null,
+          lastBaseRoll: null,
+          rollConfirmed: false,
+          forcedMovePlayerId: null,
           activeInteraction: null,
         });
       });
@@ -1021,7 +1069,6 @@ export function useGameData() {
       return;
     }
 
-    const challengerRef = doc(db, "players", duelState.challengerId);
     const challengerPlayer = getPlayerById(duelState.challengerId);
     const duelCard = allCards[gameState.activeInteraction?.actingCardId || '']; // inv_015
 
@@ -1033,6 +1080,8 @@ export function useGameData() {
         if (!currentDuelState) {
           throw new Error("Дуэль не найдена в активных дуэлях.");
         }
+
+        const responseTimestamp = Date.now();
 
         if (response === 'use_protection') {
           // Цель использует inv_006
@@ -1058,14 +1107,14 @@ export function useGameData() {
           transaction.update(playerRef, {
             lastNotification: {
               message: `Вы успешно избежали дуэли, использовав карту "No, no, no mr. Fish"!`,
-              timestamp: Date.now(),
+              timestamp: responseTimestamp,
               cardId: protectionCardId
             }
           });
-          transaction.update(challengerRef, {
-            lastNotification: {
+          transaction.update(gameStateRef, {
+            [`notifications.${currentDuelState.challengerId}`]: {
               message: `${playerData.login} избежал дуэли, использовав карту "No, no, no mr. Fish"! Ваша карта "Дуэль" сгорела.`,
-              timestamp: Date.now(),
+              timestamp: responseTimestamp,
               cardId: duelCard?.id
             }
           });
@@ -1080,21 +1129,19 @@ export function useGameData() {
               cards: [],
               targetPlayerId: currentDuelState.targetId,
               actingCardId: duelCard?.id,
-            }
+            },
+            [`notifications.${currentDuelState.challengerId}`]: {
+              message: `${playerData.login} принял ваш вызов на дуэль! Выберите оружие.`,
+              timestamp: responseTimestamp,
+              cardId: duelCard?.id
+            },
           });
 
           // Уведомляем обоих игроков
           transaction.update(playerRef, {
             lastNotification: {
               message: `Вы приняли вызов на дуэль от ${challengerPlayer?.login}! Ожидайте выбора оружия.`,
-              timestamp: Date.now(),
-              cardId: duelCard?.id
-            }
-          });
-          transaction.update(challengerRef, {
-            lastNotification: {
-              message: `${playerData.login} принял ваш вызов на дуэль! Выберите оружие.`,
-              timestamp: Date.now(),
+              timestamp: responseTimestamp,
               cardId: duelCard?.id
             }
           });
@@ -1103,6 +1150,217 @@ export function useGameData() {
     } catch (e: any) {
       console.error("Ошибка при ответе на вызов дуэли:", e);
       alert(e.message || "Произошла ошибка при ответе на дуэль.");
+    }
+  };
+
+  const handlePlaceDuelBet = async (duelId: string, betAmount: number) => {
+    if (!user || !playerData) return;
+
+    const gameStateRef = doc(db, "gameState", "current");
+    const playerRef = doc(db, "players", user.uid);
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        const pSnap = await transaction.get(playerRef);
+        if (!gsSnap.exists() || !pSnap.exists()) return;
+
+        const gs = gsSnap.data() as GameState;
+        const player = pSnap.data() as Player;
+        const duel = gs.activeDuels?.[duelId];
+
+        if (!duel) throw new Error("Дуэль не найдена.");
+        if (duel.status !== 'betting') throw new Error("Дуэль не находится на этапе ставок.");
+        if (player.tiltCoins === undefined || player.tiltCoins < betAmount) {
+          throw new Error("Недостаточно тильтокоинов для ставки.");
+        }
+
+        // Deduct bet from player's coins
+        transaction.update(playerRef, { tiltCoins: increment(-betAmount) });
+
+        // Update duel state with bet and ready status
+        const updatedBets = { ...duel.bets, [user.uid]: betAmount };
+        const updatedIsReady = { ...duel.isReady, [user.uid]: true };
+
+        transaction.update(gameStateRef, {
+          [`activeDuels.${duelId}.bets`]: updatedBets,
+          [`activeDuels.${duelId}.isReady`]: updatedIsReady,
+        });
+
+        // Check if both players are ready
+        const allPlayersReady = Object.values(updatedIsReady).every(ready => ready === true);
+        if (allPlayersReady) {
+          // Transition to ready_to_roll phase
+          transaction.update(gameStateRef, {
+            [`activeDuels.${duelId}.status`]: 'ready_to_roll',
+            activeInteraction: {
+              playerId: duel.challengerId, // Challenger starts the roll
+              type: 'duel_ready_to_roll',
+              duelId: duelId,
+              targetPlayerId: duel.targetId,
+              actingCardId: gs.activeInteraction?.actingCardId,
+            },
+          });
+        } else {
+          // If not all ready, switch activeInteraction to the other player for their bet
+          const otherPlayerId = duel.challengerId === user.uid ? duel.targetId : duel.challengerId;
+          transaction.update(gameStateRef, {
+            activeInteraction: {
+              playerId: otherPlayerId,
+              type: 'duel_betting',
+              duelId: duelId,
+              targetPlayerId: duel.challengerId === user.uid ? duel.targetId : duel.challengerId, // The other player
+              actingCardId: gs.activeInteraction?.actingCardId,
+            },
+            [`notifications.${otherPlayerId}`]: {
+              message: `${player.login} сделал ставку в дуэли. Теперь ваш ход!`,
+              timestamp: Date.now(),
+            }
+          });
+        }
+      });
+    } catch (e: any) {
+      console.error("Ошибка при размещении ставки в дуэли:", e);
+      alert(e.message || "Произошла ошибка при размещении ставки.");
+    }
+  };
+
+  const handleStartDuelRoll = async (duelId: string) => {
+    if (!user || !playerData) return;
+
+    const gameStateRef = doc(db, "gameState", "current");
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        if (!gsSnap.exists()) return;
+
+        const gs = gsSnap.data() as GameState;
+        const duel = gs.activeDuels?.[duelId];
+
+        if (!duel) throw new Error("Дуэль не найдена.");
+        if (duel.status !== 'ready_to_roll') throw new Error("Дуэль не готова к броску.");
+        if (duel.challengerId !== user.uid) throw new Error("Только инициатор дуэли может начать бросок.");
+
+        transaction.update(gameStateRef, {
+          [`activeDuels.${duelId}.status`]: 'rolling',
+          activeInteraction: null, // Clear interaction, animation will take over
+        });
+      });
+    } catch (e) {
+      console.error("Ошибка при начале броска дуэли:", e);
+    }
+  };
+
+  const handleSelectDuelWeapon = async (duelId: string, weapon: DuelWeapon) => {
+    if (!user || !playerData) return;
+
+    const gameStateRef = doc(db, "gameState", "current");
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        if (!gsSnap.exists()) return;
+
+        const gs = gsSnap.data() as GameState;
+        const duel = gs.activeDuels?.[duelId];
+
+        if (!duel) throw new Error("Дуэль не найдена.");
+
+        // Обновляем оружие в стейте дуэли и переходим к этапу ставок
+        transaction.update(gameStateRef, {
+          [`activeDuels.${duelId}.weapon`]: weapon,
+          [`activeDuels.${duelId}.status`]: 'betting', // Переходим к этапу ставок
+          // Переключаем активное взаимодействие на вызывающего игрока для начала этапа ставок
+          activeInteraction: {
+            playerId: duel.challengerId,
+            actingCardId: gs.activeInteraction?.actingCardId, // Сохраняем ID карты дуэли
+            type: 'duel_betting',
+            duelId: duelId,
+            targetPlayerId: duel.targetId
+          }
+        });
+      });
+    } catch (e) {
+      console.error("Ошибка при выборе оружия дуэли:", e);
+    }
+  };
+
+  const handleFinishDuel = async (duelId: string) => {
+    if (!user || !playerData) return;
+
+    const gameStateRef = doc(db, "gameState", "current");
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        if (!gsSnap.exists()) return;
+
+        const gs = gsSnap.data() as GameState;
+        const duel = gs.activeDuels?.[duelId];
+
+        if (!duel) throw new Error("Дуэль не найдена.");
+        if (duel.status === 'finished') return;
+
+        // Определение победителя по кубикам
+        const challengerRoll = rollD6();
+        const targetRoll = rollD6();
+        
+        let winnerId: string | 'draw' = 'draw';
+        if (challengerRoll > targetRoll) {
+          winnerId = duel.challengerId;
+        } else if (targetRoll > challengerRoll) {
+          winnerId = duel.targetId;
+        }
+
+        const challengerBet = duel.bets[duel.challengerId] || 0;
+        const targetBet = duel.bets[duel.targetId] || 0;
+        const totalPot = challengerBet + targetBet;
+
+        // Распределение выигрыша (предполагается, что ставки были списаны ранее при betting)
+        if (winnerId !== 'draw') {
+          const winnerRef = doc(db, "players", winnerId);
+          transaction.update(winnerRef, {
+            tiltCoins: increment(totalPot)
+          });
+        } else {
+          // При ничьей возвращаем исходные ставки участникам
+          transaction.update(doc(db, "players", duel.challengerId), {
+            tiltCoins: increment(challengerBet)
+          });
+          transaction.update(doc(db, "players", duel.targetId), {
+            tiltCoins: increment(targetBet)
+          });
+        }
+
+        const timestamp = Date.now();
+        // Обновляем состояние дуэли и рассылаем уведомления участникам
+        const updatePayload: any = {
+          [`activeDuels.${duelId}.status`]: 'finished',
+          [`activeDuels.${duelId}.winnerId`]: winnerId,
+          activeInteraction: null, // Закрываем модальное окно для игрока
+          [`notifications.${duel.challengerId}`]: {
+            message: winnerId === 'draw' 
+              ? `Дуэль: ничья (${challengerRoll} vs ${targetRoll}). Ставка возвращена.`
+              : winnerId === duel.challengerId 
+                ? `Победа! Вы выиграли дуэль (${challengerRoll} vs ${targetRoll}) и получили ${totalPot} 🦖`
+                : `Поражение. Вы проиграли дуэль (${challengerRoll} vs ${targetRoll}).`,
+            timestamp,
+          },
+          [`notifications.${duel.targetId}`]: {
+            message: winnerId === 'draw' 
+              ? `Дуэль: ничья (${targetRoll} vs ${challengerRoll}). Ставка возвращена.`
+              : winnerId === duel.targetId 
+                ? `Победа! Вы выиграли дуэль (${targetRoll} vs ${challengerRoll}) и получили ${totalPot} 🦖`
+                : `Поражение. Вы проиграли дуэль (${targetRoll} vs ${challengerRoll}).`,
+            timestamp,
+          }
+        };
+
+        transaction.update(gameStateRef, updatePayload);
+      });
+    } catch (e) {
+      console.error("Ошибка при завершении дуэли:", e);
     }
   };
 
@@ -1123,7 +1381,9 @@ export function useGameData() {
         const gsSnap = await transaction.get(gameStateRef);
         if (!gsSnap.exists()) return;
         const { turnOrder = [], currentTurnIndex = 0 } = gsSnap.data() as GameState;
-        transaction.update(playerRef, { position, prevCell });
+        if (!isCardMove) {
+          transaction.update(playerRef, { position, prevCell });
+        }
 
         if (cellType === "gambling" || cellType === "bshop") {
           transaction.update(gameStateRef, {
@@ -1354,6 +1614,37 @@ export function useGameData() {
     });
   };
 
+  const handleResetGameForTesting = async () => {
+    if (!isAdmin) return;
+
+    const playersSnap = await getDocs(collection(db, "players"));
+    await Promise.all(
+      playersSnap.docs.map((playerDoc) =>
+        updateDoc(playerDoc.ref, {
+          position: 0,
+          prevCell: null,
+          inGame: false,
+          inventory: [],
+          tiltCoins: 0,
+          lastTiltoCoins: 0,
+          bonusPoints: 0,
+          hasProtection: false,
+          customStatus: null,
+          statusDuration: 0,
+          discardNextDrawn: false,
+          redirectNextDrawnToPlayerId: null,
+          giveNextDrawnToPlayerId: null,
+          lastNotification: deleteField(),
+          isFrozen: deleteField(),
+          freezeDuration: deleteField(),
+        }),
+      ),
+    );
+
+    await setDoc(doc(db, "gameState", "current"), defaultGameState);
+    await resetStarterCards();
+  };
+
   return {
     user,
     playerData,
@@ -1365,6 +1656,7 @@ export function useGameData() {
     currentTurnPlayerId,
     canRoll,
     canConfirmRoll,
+    getPlayerById,
     handlers: {
       handleLogout,
       handleUpdateLogin,
@@ -1379,10 +1671,15 @@ export function useGameData() {
       handleConfirmRoll,
       handleStepPhase,
       handlePrepareTurn,
+      handleResetGameForTesting,
       handleSelectOpponentCard,
       handleCancelInteraction,
       handleConfirmMoveForCoins, // Add new handler
       handleDuelChallengeResponse, // Add new handler
+      handlePlaceDuelBet,
+      handleStartDuelRoll,
+      handleSelectDuelWeapon,
+      handleFinishDuel,
     },
   };
 }

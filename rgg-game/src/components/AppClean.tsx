@@ -12,6 +12,7 @@ import { useGameData } from "./useGameData";
 import { useModalStates } from "../components/useModalStates";
 import GameCard from "./GameCard";
 import DiceVisual from "./DiceVisual";
+import DuelDiceVisual from "./DuelDiceVisual"; // Import the new component
 import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS } from "./gameConstants";
 
 const RARITY_ORDER: Record<string, number> = {
@@ -25,7 +26,7 @@ function AppClean() {
   const {
     user, playerData, loading, players, gameState, allCards,
     isAdmin, currentTurnPlayerId, canRoll, canConfirmRoll,
-    handlers
+    handlers, getPlayerById
   } = useGameData();
 
   const {
@@ -57,9 +58,16 @@ function AppClean() {
   const [coinsToPay, setCoinsToPay] = useState<number>(1); // New state for coin input
   const lastProcessedRollRef = useRef<string | null>(null);
   const lastShownNotifRef = useRef<number>(0);
+  const lastShownCardMoveRef = useRef<string | null>(null);
 
   const [isShuffling, setIsShuffling] = useState(false);
   const [isInteractionPending, setIsInteractionPending] = useState(false);
+  const [duelBetAmount, setDuelBetAmount] = useState<number>(1); // New state for duel bet amount
+  const [duelVisualRoll, setDuelVisualRoll] = useState<{
+    challenger: { value: number; rolling: boolean; playerName: string };
+    target: { value: number; rolling: boolean; playerName: string };
+    duelId: string;
+  } | null>(null);
 
   useEffect(() => {
     // Сбрасываем блокировку, если нет активного интерактива, закончилась анимация тасовки 
@@ -94,6 +102,32 @@ function AppClean() {
       });
     }
   }, [playerData]);
+
+  useEffect(() => {
+    const notif = user?.uid ? gameState.notifications?.[user.uid] : null;
+    if (notif && notif.timestamp > lastShownNotifRef.current) {
+      lastShownNotifRef.current = notif.timestamp;
+      setGameAlert({
+        title: "Р’РЅРёРјР°РЅРёРµ!",
+        message: notif.message,
+        type: 'warning',
+        cardId: notif.cardId
+      });
+    }
+  }, [gameState.notifications, user?.uid, setGameAlert]);
+
+  useEffect(() => {
+    const cardMove = gameState.cardMove;
+    if (!cardMove || cardMove.targetId !== user?.uid || lastShownCardMoveRef.current === cardMove.id) return;
+
+    lastShownCardMoveRef.current = cardMove.id;
+    setGameAlert({
+      title: "Вашей фишкой управляют",
+      message: `Вашей фишкой управляет игрок "${cardMove.controllerName ?? "игрок"}" из-за карты "${cardMove.cardName ?? "карта"}".`,
+      type: 'warning',
+      cardId: cardMove.cardId,
+    });
+  }, [gameState.cardMove, user?.uid, setGameAlert]);
 
   // Логика отслеживания изменения монет для всплывающего уведомления
   const prevCoinsRef = useRef<number | undefined>(playerData?.tiltCoins);
@@ -145,6 +179,51 @@ function AppClean() {
       lastProcessedRollRef.current = null;
     }
   }, [gameState.currentRoll, gameState.lastBaseRoll, gameState.rollConfirmed, gameState.currentRollPlayerId, players, gameState.round, visualRoll?.rolling]);
+
+  // Logic for duel dice visual roll
+  useEffect(() => {
+    const activeDuelId = gameState.activeInteraction?.duelId;
+    const activeDuel = activeDuelId ? gameState.activeDuels[activeDuelId] : null;
+
+    if (activeDuel && activeDuel.status === 'rolling' && activeDuel.weapon === 'dice') {
+      // Prevent re-triggering if already rolling for this duel
+      if (duelVisualRoll?.duelId === activeDuel.id && duelVisualRoll.challenger.rolling) return;
+
+      const challengerPlayer = getPlayerById(activeDuel.challengerId);
+      const targetPlayer = getPlayerById(activeDuel.targetId);
+
+      // Generate temporary random rolls for visual effect
+      const rollD6 = () => Math.floor(Math.random() * 6) + 1; // Define rollD6 locally for useEffect
+      const visualChallengerRoll = rollD6();
+      const visualTargetRoll = rollD6();
+
+      setDuelVisualRoll({
+        duelId: activeDuel.id,
+        challenger: { value: visualChallengerRoll, rolling: true, playerName: challengerPlayer?.login || 'Игрок 1' },
+        target: { value: visualTargetRoll, rolling: true, playerName: targetPlayer?.login || 'Игрок 2' },
+      });
+
+      // Start rolling animation
+      setTimeout(() => {
+        setDuelVisualRoll(prev => {
+          if (prev?.duelId === activeDuel.id) {
+            return {
+              ...prev,
+              challenger: { ...prev.challenger, rolling: false },
+              target: { ...prev.target, rolling: false },
+            };
+          }
+          return prev;
+        });
+      }, 1000); // Roll for 1 second
+
+      // After animation, call handleFinishDuel
+      setTimeout(() => {
+        void handlers.handleFinishDuel(activeDuel.id);
+        setDuelVisualRoll(null); // Clear visual after duel is finished
+      }, 2500); // Total animation time + a bit
+    }
+  }, [gameState.activeDuels, gameState.activeInteraction, handlers, players, duelVisualRoll, getPlayerById]);
 
   // Проверка: требует ли карта выбора цели?
   const cardNeedsTarget = (card: GameCardType) => {
@@ -420,6 +499,38 @@ function AppClean() {
           </div>
         )}
 
+        {gameState.cardMove && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[56] flex flex-col items-center gap-2 pointer-events-none">
+            {gameState.cardMove.targetId === user?.uid ? (
+              <div className="bg-red-500/20 border border-red-500/50 backdrop-blur-md px-6 py-2 rounded-full animate-bounce shadow-[0_0_20px_rgba(239,68,68,0.3)]">
+                <span className="text-red-200 text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                  <span className="animate-pulse">!</span>
+                  Вашей фишкой управляет игрок{" "}
+                  <b className="text-white">{gameState.cardMove.controllerName ?? "игрок"}</b>
+                  {" "}из-за карты{" "}
+                  <b className="text-white">{gameState.cardMove.cardName ?? "карта"}</b>
+                </span>
+              </div>
+            ) : gameState.cardMove.controllerId === user?.uid ? (
+              <div className="bg-purple-600/30 border border-purple-400/50 backdrop-blur-md px-6 py-2 rounded-full shadow-[0_0_20px_rgba(168,85,247,0.3)]">
+                <span className="text-purple-200 text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                  <span className="text-lg">🎮</span>
+                  Вы управляете фишкой игрока{" "}
+                  <b className="text-white">{players.find(p => p.id === gameState.cardMove?.targetId)?.login}</b>
+                  {" "}картой{" "}
+                  <b className="text-white">{gameState.cardMove.cardName ?? "карта"}</b>
+                </span>
+              </div>
+            ) : (
+              <div className="bg-zinc-800/80 border border-white/10 backdrop-blur-md px-6 py-2 rounded-full">
+                <span className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">
+                  Происходит перемещение картой...
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="relative h-[calc(100vh-73px)] w-full">
           <GameBoard
             playerData={
@@ -474,6 +585,7 @@ function AppClean() {
             onPrevPhase={() => { void handlers.handleStepPhase(-1); }}
             onNextPhase={() => { void handlers.handleStepPhase(1); }}
             onPrepareTurn={() => { void handlers.handlePrepareTurn(); }}
+            onResetGame={handlers.handleResetGameForTesting}
             onConfirmRoll={handlers.handleConfirmRoll}
             canConfirmRoll={canConfirmRoll}
             onToggleWheel={() => void syncWheelVisibility("current", !gameState.showWheel)}
@@ -1219,18 +1331,159 @@ function AppClean() {
 
       {/* ЭКРАН ВЫБОРА ОРУЖИЯ ДЛЯ ДУЭЛИ */}
       {gameState.activeInteraction?.type === 'duel_weapon_selection' && (
+        gameState.activeInteraction.playerId === user?.uid ? (
+          /* ДИАЛОГОВОЕ ОКНО ДЛЯ ВЫБИРАЮЩЕГО */
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[10010] flex items-center justify-center p-4 animate-in fade-in duration-300">
+            <div className="bg-zinc-900 border-2 border-purple-500/50 p-10 rounded-[3rem] w-full max-w-xl flex flex-col items-center shadow-[0_0_80px_rgba(168,85,247,0.2)]">
+              <div className="text-center mb-10">
+                <h2 className="text-4xl font-black text-purple-400 uppercase italic tracking-tighter drop-shadow-md">Выберите оружие</h2>
+                <p className="text-white/40 text-xs font-bold uppercase tracking-[0.3em] mt-2">Ваш ход в дуэли</p>
+              </div>
+              
+              <div className="flex gap-6">
+                <button 
+                  disabled={isInteractionPending}
+                  onClick={() => {
+                    if (isInteractionPending) return;
+                    const duelId = gameState.activeInteraction?.duelId;
+                    if (!duelId) return;
+                    setIsInteractionPending(true);
+                    void handlers.handleSelectDuelWeapon(duelId, 'dice');
+                  }}
+                  className="group relative bg-purple-600 text-white px-12 py-5 rounded-[2rem] font-black uppercase text-sm hover:bg-purple-500 transition-all active:scale-95 shadow-[0_8px_0_#6d28d9] active:shadow-none active:translate-y-1 disabled:opacity-50 overflow-hidden"
+                >
+                  <span className="relative z-10">Кубики</span>
+                  <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+
+                <button 
+                  disabled={isInteractionPending}
+                  onClick={() => {
+                    if (isInteractionPending) return;
+                    const duelId = gameState.activeInteraction?.duelId;
+                    if (!duelId) return;
+                    setIsInteractionPending(true);
+                    void handlers.handleSelectDuelWeapon(duelId, 'game');
+                  }}
+                  className="group relative bg-purple-600 text-white px-12 py-5 rounded-[2rem] font-black uppercase text-sm hover:bg-purple-500 transition-all active:scale-95 shadow-[0_8px_0_#6d28d9] active:shadow-none active:translate-y-1 disabled:opacity-50 overflow-hidden"
+                >
+                  <span className="relative z-10">Игра по выбору</span>
+                  <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* НЕБОЛЬШОЕ УВЕДОМЛЕНИЕ ДЛЯ ОСТАЛЬНЫХ */
+          <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[10010] animate-in slide-in-from-top-4 fade-in duration-500 pointer-events-none w-full max-w-sm px-4">
+            <div className="bg-purple-900/40 border border-purple-500/40 backdrop-blur-xl px-8 py-5 rounded-[2rem] shadow-2xl flex items-center gap-5 border-l-4 border-l-purple-400">
+              <div className="relative shrink-0">
+                <div className="w-3 h-3 bg-purple-500 rounded-full animate-ping absolute inset-0" />
+                <div className="w-3 h-3 bg-purple-400 rounded-full relative" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-purple-400 text-[9px] font-black uppercase tracking-[0.3em]">Дуэль</span>
+                <span className="text-white text-xs font-bold mt-0.5 leading-tight">
+                  {players.find(p => p.id === gameState.activeInteraction?.playerId)?.login || 'Игрок'} выбирает оружие...
+                </span>
+              </div>
+            </div>
+          </div>
+        )
+      )}
+
+      {/* ЭКРАН ВВОДА СТАВОК ДЛЯ ДУЭЛИ */}
+      {gameState.activeInteraction?.type === 'duel_betting' && gameState.activeInteraction.duelId && (
         <div className="fixed inset-0 bg-purple-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
           <div className="text-center mb-12">
-            <h2 className="text-6xl font-black text-purple-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(168,85,247,0.5)]">Выберите оружие</h2>
+            <h2 className="text-6xl font-black text-purple-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(168,85,247,0.5)]">Дуэль: Ставки!</h2>
             <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">
-              {gameState.activeInteraction.playerId === user?.uid ? "Ваш ход выбрать оружие для дуэли." : `Ожидаем выбора оружия от ${players.find(p => p.id === gameState.activeInteraction?.playerId)?.login}.`}
+              {gameState.activeInteraction.playerId === user?.uid
+                ? `Ваш ход сделать ставку против ${getPlayerById(gameState.activeInteraction.targetPlayerId)?.login}.`
+                : `Ожидаем ставку от ${getPlayerById(gameState.activeInteraction.playerId)?.login}.`}
+            </p>
+            {gameState.activeDuels[gameState.activeInteraction.duelId]?.weapon === 'dice' && (
+              <p className="text-white/60 text-xs font-medium mt-2">
+                Оружие: Кубики. Победитель забирает весь банк.
+              </p>
+            )}
+            {gameState.activeDuels[gameState.activeInteraction.duelId]?.weapon === 'game' && (
+              <p className="text-white/60 text-xs font-medium mt-2">
+                Оружие: Игра по выбору. Победитель забирает весь банк.
+              </p>
+            )}
+            <p className="text-white/50 text-sm font-bold uppercase tracking-[0.3em] mt-4">
+              Ваши коины: {playerData.tiltCoins ?? 0} 🦖
             </p>
           </div>
+
           {gameState.activeInteraction.playerId === user?.uid && (
-            <div className="flex gap-8">
-              <button className="bg-purple-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm hover:bg-purple-500 transition-all active:scale-95 shadow-[0_5px_0_#6d28d9] active:shadow-none active:translate-y-1">Кубики</button>
-              <button className="bg-purple-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm hover:bg-purple-500 transition-all active:scale-95 shadow-[0_5px_0_#6d28d9] active:shadow-none active:translate-y-1">Игра по выбору</button>
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col items-center gap-5 min-w-80">
+              <input
+                type="number"
+                min={1}
+                max={playerData.tiltCoins ?? 0}
+                value={duelBetAmount}
+                onChange={(event) => {
+                  const max = playerData.tiltCoins ?? 0;
+                  const next = Math.max(1, Math.min(max, Number(event.target.value) || 1));
+                  setDuelBetAmount(next);
+                }}
+                className="w-24 bg-black/50 border border-purple-400/40 rounded-xl px-4 py-3 text-center text-2xl font-black text-purple-200"
+              />
+              <div className="flex gap-3">
+                <button
+                  disabled={isInteractionPending || (playerData.tiltCoins ?? 0) < duelBetAmount || duelBetAmount <= 0}
+                  onClick={() => {
+                    if (isInteractionPending) return;
+                    setIsInteractionPending(true);
+                    void handlers.handlePlaceDuelBet(gameState.activeInteraction?.duelId!, duelBetAmount);
+                  }}
+                  className="bg-purple-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-purple-500 transition-all disabled:opacity-50"
+                >
+                  Сделать ставку {duelBetAmount} 🦖
+                </button>
+                <button
+                  disabled={isInteractionPending}
+                  onClick={() => {
+                    if (isInteractionPending) return;
+                    setIsInteractionPending(true);
+                    void handlers.handleCancelInteraction(); // Or a specific cancel duel handler
+                  }}
+                  className="bg-zinc-800 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-zinc-700 transition-all"
+                >
+                  Отмена
+                </button>
+              </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ЭКРАН ГОТОВНОСТИ К БРОСКУ ДЛЯ ДУЭЛИ */}
+      {gameState.activeInteraction?.type === 'duel_ready_to_roll' && gameState.activeInteraction.duelId && (
+        <div className="fixed inset-0 bg-purple-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
+          <div className="text-center mb-12">
+            <h2 className="text-6xl font-black text-purple-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(168,85,247,0.5)]">Дуэль: Готовы?</h2>
+            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">
+              {gameState.activeInteraction.playerId === user?.uid
+                ? `Нажмите "Бросить кубики", чтобы начать дуэль против ${getPlayerById(gameState.activeInteraction.targetPlayerId)?.login}.`
+                : `Ожидаем, пока ${getPlayerById(gameState.activeInteraction.playerId)?.login} бросит кубики.`}
+            </p>
+          </div>
+
+          {gameState.activeInteraction.playerId === user?.uid && (
+            <button
+              disabled={isInteractionPending}
+              onClick={() => {
+                if (isInteractionPending) return;
+                setIsInteractionPending(true);
+                void handlers.handleStartDuelRoll(gameState.activeInteraction?.duelId!);
+              }}
+              className="bg-purple-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm hover:bg-purple-500 transition-all active:scale-95 shadow-[0_5px_0_#6d28d9] active:shadow-none active:translate-y-1 disabled:opacity-50"
+            >
+              Бросить кубики!
+            </button>
           )}
         </div>
       )}
@@ -1282,6 +1535,17 @@ function AppClean() {
           value={visualRoll.value} 
           isRolling={visualRoll.rolling} 
           playerName={visualRoll.playerName} 
+        />
+      )}
+
+      {/* Визуализация броска кубиков для дуэли */}
+      {duelVisualRoll && (
+        <DuelDiceVisual
+          challengerRoll={duelVisualRoll.challenger.value}
+          challengerName={duelVisualRoll.challenger.playerName}
+          targetRoll={duelVisualRoll.target.value}
+          targetName={duelVisualRoll.target.playerName}
+          isRolling={duelVisualRoll.challenger.rolling || duelVisualRoll.target.rolling}
         />
       )}
 
