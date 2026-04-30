@@ -27,6 +27,7 @@ function PlayersSidebar({
   onOpenDetails,
   onOpenCollection,
 }: PlayersSidebarProps) {
+  void onOpenCollection;
   const rows = buildPlayerScoreRows(players, totalScores, gameHistory);
   const latestGameName = gameHistory.length > 0 ? gameHistory[gameHistory.length - 1].gameName : null;
 

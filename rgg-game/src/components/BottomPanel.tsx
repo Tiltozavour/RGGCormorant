@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import type { GameCard } from "../types/card";
 import type { GameState, Player } from "../types/game";
 import type { User } from "firebase/auth";
-import { doc, updateDoc, increment, arrayUnion } from "firebase/firestore";
+import { doc, updateDoc, increment } from "firebase/firestore";
 import { db } from "../firebase";
 import { uploadStarterCards } from "../types/cardService";
 import { PHASE_LABELS } from "./gameConstants";
@@ -46,11 +46,44 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   onOpenHand,
   allCards,
 }) => {
+  void onPrepareTurn;
+  void onCardClick;
   const [isFillingResults, setIsFillingResults] = useState(false);
   const [tempScores, setTempScores] = useState<Record<string, number>>({});
+  const [isPending, setIsPending] = useState(false);
+
+  // Сбрасываем блокировку при любом изменении ключевых полей игрового состояния
+  React.useEffect(() => {
+    setIsPending(false);
+  }, [gameState.phase, gameState.currentRoll, gameState.rollConfirmed, gameState.currentTurnIndex]);
+
+  const handleAction = async (action: () => void | Promise<void>) => {
+    if (isPending) return;
+    setIsPending(true);
+    try {
+      await action();
+    } catch (e) {
+      setIsPending(false);
+      console.error(e);
+    }
+  };
+
+  const handleInitCards = async () => {
+    if (!isAdmin) return;
+    try {
+      await uploadStarterCards();
+      alert("Стартовые карты успешно загружены в базу данных.");
+    } catch (e) {
+      console.error("Ошибка инициализации карт:", e);
+    }
+  };
 
   // Находим логин текущего ходящего игрока
   const currentTurnPlayer = players.find(p => p.id === currentTurnPlayerId);
+
+  // Cache the current user's player data and first card for safety and performance
+  const myPlayerData = players.find(p => p.id === currentUser?.uid);
+  const firstCardId = myPlayerData?.inventory?.[0];
 
   const turnLabel =
     gameState.turnOrder.length === 0
@@ -102,7 +135,16 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   };
 
   return (
-    <div className="w-full h-40 border-t border-purple-500/20 bg-black/40 backdrop-blur-md flex flex-col" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+    <div className="w-full h-40 border-t border-purple-500/20 bg-black/40 backdrop-blur-md flex flex-col relative overflow-hidden" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+      {isPending && (
+        <div className="absolute inset-0 z-[100] bg-black/40 backdrop-blur-[2px] flex items-center justify-center animate-in fade-in duration-300">
+          <div className="flex items-center gap-3 bg-zinc-900 border border-white/10 px-6 py-3 rounded-2xl shadow-2xl">
+            <div className="w-5 h-5 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs font-black uppercase tracking-widest text-yellow-500">Синхронизация...</span>
+          </div>
+        </div>
+      )}
+
       {/* ВЕРХНЯЯ СТРОКА (Инфо и Кнопки) */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-purple-500/10 gap-3">
         <h3 className="text-purple-300 text-base font-bold uppercase tracking-tight shrink-0">
@@ -123,7 +165,11 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
         {/* Блок подтверждения броска */}
         {gameState.currentRoll !== null && !gameState.rollConfirmed && canConfirmRoll && !isDiceRolling && (
-          <button onClick={onConfirmRoll} className="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 rounded text-sm font-semibold transition animate-pulse">
+          <button 
+            onClick={() => void handleAction(onConfirmRoll)} 
+            disabled={isPending}
+            className="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 rounded text-sm font-semibold transition animate-pulse disabled:opacity-50 disabled:cursor-wait"
+          >
             Начать ход ({gameState.currentRoll})
           </button>
         )}
@@ -131,10 +177,10 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         {/* Кнопка броска для игрока */}
         {!isAdmin && (
           <button
-            onClick={onRoll}
-            disabled={!canRoll || isDiceRolling}
+            onClick={() => void handleAction(onRoll)}
+            disabled={!canRoll || isDiceRolling || isPending}
             className={`px-6 py-2 rounded text-base font-bold transition ${
-              canRoll && !isDiceRolling ? "bg-purple-600 hover:bg-purple-500" : "bg-zinc-700 text-zinc-400 cursor-not-allowed"
+              canRoll && !isDiceRolling && !isPending ? "bg-purple-600 hover:bg-purple-500" : "bg-zinc-700 text-zinc-400 cursor-not-allowed"
             }`}
           >
             {rollLabel}
@@ -144,8 +190,17 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         {/* Админ-кнопки */}
         {isAdmin && (
           <div className="flex gap-2 font-bold shrink-0">
-            <button onClick={onPrevPhase} className="bg-zinc-700 px-3 py-1 rounded text-xs">Этап -</button>
-            <button onClick={onNextPhase} className="bg-zinc-700 px-3 py-1 rounded text-xs">Этап +</button>
+            <button onClick={() => void handleAction(onPrevPhase)} disabled={isPending} className="bg-zinc-700 px-3 py-1 rounded text-xs disabled:opacity-50">Этап -</button>
+            <button onClick={() => void handleAction(onNextPhase)} disabled={isPending} className="bg-zinc-700 px-3 py-1 rounded text-xs disabled:opacity-50">Этап +</button>
+            
+            {/* Тестовые кнопки */}
+            <button onClick={handleInitCards} className="bg-slate-800 hover:bg-slate-700 border border-blue-500/30 px-3 py-1 rounded text-[10px] uppercase text-blue-300">
+              Init
+            </button>
+            <button onClick={handleGiveAllCards} className="bg-slate-800 hover:bg-slate-700 border border-purple-500/30 px-3 py-1 rounded text-[10px] uppercase text-purple-300">
+              Give All
+            </button>
+
             {gameState.phase === "results" && (
               <button onClick={() => setIsFillingResults(!isFillingResults)} className="bg-blue-600 px-3 py-1 rounded text-xs">Итоги</button>
             )}
@@ -195,17 +250,17 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
           <div className="flex flex-col gap-1 w-full">
             <span className="text-[10px] font-black uppercase text-purple-400 tracking-widest">Ваш инвентарь:</span>
             <div className="flex-1 flex items-end pb-1 overflow-visible">
-              {players.find(p => p.id === currentUser?.uid)?.inventory?.length ? (
+              {myPlayerData?.inventory?.length ? (
                 <div
                   onClick={onOpenHand}
                   className="relative group cursor-pointer w-16 h-20 rounded-xl border-2 border-white/20 overflow-hidden transition-all hover:-translate-y-2 hover:scale-110 shadow-2xl"
                   style={{
-                    backgroundImage: `url("${allCards[players.find(p => p.id === currentUser?.uid)!.inventory[0]]?.faceCard}"), linear-gradient(165deg, #4b5563 0%, #000 100%)`,
+                    backgroundImage: `url("${firstCardId ? allCards[firstCardId]?.faceCard : ''}"), linear-gradient(165deg, #4b5563 0%, #000 100%)`,
                     backgroundSize: "cover"
                   }}
                 >
                   <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center">
-                    <span className="text-white text-lg font-black">{players.find(p => p.id === currentUser?.uid)?.inventory.length}</span>
+                    <span className="text-white text-lg font-black">{myPlayerData.inventory.length}</span>
                   </div>
                 </div>
               ) : (
@@ -255,6 +310,7 @@ const PlayerVotingView: React.FC<{ currentUser: User | null, players: Player[], 
 };
 
 const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFinish: () => void }> = ({ gameState, players, onFinish }) => {
+  void players;
   const handleFinish = async () => {
     const currentVotes = gameState.votes || {};
     const voteCounts: Record<string, number> = {};
@@ -264,7 +320,7 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
     if (entries.length > 0) {
       const max = Math.max(...Object.values(voteCounts));
       const winners = entries.filter(([, count]) => count === max).map(([id]) => id);
-      let bonus = winners.length === 1 ? 3 : (winners.length === 2 ? 2 : 1);
+      const bonus = winners.length === 1 ? 3 : (winners.length === 2 ? 2 : 1);
 
       await Promise.all(winners.map(wid => updateDoc(doc(db, "players", wid), {
         tiltCoins: increment(bonus),

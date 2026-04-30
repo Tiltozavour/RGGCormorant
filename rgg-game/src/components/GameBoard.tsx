@@ -15,12 +15,17 @@ interface GameBoardProps {
   rollConfirmed: boolean;
   currentTurnPlayerId: string | null;
   chooseStart: (id: number) => void;
-  onMoveComplete: (position: number, prevCell: number | null, cellType?: string, playerId?: string) => Promise<void>;
+  onMoveComplete: (position: number, prevCell: number | null, cellType?: string, playerId?: string, isCardMove?: boolean) => Promise<void>;
   showWheel?: boolean;
   onWheelResult?: (gameName: string) => void;
   onCloseWheel?: () => void;
   round: number;
   forcedMovePlayerId?: string | null;
+  cardMove?: {
+    controllerId: string;
+    targetId: string;
+    steps: number;
+  } | null;
 }
 
 interface MapCell {
@@ -44,6 +49,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   rollConfirmed,
   currentTurnPlayerId,
   forcedMovePlayerId,
+  cardMove,
   chooseStart,
   onMoveComplete,
   showWheel,
@@ -88,9 +94,13 @@ const GameBoard: React.FC<GameBoardProps> = ({
   useEffect(() => {
     // Определяем, за чьей позицией следит локальный стейт анимации.
     // Если мы двигаем другого игрока (forcedMovePlayerId), инициализируем анимацию для него.
-    const isRemoteControl = currentRollPlayerId === playerData.id && forcedMovePlayerId;
+    const isRemoteControl =
+      (currentRollPlayerId === playerData.id && forcedMovePlayerId) ||
+      (cardMove?.controllerId === playerData.id && cardMove.targetId);
+    const remoteTargetId =
+      cardMove?.controllerId === playerData.id ? cardMove.targetId : forcedMovePlayerId;
     const targetPlayer = isRemoteControl 
-      ? players.find(p => p.id === forcedMovePlayerId) 
+      ? players.find(p => p.id === remoteTargetId) 
       : playerData;
 
     const currentPos = targetPlayer?.position ?? 0;
@@ -118,7 +128,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
     lastPosRef.current = currentPos;
     startPosRef.current = currentPos;
     startPrevRef.current = targetPlayer?.prevCell ?? null;
-  }, [playerData.position, playerData.prevCell, isAnimating, currentRollPlayerId, forcedMovePlayerId, players]);
+  }, [playerData.position, playerData.prevCell, isAnimating, currentRollPlayerId, forcedMovePlayerId, cardMove, players]);
 
   const animateTo = (target: { x: number; y: number }): Promise<void> =>
     new Promise((resolve) => {
@@ -148,15 +158,20 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const STEP_DELAY = 300;
 
   useEffect(() => {
+    const isCardMove = cardMove?.controllerId === playerData.id;
+    const activeSteps = isCardMove ? cardMove.steps : currentRoll;
     const isMyRoll = currentRollPlayerId === playerData.id;
-    if (!currentRoll || currentRoll <= 0 || !isMyRoll || !rollConfirmed) return;
+    if (!activeSteps || activeSteps <= 0) return;
+    if (!isCardMove && (!isMyRoll || !rollConfirmed)) return;
 
-    const targetId = forcedMovePlayerId || playerData.id;
+    const targetId = isCardMove ? cardMove.targetId : forcedMovePlayerId || playerData.id;
     // Находим актуальные данные цели, чтобы не зависеть от stale-состояний
     const targetPlayer = players.find(p => p.id === targetId) || playerData;
     if (!targetPlayer) return;
 
-    const rollKey = `${currentRoll}-${currentRollPlayerId}-${targetId}`;
+    const rollKey = isCardMove
+      ? `card-${cardMove.controllerId}-${cardMove.targetId}-${cardMove.steps}`
+      : `${currentRoll}-${currentRollPlayerId}-${targetId}`;
     if (processedRollsRef.current.has(rollKey)) return;
     
     // Если цикл уже запущен для этого броска, не входим второй раз
@@ -168,13 +183,13 @@ const GameBoard: React.FC<GameBoardProps> = ({
     activeMovementRef.current = myId;
 
     isLoopRunningRef.current = true;
-    let cancelled = false;
+    const cancelled = false;
     let currentPosition = targetPlayer.position ?? 0;
     let cameFrom = targetPlayer.prevCell ?? null;
 
     const doMove = async () => {
       setIsAnimating(true);
-      let stepsLeft = currentRoll;
+      let stepsLeft = activeSteps;
 
       // Синхронизируем начальную позицию анимации с текущей позицией цели
       // Чтобы фишка не прыгала от игрока-инициатора к цели
@@ -250,7 +265,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
         const finalCell = getCell(currentPosition);
         // Нормализуем 'b-shop' в 'bshop' для синхронизации с useGameData
         const cellType = finalCell?.type === 'b-shop' ? 'bshop' : finalCell?.type;
-        await onMoveCompleteRef.current(currentPosition, cameFrom, cellType, targetId);
+        await onMoveCompleteRef.current(currentPosition, cameFrom, cellType, targetId, isCardMove);
       } else {
         isLoopRunningRef.current = false;
       }
@@ -260,13 +275,13 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
     return () => {
     };
-  }, [currentRoll, currentRollPlayerId, rollConfirmed, playerData.id, forcedMovePlayerId]);
+  }, [currentRoll, currentRollPlayerId, rollConfirmed, playerData.id, forcedMovePlayerId, cardMove]);
 
   useEffect(() => {
-    if (!currentRoll || !currentRollPlayerId) {
+    if ((!currentRoll || !currentRollPlayerId) && !cardMove) {
       processedRollsRef.current.clear();
     }
-  }, [currentRoll, currentRollPlayerId]);
+  }, [currentRoll, currentRollPlayerId, cardMove]);
 
   if (round > 8) {
     return (
@@ -291,7 +306,12 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const displayedPiecePos = piecePos;
 
   // Флаг: мы сейчас управляем чужой фишкой (например, картой "Только вперед")
-  const isControllingOther = !!(currentRollPlayerId === playerData.id && forcedMovePlayerId);
+  const isControllingOther = !!(
+    (currentRollPlayerId === playerData.id && forcedMovePlayerId) ||
+    (cardMove?.controllerId === playerData.id && cardMove.targetId)
+  );
+  const controlledTargetId =
+    cardMove?.controllerId === playerData.id ? cardMove.targetId : forcedMovePlayerId;
 
   // Собираем всех активных игроков в один список для расчета смещения на клетках
   const allActivePlayers = [
@@ -493,7 +513,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
           <div className="bg-black/80 backdrop-blur-md border border-white/20 px-4 py-1.5 rounded-full shadow-2xl">
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white">
               {isControllingOther 
-                ? `Управление игроком: ${players.find(p => p.id === forcedMovePlayerId)?.login}` 
+                ? `Управление игроком: ${players.find(p => p.id === controlledTargetId)?.login}` 
                 : "Выберите направление"}
             </span>
           </div>
@@ -520,7 +540,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
         .filter((player) => {
           if (player.id === playerData.id || !player.inGame || player.position === undefined) return false;
           // Если мы анимируем этого игрока как цель, не рисуем его здесь статично
-          if (isControllingOther && player.id === forcedMovePlayerId) return false;
+          if (isControllingOther && player.id === controlledTargetId) return false;
           return true;
         })
         .map((otherPlayer) => {
@@ -593,7 +613,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
       {!isAdminView && (() => {
         const isTargetingSelf = !isControllingOther;
-        const activePlayer = isTargetingSelf ? playerData : players.find(p => p.id === forcedMovePlayerId);
+        const activePlayer = isTargetingSelf ? playerData : players.find(p => p.id === controlledTargetId);
         if (!activePlayer) return null;
 
         return (

@@ -19,6 +19,36 @@ export interface GameHistoryEntry {
   createdAt?: unknown;
 }
 
+export type DuelWeapon = "dice" | "custom";
+
+export interface DuelState {
+  id: string;
+  challengerId: string;
+  targetId: string;
+  status: "pending" | "accepted" | "betting" | "ready" | "rolling" | "admin_wait" | "finished";
+  weapon: DuelWeapon | null;
+  bets: Record<string, number>;
+  isReady: Record<string, boolean>;
+  winnerId?: string | "draw";
+}
+
+export interface ActiveInteraction {
+  playerId: string;
+  type:
+    | "gambling"
+    | "bshop"
+    | "discard_selection"
+    | "move_for_coins_selection"
+    | "duel_challenge_response"
+    | "duel_weapon_selection";
+  cards: string[];
+  targetPlayerId?: string;
+  recipientId?: string;
+  actingCardId?: string;
+  duelId?: string;
+  fromCardMove?: boolean;
+}
+
 export interface Player {
   id: string;
   login: string;
@@ -44,6 +74,7 @@ export interface Player {
     cardId?: string;
   };
   createdAt?: unknown;
+  // Добавьте сюда поля, специфичные для дуэли, если они нужны для игрока (например, текущая ставка, выбранное оружие)
 }
 
 export interface GameState {
@@ -62,18 +93,17 @@ export interface GameState {
   currentRollPlayerId: string | null;
   lastBaseRoll: number | null;
   forcedMovePlayerId: string | null;
+  cardMove: {
+    controllerId: string;
+    targetId: string;
+    steps: number;
+  } | null;
   rollBonus: number;
   rollConfirmed: boolean;
   gameHistory: GameHistoryEntry[];
   revealedCards?: string[];
-  activeInteraction?: {
-    playerId: string;
-    type: "gambling" | "bshop" | "discard_selection";
-    cards: string[];
-    targetPlayerId?: string;
-    recipientId?: string;
-    actingCardId?: string;
-  } | null;
+  activeInteraction?: ActiveInteraction | null;
+  activeDuels: Record<string, DuelState>;
 }
 
 export const defaultGameState: GameState = {
@@ -92,8 +122,10 @@ export const defaultGameState: GameState = {
   currentRollPlayerId: null,
   lastBaseRoll: null,
   forcedMovePlayerId: null,
+  cardMove: null,
   rollBonus: 0,
   rollConfirmed: false,
   gameHistory: [],
   revealedCards: [],
+  activeDuels: {}, // Инициализируем активные дуэли
 };

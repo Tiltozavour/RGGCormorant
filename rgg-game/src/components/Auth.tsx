@@ -92,9 +92,10 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         );
         onLogin(userCredential.user);
       }
-    } catch (err: any) {
-      const errorCode = err.code || "";
-      const errorMessage = err.message || "";
+    } catch (err: unknown) {
+      const authError = err as { code?: string; message?: string };
+      const errorCode = authError.code || "";
+      const errorMessage = authError.message || "";
 
       console.error("[Auth] Детальная ошибка:", errorCode, errorMessage);
 

@@ -24,9 +24,27 @@ export type CardAction =
   | 'discard_next_drawn' // Сбросить следующую полученную карту (Карт-бланш)
   | 'move_target_and_self' // Двигает цель и себя (Подвинься!)
   | 'pay_or_move_back' // Заплатить или отступить (Платити налоги!)
+  | 'passive_benefit'  // Пассивный бонус
   | 'take_next_card'   // Присвоить следующую выпавшую карту (Благодетель)
   | 'give_next_card'   // Отдать следующую карту другому игроку (Такой себе пир)
   | 'fish_protection'; // Защита от игроков и отмена колеса
+
+export type DuelWeapon = 'dice' | 'custom';
+
+export interface DuelState {
+  id: string;
+  challengerId: string;
+  targetId: string;
+  status: 'pending' | 'accepted' | 'betting' | 'ready' | 'rolling' | 'admin_wait' | 'finished';
+  weapon: DuelWeapon | null;
+  bets: {
+    [playerId: string]: number;
+  };
+  isReady: {
+    [playerId: string]: boolean;
+  };
+  winnerId?: string | 'draw';
+}
 
 export interface GameCard {
   id: string;          // Уникальный ID (например, inv_001)
@@ -40,6 +58,9 @@ export interface GameCard {
   // Визуальные поля
   faceCard: string;    // Путь к картинке (рубашка или арт)
   artCard?: string;    // GIF или PNG арт для лицевой стороны
+  bgCard?: string | null;
+  bgGradientStart?: string | null;
+  bgGradientEnd?: string | null;
   price: number | null; // Цена в B-Shop (null если не продается)
   number: number;      // Порядковый номер в коллекции для удобства
   isUnique?: boolean;  // Флаг уникальности (для призовых карт)

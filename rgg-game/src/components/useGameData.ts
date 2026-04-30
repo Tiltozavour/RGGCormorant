@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/purity, @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import type { User } from "firebase/auth";
@@ -14,9 +15,9 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { gameMap } from "./gameMap";
-import type { GameCard } from "../types/card";
+import type { CardRarity, GameCard } from "../types/card";
 import { defaultGameState } from "../types/game";
-import type { GameState, Player } from "../types/game";
+import type { DuelState, GameState, Player } from "../types/game";
 import { PHASE_ORDER } from "./gameConstants";
 
 const rollD6 = () => Math.floor(Math.random() * 6) + 1;
@@ -24,6 +25,23 @@ const rollD6 = () => Math.floor(Math.random() * 6) + 1;
 const pickRandom = <T,>(items: T[]): T | null => {
   if (items.length === 0) return null;
   return items[Math.floor(Math.random() * items.length)] ?? null;
+};
+
+const pickWeighted = <T,>(items: T[], getWeight: (item: T) => number): T | null => {
+  const weightedItems = items
+    .map((item) => ({ item, weight: Math.max(0, getWeight(item)) }))
+    .filter(({ weight }) => weight > 0);
+
+  const totalWeight = weightedItems.reduce((sum, { weight }) => sum + weight, 0);
+  if (totalWeight <= 0) return null;
+
+  let roll = Math.random() * totalWeight;
+  for (const { item, weight } of weightedItems) {
+    roll -= weight;
+    if (roll <= 0) return item;
+  }
+
+  return weightedItems[weightedItems.length - 1]?.item ?? null;
 };
 
 const shuffle = <T,>(array: T[]): T[] => {
@@ -39,6 +57,16 @@ const clearTemporaryStatus = {
   customStatus: null,
   statusDuration: 0,
 };
+
+type GamblingRarity = Exclude<CardRarity, "legendary">;
+
+const GAMBLING_RARITY_WEIGHTS: Array<{ rarity: GamblingRarity; weight: number }> = [
+  { rarity: "common", weight: 50 },
+  { rarity: "rare", weight: 30 },
+  { rarity: "epic", weight: 20 },
+];
+
+const GAMBLING_MOMENTAL_WEIGHT = 3;
 
 export function useGameData() {
   const [user, setUser] = useState<User | null>(null);
@@ -433,30 +461,6 @@ export function useGameData() {
           break;
         }
 
-        case "freeze_player":
-          if (targetRef && targetPlayerId) {
-            if (targetHasFish) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-              alert(`${targetPlayer?.login} заблокировал заморозку Рыбкой!`);
-              break;
-            }
-            if (targetHasReflect) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-              await updateDoc(playerRef, {
-                isFrozen: true,
-                freezeDuration: card.value || 1,
-              });
-              alert(`${targetPlayer?.login} отразил заморозку.`);
-            } else {
-              await updateDoc(targetRef, {
-                isFrozen: true,
-                freezeDuration: card.value || 1,
-              });
-              alert("Игрок заморожен.");
-            }
-          }
-          break;
-
         case "spin_wheel":
           await updateDoc(doc(db, "gameState", "current"), { showWheel: true });
           break;
@@ -617,8 +621,12 @@ export function useGameData() {
           alert("Следующий направленный дебафф будет отражен.");
           break;
 
-        case "move_target_for_coins":
-          if (targetRef && targetPlayerId) {
+        case "move_target_for_coins": {
+          if (!targetRef || !targetPlayerId) {
+            alert("Необходимо выбрать цель для перемещения.");
+            break;
+          }
+
             if (targetHasFish) {
               await updateDoc(targetRef, clearTemporaryStatus);
               alert(`${targetPlayer?.login} заблокировал перемещение Рыбкой!`);
@@ -626,62 +634,132 @@ export function useGameData() {
             }
             const steps = Math.min(playerData.tiltCoins ?? 0, 3);
             if (steps <= 0) {
-              alert("У вас нет монет для этой карты.");
+              // This alert will be handled by AppClean.tsx
+              // alert("У вас нет монет для этой карты.");
+              await updateDoc(playerRef, { inventory: arrayUnion(card.id) }); // Return card if no coins
               break;
             }
             const actualTargetId = targetHasReflect ? user.uid : targetPlayerId;
-            const actualTargetRef = doc(db, "players", actualTargetId);
-            const actualTarget = getPlayerById(actualTargetId);
+            // const actualTargetRef = doc(db, "players", actualTargetId); // Not needed here, will be used in handleConfirmMoveForCoins
+            // const actualTarget = getPlayerById(actualTargetId); // Not needed here
 
             if (targetHasReflect) {
               await updateDoc(targetRef, clearTemporaryStatus);
             }
 
-            await updateDoc(playerRef, { tiltCoins: increment(-steps) });
-            await updateDoc(actualTargetRef, {
-              position: (actualTarget?.position ?? 0) + steps,
-              prevCell: null,
+            // Trigger interaction to ask for coins
+            await updateDoc(doc(db, "gameState", "current"), {
+              activeInteraction: {
+                playerId: user.uid,
+                type: "move_for_coins_selection",
+                cards: [],
+                targetPlayerId: actualTargetId,
+                actingCardId: card.id,
+              },
             });
-            alert(`Оплачено ${steps} монет за перемещение на ${steps} клеток.`);
-          }
-          break;
+            break;
+        }
 
         case "discard_next_drawn":
           await updateDoc(playerRef, { discardNextDrawn: true });
           alert("Следующая полученная карта будет сброшена.");
           break;
 
-        case "duel":
-          if (targetRef && targetPlayerId) {
-            if (targetHasFish) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-              alert(`${targetPlayer?.login} заблокировал дуэль Рыбкой!`);
-              break;
-            }
-            const targetCoins = targetPlayer?.tiltCoins ?? 0;
-            const myCoins = playerData.tiltCoins ?? 0;
-            const stake = Math.min(5, myCoins, targetCoins);
-            if (stake <= 0) {
-              alert("Для дуэли у одного из игроков недостаточно монет.");
-              break;
-            }
+        case "duel": {
+          if (!targetRef || !targetPlayerId || !targetPlayer) {
+            alert("Необходимо выбрать цель для дуэли.");
+            break;
+          }
 
-            const myRoll = rollD6();
-            const enemyRoll = rollD6();
+          const duelChallengerId = user.uid;
+          const duelTargetId = targetPlayerId;
+          const duelCardId = card.id; // inv_015
 
-            if (myRoll === enemyRoll) {
-              alert(`Ничья в дуэли: ${myRoll}:${enemyRoll}. Монеты остаются у игроков.`);
-            } else if (myRoll > enemyRoll) {
-              await updateDoc(playerRef, { tiltCoins: increment(stake) });
-              await updateDoc(targetRef, { tiltCoins: increment(-stake) });
-              alert(`Вы победили в дуэли ${myRoll}:${enemyRoll} и забрали ${stake} монет.`);
-            } else {
-              await updateDoc(playerRef, { tiltCoins: increment(-stake) });
-              await updateDoc(targetRef, { tiltCoins: increment(stake) });
-              alert(`Вы проиграли дуэль ${myRoll}:${enemyRoll} и потеряли ${stake} монет.`);
+          const targetHasFishProtection = targetPlayer.inventory?.includes("inv_006");
+
+          // Генерируем уникальный ID для дуэли
+          const newDuelId = `duel_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+          const initialDuelState: DuelState = {
+            id: newDuelId,
+            challengerId: duelChallengerId,
+            targetId: duelTargetId,
+            status: 'pending', // Дуэль ожидает ответа цели или выбора оружия
+            weapon: null,
+            bets: {
+              [duelChallengerId]: 0,
+              [duelTargetId]: 0,
+            },
+            isReady: {
+              [duelChallengerId]: false,
+              [duelTargetId]: false,
             }
+          };
+
+          if (targetHasFishProtection) {
+            // Создаем интеракцию для цели, чтобы она ответила на вызов дуэли
+            await updateDoc(doc(db, "gameState", "current"), {
+              [`activeDuels.${newDuelId}`]: initialDuelState, // Добавляем новую дуэль в activeDuels
+              activeInteraction: {
+                playerId: duelTargetId, // Целевой игрок должен ответить
+                type: "duel_challenge_response",
+                duelId: newDuelId,
+                cards: targetPlayer.inventory?.filter(id => id === "inv_006") || [], // Только inv_006 актуальна здесь
+                actingCardId: duelCardId, // Карта дуэли (inv_015)
+                targetPlayerId: duelChallengerId, // Вызывающий - цель ответа
+              }
+            });
+
+            // Уведомляем вызывающего, что цель отвечает
+            await updateDoc(playerRef, {
+              lastNotification: {
+                message: `Вы вызвали ${targetPlayer.login} на дуэль. Ожидаем его ответа.`,
+                timestamp: Date.now(),
+                cardId: duelCardId
+              }
+            });
+            // Уведомляем цель
+            await updateDoc(targetRef, {
+              lastNotification: {
+                message: `Вас вызвали на дуэль! Подготовьтесь отстоять свою честь. (Карты, позволяющие избежать дуэль: inv_006)`,
+                timestamp: Date.now(),
+                cardId: duelCardId
+              }
+            });
+
+          } else {
+            // Нет защиты от рыбы, или у цели ее нет, переходим сразу к выбору оружия
+            // Обновляем статус дуэли на accepted и создаем интеракцию выбора оружия
+            await updateDoc(doc(db, "gameState", "current"), {
+              [`activeDuels.${newDuelId}`]: { ...initialDuelState, status: 'accepted' }, // Дуэль принята, переходим к выбору оружия
+              activeInteraction: {
+                playerId: duelTargetId, // Цель выбирает оружие первой
+                type: "duel_weapon_selection",
+                duelId: newDuelId,
+                cards: [], // Карты не участвуют в выборе оружия напрямую
+                targetPlayerId: duelTargetId,
+                actingCardId: duelCardId,
+              }
+            });
+
+            // Уведомляем обоих игроков
+            await updateDoc(playerRef, {
+              lastNotification: {
+                message: `Дуэль с ${targetPlayer.login} началась! Выберите оружие.`,
+                timestamp: Date.now(),
+                cardId: duelCardId
+              }
+            });
+            await updateDoc(targetRef, {
+              lastNotification: {
+                message: `${playerData.login} вызвал вас на дуэль! Выберите оружие.`,
+                timestamp: Date.now(),
+                cardId: duelCardId
+              }
+            });
           }
           break;
+        }
 
         case "move_target_and_self":
           if (targetRef && targetPlayerId) {
@@ -777,16 +855,21 @@ export function useGameData() {
           const selected = pickRandom(pool);
           if (selected) result.push(selected.id);
         } else {
-          const rand = Math.random();
-          const pool =
-            rand < 0.02
-              ? cardsArray.filter((card) => card.rarity === "legendary")
-              : rand < 0.35
-                ? cardsArray.filter(
-                    (card) => card.deck === "inventory" && card.rarity !== "legendary",
-                  )
-                : cardsArray.filter((card) => card.deck === "momental");
-          const selected = pickRandom(pool);
+          const rarity = pickWeighted(
+            GAMBLING_RARITY_WEIGHTS.filter(({ rarity }) =>
+              cardsArray.some((card) => card.rarity === rarity),
+            ),
+            ({ weight }) => weight,
+          )?.rarity;
+
+          const pool = rarity
+            ? cardsArray.filter((card) => card.rarity === rarity)
+            : cardsArray.filter((card) => card.rarity !== "legendary");
+
+          const selected = pickWeighted(
+            pool,
+            (card) => (card.deck === "momental" ? GAMBLING_MOMENTAL_WEIGHT : 1),
+          );
           if (selected) result.push(selected.id);
         }
       }
@@ -850,6 +933,60 @@ export function useGameData() {
     }
   };
 
+  // New handler for confirming coin payment and initiating move for inv_013
+  const handleConfirmMoveForCoins = async (steps: number) => {
+    if (!user || !playerData || !gameState.activeInteraction || gameState.activeInteraction.type !== "move_for_coins_selection") {
+      console.error("Invalid state for handleConfirmMoveForCoins");
+      return;
+    }
+
+    const { targetPlayerId, actingCardId, playerId } = gameState.activeInteraction;
+    if (!actingCardId) {
+      console.error("Card not found for active interaction:", actingCardId);
+      return;
+    }
+    const card = allCards[actingCardId];
+    if (!card) {
+      console.error("Card not found for active interaction:", actingCardId);
+      return;
+    }
+
+    const playerRef = doc(db, "players", user.uid);
+    const gameStateRef = doc(db, "gameState", "current");
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const pSnap = await transaction.get(playerRef);
+        if (!pSnap.exists()) throw new Error("Player data not found");
+        const currentPlayerCoins = pSnap.data()?.tiltCoins || 0;
+
+        if (currentPlayerCoins < steps) {
+          throw new Error("У вас недостаточно монет для оплаты перемещения.");
+        }
+
+        // Deduct coins from the card user
+        transaction.update(playerRef, { tiltCoins: increment(-steps) });
+        // Remove the card from the card user's inventory
+        transaction.update(playerRef, { inventory: arrayRemove(card.id) });
+        // Add the card to revealed cards
+        transaction.update(gameStateRef, { revealedCards: arrayUnion(card.id) });
+
+        // Trigger card-controlled movement without touching the dice roll.
+        transaction.update(gameStateRef, {
+          cardMove: {
+            controllerId: playerId,
+            targetId: targetPlayerId,
+            steps,
+          },
+          activeInteraction: null,
+        });
+      });
+    } catch (e: any) {
+      console.error("Ошибка при подтверждении перемещения за монеты:", e);
+      alert(e.message || "Произошла ошибка при оплате перемещения.");
+    }
+  };
+
   const handleCancelInteraction = async () => {
     if (!user || !gameState.activeInteraction) return;
 
@@ -859,7 +996,7 @@ export function useGameData() {
 
     try {
       await runTransaction(db, async (transaction) => {
-        // 1. Возвращаем карту игроку и убираем её из раскрытых в галерее
+        // 1. Возвращаем карту игроку, если это была discard_selection, steal_card, or move_for_coins_selection
         if (actingCardId) {
           transaction.update(playerRef, { inventory: arrayUnion(actingCardId) });
           transaction.update(gsRef, { revealedCards: arrayRemove(actingCardId) });
@@ -872,8 +1009,111 @@ export function useGameData() {
     }
   };
 
+  const handleDuelChallengeResponse = async (duelId: string, response: 'accept' | 'use_protection') => {
+    if (!user || !playerData) return;
+
+    const gameStateRef = doc(db, "gameState", "current");
+    const playerRef = doc(db, "players", user.uid); // Целевой игрок (отвечающий на вызов)
+    const duelState = gameState.activeDuels[duelId];
+
+    if (!duelState || duelState.targetId !== user.uid) {
+      console.error("Неверная дуэль или игрок не является целью.");
+      return;
+    }
+
+    const challengerRef = doc(db, "players", duelState.challengerId);
+    const challengerPlayer = getPlayerById(duelState.challengerId);
+    const duelCard = allCards[gameState.activeInteraction?.actingCardId || '']; // inv_015
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const currentGameState = (await transaction.get(gameStateRef)).data() as GameState;
+        const currentDuelState = currentGameState.activeDuels[duelId];
+
+        if (!currentDuelState) {
+          throw new Error("Дуэль не найдена в активных дуэлях.");
+        }
+
+        if (response === 'use_protection') {
+          // Цель использует inv_006
+          const protectionCardId = "inv_006";
+          if (!playerData.inventory?.includes(protectionCardId)) {
+            throw new Error("У игрока нет inv_006 для использования.");
+          }
+
+          // Удаляем inv_006 из инвентаря цели
+          transaction.update(playerRef, { inventory: arrayRemove(protectionCardId) });
+          // Добавляем inv_006 в раскрытые карты
+          transaction.update(gameStateRef, { revealedCards: arrayUnion(protectionCardId) });
+
+          // Удаляем дуэль из activeDuels
+          const updatedActiveDuels = { ...currentGameState.activeDuels };
+          delete updatedActiveDuels[duelId];
+          transaction.update(gameStateRef, { activeDuels: updatedActiveDuels });
+
+          // Очищаем активное взаимодействие
+          transaction.update(gameStateRef, { activeInteraction: null });
+
+          // Уведомляем обоих игроков
+          transaction.update(playerRef, {
+            lastNotification: {
+              message: `Вы успешно избежали дуэли, использовав карту "No, no, no mr. Fish"!`,
+              timestamp: Date.now(),
+              cardId: protectionCardId
+            }
+          });
+          transaction.update(challengerRef, {
+            lastNotification: {
+              message: `${playerData.login} избежал дуэли, использовав карту "No, no, no mr. Fish"! Ваша карта "Дуэль" сгорела.`,
+              timestamp: Date.now(),
+              cardId: duelCard?.id
+            }
+          });
+        } else { // response === 'accept'
+          // Цель принимает, переходим к выбору оружия
+          transaction.update(gameStateRef, {
+            [`activeDuels.${duelId}.status`]: 'accepted',
+            activeInteraction: {
+              playerId: currentDuelState.targetId, // Цель выбирает оружие первой
+              type: "duel_weapon_selection",
+              duelId: duelId,
+              cards: [],
+              targetPlayerId: currentDuelState.targetId,
+              actingCardId: duelCard?.id,
+            }
+          });
+
+          // Уведомляем обоих игроков
+          transaction.update(playerRef, {
+            lastNotification: {
+              message: `Вы приняли вызов на дуэль от ${challengerPlayer?.login}! Ожидайте выбора оружия.`,
+              timestamp: Date.now(),
+              cardId: duelCard?.id
+            }
+          });
+          transaction.update(challengerRef, {
+            lastNotification: {
+              message: `${playerData.login} принял ваш вызов на дуэль! Выберите оружие.`,
+              timestamp: Date.now(),
+              cardId: duelCard?.id
+            }
+          });
+        }
+      });
+    } catch (e: any) {
+      console.error("Ошибка при ответе на вызов дуэли:", e);
+      alert(e.message || "Произошла ошибка при ответе на дуэль.");
+    }
+  };
+
   const handleMoveComplete = useCallback(
-    async (position: number, prevCell: number | null, cellType?: string, playerId?: string) => {
+    async (
+      position: number,
+      prevCell: number | null,
+      cellType?: string,
+      playerId?: string,
+      isCardMove: boolean = false,
+    ) => {
       if (!user) return;
       const targetPlayerId = playerId || user.uid;
       const playerRef = doc(db, "players", targetPlayerId);
@@ -891,8 +1131,18 @@ export function useGameData() {
               playerId: targetPlayerId,
               type: cellType,
               cards: getRandomInteractionCards(cellType),
+              fromCardMove: isCardMove,
             },
-            forcedMovePlayerId: null, // Сбрасываем удаленное управление
+            forcedMovePlayerId: null,
+            cardMove: null,
+          });
+          return;
+        }
+
+        if (isCardMove) {
+          transaction.update(gameStateRef, {
+            forcedMovePlayerId: null,
+            cardMove: null,
           });
           return;
         }
@@ -905,7 +1155,8 @@ export function useGameData() {
           currentRollPlayerId: null,
           lastBaseRoll: null,
           rollConfirmed: false,
-          forcedMovePlayerId: null, // Сбрасываем удаленное управление
+          forcedMovePlayerId: null,
+          cardMove: null,
         });
       });
     },
@@ -1000,6 +1251,11 @@ export function useGameData() {
           }
 
           transaction.update(gameStateRef, { revealedCards: arrayUnion(cardId) });
+        }
+
+        if (activeInteraction?.fromCardMove) {
+          transaction.update(gameStateRef, { activeInteraction: null });
+          return;
         }
 
         const isLast = currentTurnIndex === turnOrder.length - 1;
@@ -1125,6 +1381,8 @@ export function useGameData() {
       handlePrepareTurn,
       handleSelectOpponentCard,
       handleCancelInteraction,
+      handleConfirmMoveForCoins, // Add new handler
+      handleDuelChallengeResponse, // Add new handler
     },
   };
 }

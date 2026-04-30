@@ -93,11 +93,10 @@ const GameCard: React.FC<GameCardProps> = ({
       `}} />
     <div 
       onClick={onClick}
-      className={`relative w-80 h-[520px] shrink-0 flex flex-col overflow-visible rounded-[2.5rem] border-2 transition-all duration-500 cursor-pointer group select-none ${config.border} ${config.glow} bg-zinc-950 hover:scale-105 hover:-translate-y-4 hover:shadow-[0_30px_60px_rgba(0,0,0,0.8)]
+      className={`relative w-80 h-[520px] shrink-0 flex flex-col overflow-visible rounded-[2.5rem] border-2 transition-[transform,box-shadow,border-color] duration-500 cursor-pointer group select-none ${config.border} ${config.glow} bg-zinc-950 hover:scale-105 hover:-translate-y-4 hover:shadow-[0_30px_60px_rgba(0,0,0,0.8)]
         ${card.rarity === 'legendary' ? 'animate-float animate-legendary-glow hover:animate-none' : ''}`}
       style={{
         zIndex: isInHand ? index + 10 : 1,
-        transitionDelay: isInHand ? `${index * 30}ms` : '0ms',
       }}
     >
       {/* Inner Highlight Border */}

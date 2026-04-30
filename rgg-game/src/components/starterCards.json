@@ -32,7 +32,7 @@
     "name": "Энергетик 'Тильто-драйв'",
     "description": "Дает возможность перебросить кубик еще раз.",
     "deck": "inventory",
-    "rarity": "epic",
+    "rarity": "rare",
     "action": "extra_roll",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
@@ -93,12 +93,11 @@
     "value": 2,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExYnhrYmhuaXNtYzRkbXJoMm1xYzZiMHVuOXRieTc1YTYya3ZvZDAxMyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/bjE9JbNSckM0w/giphy.gif",
-    "price":3,
+    "price": 3,
     "howtowork": "Позволяет переместить себя или любого другого игрока на 2 клетки вперёд.",
     "number": 7
   },
-
-    {
+  {
     "id": "inv_008",
     "name": "Судья душ",
     "description": "Выберете жертву и решите, получит жертва +2 монеты или потеряет",
@@ -112,13 +111,12 @@
     "howtowork": "Выберите игрока и бросьте кубик. При результате 4+ цель получает 2 монеты, при 1-3 — теряет их.",
     "number": 8
   },
-
   {
     "id": "inv_009",
     "name": "Сделка с магом",
     "description": "Испытайте удачу и получите монеты...или нет",
     "deck": "inventory",
-    "rarity": "epic",
+    "rarity": "rare",
     "action": "deal_with_mage",
     "value": 5,
     "faceCard": "/cards/card_back.svg",
@@ -127,7 +125,6 @@
     "howtowork": "Бросьте кубик: 1 — эффект гемблинг-клетки; 2-4 — +5 монеты и эффект гемблинг-клетки; 5-6 — просто +5 монеты.",
     "number": 9
   },
-
   {
     "id": "inv_010",
     "name": "Репорт откину",
@@ -142,8 +139,7 @@
     "howtowork": "Выберите оппонента и сбросьте одну любую его карту (на ваш выбор).",
     "number": 10
   },
-
-    {
+  {
     "id": "inv_011",
     "name": "Иди нахуй, я на мид пойду",
     "description": "Заберите случайную карту у другого игрока",
@@ -157,8 +153,7 @@
     "howtowork": "Выберите оппонента и заберите одну любую его карту (на ваш выбор) себе.",
     "number": 11
   },
-
-   {
+  {
     "id": "inv_012",
     "name": "А может тебя?",
     "description": "Отразите дебафф на наложившего",
@@ -168,15 +163,14 @@
     "value": 1,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2prOHd1dnhiNnNobzh4aTk5MXJzaTF2NHR3djRuNDZ0Mmw4OGk2ciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/9YPudRhbu5eWwBtFlU/giphy.gif",
-    "price":7,
+    "price": 7,
     "howtowork": "Используется как ответ на карту другого игрока. Отражает негативный эффект обратно на него. (не работает на no, no mr. Fish)",
     "number": 12
   },
-
   {
     "id": "inv_013",
     "name": "Коррупция",
-    "description": "Передвиньте другого игрока на столько клеток, сколько отдадите коинов",
+    "description": "Оплатите передвижение другого игрока",
     "deck": "inventory",
     "rarity": "common",
     "action": "move_target_for_coins",
@@ -184,52 +178,24 @@
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExcDlxb3lsN2x4b3l5dXhqZWhtajF6aWQ5c2p6OHI3ZHpvMnQ5dTk4ZiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/8TB8IP4jxksBRqmYO4/giphy.gif",
     "price": null,
-    "howtowork": "Выберите игрока. Каждая отданная вами монета (до 5) передвигает его на 1 клетку вперед.",
+    "howtowork": "Выберите игрока. Каждая отданная вами монета (до 6) передвигает его на 1 клетку вперед. Если цель имеет 'Отражение', эффект вернется к вам, и вы будете двигаться за свои монеты.",
+    "requiresTarget": true,
     "number": 13
   },
   {
-    "id": "inv_014",
-    "name": "Карт - бланш",
-    "description": "Сбросьте следующую полученную карточку",
-    "deck": "inventory",
-    "rarity": "rare",
-    "action": "discard_next_drawn",
-    "value": 1,
-    "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExdTJzajZoY3hqMG53cmJoc3l0Y2ZlcXRzZmpjN3ltb2o3eDh0ZXJ1NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/BXjqytvu9bKzCUHdzz/giphy.gif",
-    "price":4,
-    "howtowork": "Пассивный эффект. Следующая карта, которую вы получите, будет автоматически уничтожена.",
-    "number": 14
-  },
-
-    {
     "id": "inv_015",
     "name": "Дуэль",
     "description": "Вызовите кого-нибудь на битву",
     "deck": "inventory",
-    "rarity": "rare",
+    "rarity": "common",
     "action": "duel",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExNXdzempqZmpodDgzdnd4YnVzenk2NXFqbzRrY2Z0anA2ZDQ1NjJxcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/AyXTW9qVrYYTIZhJ8V/giphy.gif",
     "price": 5,
     "howtowork": "Выберите оппонента и ставку. Оба бросают кубик, победитель забирает всё.",
+    "requiresTarget": true,
     "number": 15
-  },
-
-  {
-    "id": "inv_016",
-    "name": "Подвинься!",
-    "description": "Двигайте любого игрока  на  +2,  а вы на  -1",
-    "deck": "inventory",
-    "rarity": "rare",
-    "action": "move_target_and_self",
-    "value": 1,
-    "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/sahkeit.gif",
-   "price":4,
-    "howtowork": "Толкает выбранного игрока на 2 клетки вперед, но вы сами перемещаетесь на 1 клетку назад.",
-    "number": 16
   },
   {
     "id": "inv_017",
@@ -241,22 +207,21 @@
     "value": 5,
     "faceCard": "/cards/card_back.svg",
     "artCard": "/cards/faces/nalog.gif",
-    "price":null,
+    "price": null,
     "howtowork": "Все игроки (кроме вас) должны либо заплатить вам 2 монет, либо тянуть карту Гемблинг",
     "number": 17
   },
-
   {
     "id": "inv_018",
     "name": "Катжит не виноват!",
     "description": "Попытайтесь украсть коины у другого",
     "deck": "inventory",
-    "rarity": "rare",
+    "rarity": "common",
     "action": "steal_coins",
     "value": 5,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExaG0ybGtvY2VmaHdxNm9nazN4OHBwdjFybWhoM2h3NTNmMmk0cmV4NSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/aQuMoDDzHv4AivLPNn/giphy.gif",
-    "price":3,
+    "price": 3,
     "howtowork": "Работает, если вы рядом с целью. Бросьте кубик: 4+ — успешно крадете 5 монет у цели, 1-3 — вас заметили, с ваш штраф - теряете 5 монет.",
     "number": 18
   },
@@ -270,23 +235,9 @@
     "value": 1,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExcmVtajZuaXVoOWtjbDE0b2czNndzdGk2dmZjZzhkejg4NW5xdTN5bSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/ztisqLhP99tVSHG136/giphy.gif",
-    "price":5,
+    "price": 5,
     "howtowork": "Дает право на один повторный запуск колеса выбора игры.",
     "number": 19
-  },
-     {
-    "id": "inv_020",
-    "name": "Брейн фриз",
-    "description": "Покормите мороженым своего соперника",
-    "deck": "inventory",
-    "rarity": "epic",
-    "action": "steal_coins",
-    "value": 4,
-    "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExaXNqNGxuNGJ4bHNzYWpmdXN1bXFvemx5Z2h1M25lZ3U4Y2JyY3Y5MCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/Zs92908g88ppxzp84u/giphy.gif",
-    "price": 3,
-    "howtowork": "За вкусное мороженое ваш соперник отдает вам 4 тильтокона",
-    "number": 20
   },
   {
     "id": "inv_021",
@@ -295,15 +246,13 @@
     "deck": "inventory",
     "rarity": "epic",
     "action": "passive_benefit",
-    "value": null,
+    "value": 0,
     "faceCard": "/cards/card_back.svg",
     "artCard": "/cards/faces/coolest.gif",
     "price": null,
     "howtowork": "Выдается игроку с наименьшим количеством баллов за последнюю игру. Дает право покупать предметы в магазине  дешевле их обычной цены. Нельзя украсть или сбросить эту карту.",
     "number": 21
   },
-
-
   {
     "id": "mom_001",
     "name": "Налоговая инспекция",
@@ -316,7 +265,7 @@
     "artCard": "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExMnpnYXRpbTQxcmVkNGphOXJtMzBzNjNoa3R0bXpjN3lhMWJhM2d4NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/NEmydmd0cXFdj4ZH9m/giphy.gif",
     "price": null,
     "howtowork": "Мгновенно: вы теряете 4 монет при попадании на эту клетку.",
-    "number":22
+    "number": 22
   },
   {
     "id": "mom_002",
@@ -373,54 +322,53 @@
     "price": null,
     "howtowork": "Мгновенно: вы пропускаете свой следующий ход.",
     "number": 26
-  }, 
-    {
+  },
+  {
     "id": "mom_006",
-    "name": "Благодетель",
-    "description": "Вы настолько внезапно и без причины хороши, что получаете следующую вытянутую карту другого игрока себе",
+    "name": "Штраф за азарт",
+    "description": "Казино берет свое. Потеряйте 6 монет.",
     "deck": "momental",
     "rarity": "rare",
-    "action": "take_next_card",
-    "value": 1,
+    "action": "add_coins",
+    "value": -6,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExdHMzdWFleGNhaW02N25qYjVkZ2tjaHlkNmlndHVpZ2czc3JzbW5lbyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/3kzseOm93AHjfBC2EO/giphy.gif",
     "price": null,
-    "howtowork": "Мгновенно: вы забираете себе следующую вытянутую карту другого игрока.",
+    "howtowork": "Мгновенно: вы теряете 6 монет.",
     "number": 27
   },
-   {
+  {
     "id": "mom_007",
-    "name": "Забота о ближнем",
-    "description": "Следующая карта вслепую отдаётся другому игроку",
+    "name": "Паника на поле",
+    "description": "Вы сделали ошибку и отступаете на 3 клетки.",
     "deck": "momental",
     "rarity": "rare",
-    "action": "give_next_card",
-    "value": 1,
+    "action": "move_steps",
+    "value": -3,
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExaGp5M2J4bzQ4bnJvYzhrNGVmaGVjNW04c3RrYW1zc3Fya3JuMnQ3OCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/mpu7L6b0oRy0KOuyd7/giphy.gif",
     "price": null,
-    "howtowork": "Мгновенно: следующая карта, которую вы получите, будет отдана другому игроку.",
+    "howtowork": "Мгновенно: вы перемещаетесь на 3 клетки назад.",
     "number": 28
   },
-    {
+  {
     "id": "mom_008",
-    "name": "Агент Габена",
-    "description": "Габен сказал сторожить Б-плент",  
+    "name": "Казино закрылось",
+    "description": "Вы застряли на клетке и пропускаете следующий ход.",
     "deck": "momental",
     "rarity": "rare",
-    "action": "challenge_gaben",
-    "value": 20,
+    "action": "skip_turn",
+    "value": 1,
     "faceCard": "/cards/card_back.svg",
     "artCard": "/cards/faces/agent.gif",
     "price": null,
-    "howtowork": "Испытание: если продержитесь на клетке 2 хода — получите 20 монет. Если столкнут — их получит обидчик.",
+    "howtowork": "Мгновенно: вы пропускаете свой следующий ход.",
     "number": 29
   },
-
   {
     "id": "leg_001",
     "name": "Амадэхи",
-    "description": "Белый олень у моего порога всего лишь сулит перемены. Но готовы ли мы к ним?",  
+    "description": "Белый олень у моего порога всего лишь сулит перемены. Но готовы ли мы к ним?",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
@@ -431,10 +379,10 @@
     "howtowork": "",
     "number": 30
   },
-    {
+  {
     "id": "leg_002",
     "name": "Уильям Бейкер",
-    "description": "Ненавижу ирландцев",  
+    "description": "Ненавижу ирландцев",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
@@ -448,7 +396,7 @@
   {
     "id": "leg_003",
     "name": "Мигель Кабреро",
-    "description": "Soy un hombre muy honrado, que me gusta lo mejor",  
+    "description": "Soy un hombre muy honrado, que me gusta lo mejor",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
@@ -459,5 +407,4 @@
     "howtowork": "",
     "number": 32
   }
-
 ]

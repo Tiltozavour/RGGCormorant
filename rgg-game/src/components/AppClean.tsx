@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect, useRef } from "react";
 import Auth from "./Auth";
 import { syncWheelResult, syncWheelVisibility } from "./gameStateService";
@@ -8,9 +9,17 @@ import ScoresDetailsPage from "./ScoresDetailsPage";
 import type { Player } from "../types/game";
 import type { GameCard as GameCardType } from "../types/card";
 import { useGameData } from "./useGameData";
+import { useModalStates } from "../components/useModalStates";
 import GameCard from "./GameCard";
 import DiceVisual from "./DiceVisual";
 import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS } from "./gameConstants";
+
+const RARITY_ORDER: Record<string, number> = {
+  common: 1,
+  rare: 2,
+  epic: 3,
+  legendary: 4,
+};
 
 function AppClean() {
   const {
@@ -19,38 +28,47 @@ function AppClean() {
     handlers
   } = useGameData();
 
+  const {
+    isSidebarOpen, setIsSidebarOpen,
+    isAvatarModalOpen, setIsAvatarModalOpen,
+    isScoresDetailsOpen, setIsScoresDetailsOpen,
+    isBottomPanelOpen, setIsBottomPanelOpen,
+    isPlayersSidebarOpen, setIsPlayersSidebarOpen,
+    isLegendsOpen, setIsLegendsOpen,
+    selectedCard, setSelectedCard,
+    isCollectionOpen, setIsCollectionOpen,
+    isHandOpen, setIsHandOpen,
+    gameAlert, setGameAlert,
+    pendingTargetCard, setPendingTargetCard,
+    closeAll
+  } = useModalStates();
+
   const getCardPrice = (card: GameCardType) => {
-    if (card.price !== null) return card.price;
+    const hasGoldenCard = playerData?.inventory?.includes("inv_021") ?? false;
     const defaultPrices = { common: 3, rare: 7, epic: 15, legendary: 0, default: 0 };
-    return defaultPrices[card.rarity] || defaultPrices.default;
+    const basePrice = card.price !== null ? card.price : defaultPrices[card.rarity] || defaultPrices.default;
+    return hasGoldenCard && card.id !== "inv_021" ? Math.max(1, Math.ceil(basePrice / 2)) : basePrice;
   };
 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   const [newAvatarUrl, setNewAvatarUrl] = useState("");
-  const [isScoresDetailsOpen, setIsScoresDetailsOpen] = useState(false);
-  const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(false);
-  const [isPlayersSidebarOpen, setIsPlayersSidebarOpen] = useState(false);
-  const [isLegendsOpen, setIsLegendsOpen] = useState(false);
-  const [selectedCard, setSelectedCard] = useState<GameCardType | null>(null);
-  const [isCollectionOpen, setIsCollectionOpen] = useState(false);
-  const [isHandOpen, setIsHandOpen] = useState(false);
   const [coinNotification, setCoinNotification] = useState<{ amount: number; type: 'gain' | 'loss' } | null>(null);
-  const [gameAlert, setGameAlert] = useState<{ 
-    title: string; 
-    message: string; 
-    type?: 'info' | 'success' | 'warning';
-    cardId?: string;
-  } | null>(null);
-  const [pendingTargetCard, setPendingTargetCard] = useState<GameCardType | null>(null); // Карта, ожидающая выбора цели
 
   const [visualRoll, setVisualRoll] = useState<{ value: number; rolling: boolean; playerName: string } | null>(null);
+  const [coinsToPay, setCoinsToPay] = useState<number>(1); // New state for coin input
   const lastProcessedRollRef = useRef<string | null>(null);
   const lastShownNotifRef = useRef<number>(0);
 
   const [isShuffling, setIsShuffling] = useState(false);
+  const [isInteractionPending, setIsInteractionPending] = useState(false);
 
-  // Логика анимации перемешивания при открытии экрана выбора карты
+  useEffect(() => {
+    // Сбрасываем блокировку, если нет активного интерактива, закончилась анимация тасовки 
+    // или обновился инвентарь (значит действие карты применилось)
+    if (!gameState.activeInteraction && !isShuffling) {
+      setIsInteractionPending(false);
+    }
+  }, [gameState.activeInteraction, isShuffling, playerData?.inventory, gameState.rollConfirmed]);
+
   useEffect(() => {
     if (gameState.activeInteraction?.type === 'discard_selection') {
       setIsShuffling(true);
@@ -130,7 +148,7 @@ function AppClean() {
 
   // Проверка: требует ли карта выбора цели?
   const cardNeedsTarget = (card: GameCardType) => {
-    const targetActions = ['steal_coins', 'steal_card', 'discard_card', 'duel', 'judge_coins', 'freeze_player', 'reflect_debuff', 'move_target_for_coins', 'move_target_and_self'];
+    const targetActions = ['steal_coins', 'steal_card', 'discard_card', 'duel', 'judge_coins', 'freeze_player', 'reflect_debuff', 'move_target_for_coins', 'move_target_and_self', 'pay_or_move_back'];
     return card.requiresTarget || targetActions.includes(card.action);
   };
 
@@ -147,9 +165,11 @@ function AppClean() {
   });
 
   const handleCardClick = (card: GameCardType) => {
+    if (isInteractionPending) return;
+
     // Предварительная проверка правил использования (дублируем логику из хука для UI)
     if (!isAdmin) {
-      const { phase, currentRoll, showWheel, forcedMovePlayerId } = gameState;
+      const { phase, currentRoll, showWheel } = gameState;
       const isProtection = card.action === 'protection';
       const isFish = card.action === 'fish_protection';
       const isWheelCard = card.action === 'spin_wheel';
@@ -198,10 +218,17 @@ function AppClean() {
       return;
     }
 
+    if (card.action === 'passive_benefit') {
+      setGameAlert({ title: "Пассивная карта", message: "Эта карта работает автоматически и не тратится при нажатии.", type: 'info' });
+      return;
+    }
+
     if (cardNeedsTarget(card)) {
       setPendingTargetCard(card);
     } else {
+      setIsInteractionPending(true);
       void handlers.handleUseCard(card);
+      // Примечание: Флаг сбросится в useEffect выше, когда карта исчезнет из БД (playerData.inventory изменится)
     }
   };
   
@@ -219,6 +246,16 @@ function AppClean() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  // Обработка клавиши Escape для закрытия всех модальных окон
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeAll();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [closeAll]);
 
   const handleConfirmAvatar = () => {
     void handlers.updateAvatar(newAvatarUrl);
@@ -360,8 +397,13 @@ function AppClean() {
                   <b className="text-white">{players.find(p => p.id === gameState.forcedMovePlayerId)?.login}</b>
                 </span>
                 {!gameState.rollConfirmed && (
-                  <button 
-                    onClick={handlers.handleConfirmRoll}
+                  <button
+                    disabled={isInteractionPending}
+                    onClick={() => {
+                      if (isInteractionPending) return;
+                      setIsInteractionPending(true);
+                      void handlers.handleConfirmRoll();
+                    }}
                     className="mt-1 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase px-4 py-1 rounded-full transition-all active:scale-95 shadow-lg"
                   >
                     Начать перемещение
@@ -391,6 +433,7 @@ function AppClean() {
             rollConfirmed={gameState.rollConfirmed}
             currentTurnPlayerId={currentTurnPlayerId}
             forcedMovePlayerId={gameState.forcedMovePlayerId}
+            cardMove={gameState.cardMove}
             chooseStart={handlers.chooseStart}
             onMoveComplete={handlers.handleMoveComplete}
             showWheel={gameState.showWheel}
@@ -450,6 +493,7 @@ function AppClean() {
             index={0} 
             totalCards={1} 
             onUse={() => {
+              if (isInteractionPending) return;
               handleCardClick(selectedCard);
               setSelectedCard(null);
             }}
@@ -460,41 +504,74 @@ function AppClean() {
       {/* Полноэкранная лента "Руки" (всей колоды в ряд) */}
       {isHandOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-xl z-[10002] flex items-end justify-center pb-16 overflow-y-auto"
+          className="fixed inset-0 bg-black/60 backdrop-blur-xl z-[10002] flex items-end justify-center pb-16 overflow-y-auto animate-in fade-in duration-500"
           onClick={() => setIsHandOpen(false)} // Закрываем по клику на фон
         >
+          {/* Кнопка закрытия справа сверху */}
+          <button 
+            onClick={() => setIsHandOpen(false)}
+            className="absolute top-10 right-10 z-[10003] text-white/30 hover:text-white hover:scale-110 active:scale-90 transition-all p-4 text-4xl font-light"
+            title="Закрыть колоду"
+          >
+            ✕
+          </button>
+
           <div className="absolute top-10 left-1/2 -translate-x-1/2 text-center pointer-events-none">
             <h2 className="text-4xl font-black text-yellow-500 uppercase italic tracking-tighter drop-shadow-lg">Ваша колода</h2>
             <p className="text-white/40 text-[10px] font-bold uppercase tracking-[0.4em] mt-2">Нажмите на фон, чтобы закрыть</p>
           </div>
 
-          <div
-            className="flex gap-8 px-[10vw] pt-48 pb-20 overflow-x-auto overflow-y-visible max-w-full custom-scrollbar items-end select-none scroll-smooth"
-            onClick={e => e.stopPropagation()} // Предотвращаем закрытие при клике на саму ленту
-          >
-            {playerData?.inventory?.map((cardId: string, idx: number, arr: string[]) => {
-              const card = allCards[cardId];
-              if (!card) return null;
+          {playerData?.inventory && playerData.inventory.length > 0 ? (
+            <div
+              className="flex gap-8 px-[10vw] pt-24 pb-20 overflow-x-auto overflow-y-visible max-w-full custom-scrollbar items-end select-none"
+              onWheel={(e) => {
+                if (e.deltaY !== 0) {
+                  // Убираем scroll-smooth из классов контейнера, чтобы убрать задержку (лаги).
+                  // Теперь прокрутка колесиком будет отзывчивой и быстрой.
+                  e.currentTarget.scrollLeft += e.deltaY * 1.2;
+                  // Останавливаем всплытие, чтобы не дергался фон
+                  e.stopPropagation();
+                  // Сдвигаем горизонтально 1 к 1 для предсказуемости
+                  e.currentTarget.scrollLeft += e.deltaY;
+                }
+              }}
+              onClick={e => e.stopPropagation()} // Предотвращаем закрытие при клике на саму ленту
+            >
+              {playerData.inventory
+                .map(cardId => allCards[cardId])
+                .filter((c): c is GameCardType => !!c) // Отфильтровываем null/undefined карты
+                .sort((cardA, cardB) => {
+                  const rarityValA = RARITY_ORDER[cardA.rarity] || 99; 
+                  const rarityValB = RARITY_ORDER[cardB.rarity] || 99;
 
-              return (
-                <GameCard
-                  key={`${cardId}-${idx}`}
-                  card={card}
-                  index={idx}
-                  totalCards={arr.length}
-                  isInHand={true}
-                  onClick={() => {
-                    setSelectedCard(card);
-                    setIsHandOpen(false);
-                  }}
-                  onUse={() => {
-                    handleCardClick(card);
-                    setIsHandOpen(false);
-                  }}
-                />
-              );
-            })}
-          </div>
+                  if (rarityValA !== rarityValB) {
+                    return rarityValA - rarityValB;
+                  }
+                  return cardA.number - cardB.number;
+                })
+                .map((card, idx, arr) => (
+                  <GameCard
+                    key={`${card.id}-${idx}`} // Используем ID карты для ключа, чтобы избежать проблем при изменении порядка
+                    card={card}
+                    index={idx}
+                    totalCards={arr.length}
+                    isInHand={true}
+                    onClick={() => { 
+                      if (isInteractionPending) return;
+                      setSelectedCard(card); 
+                      setIsHandOpen(false); 
+                    }}
+                    onUse={() => { 
+                      if (isInteractionPending) return;
+                      handleCardClick(card); 
+                      setIsHandOpen(false); 
+                    }}
+                  />
+                ))}
+            </div>
+          ) : (
+            <div className="text-zinc-500 text-lg italic mt-20">Ваша рука пуста...</div>
+          )}
         </div>
       )}
 
@@ -504,6 +581,15 @@ function AppClean() {
           className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md z-[10002] flex flex-col items-center py-20 overflow-hidden animate-in fade-in duration-500"
           onClick={() => setIsCollectionOpen(false)}
         >
+          {/* Кнопка закрытия справа сверху */}
+          <button 
+            onClick={() => setIsCollectionOpen(false)}
+            className="absolute top-10 right-10 z-[10003] text-white/30 hover:text-white hover:scale-110 active:scale-90 transition-all p-4 text-4xl font-light"
+            title="Закрыть галерею"
+          >
+            ✕
+          </button>
+
           <div className="text-center mb-12 pointer-events-none">
             <h2 className="text-5xl font-black text-yellow-500 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(234,179,8,0.3)]">Галерея Артефактов</h2>
             <p className="text-white/40 text-xs font-bold uppercase tracking-[0.5em] mt-4">Карты открываются после использования игроками</p>
@@ -565,6 +651,15 @@ function AppClean() {
           className="fixed inset-0 bg-zinc-950/95 backdrop-blur-md z-[10002] flex flex-col items-center py-20 overflow-hidden animate-in fade-in duration-500"
           onClick={() => setIsLegendsOpen(false)}
         >
+          {/* Кнопка закрытия справа сверху */}
+          <button 
+            onClick={() => setIsLegendsOpen(false)}
+            className="absolute top-10 right-10 z-[10003] text-white/30 hover:text-white hover:scale-110 active:scale-90 transition-all p-4 text-4xl font-light"
+            title="Закрыть легенды"
+          >
+            ✕
+          </button>
+
           <div className="text-center mb-12 pointer-events-none">
             <h2 className="text-5xl font-black text-yellow-500 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(234,179,8,0.3)]">Коллекция Легенд</h2>
             <p className="text-white/40 text-xs font-bold uppercase tracking-[0.5em] mt-4">Уникальные персонажи Cormorant Society</p>
@@ -634,9 +729,11 @@ function AppClean() {
               {selectableTargets.map((player) => (
                   <button
                     key={player.id}
-                    onClick={() => {
-                      void handlers.handleUseCard(pendingTargetCard, player.id);
-                      setPendingTargetCard(null);
+                    disabled={isInteractionPending}
+                    onClick={() => { // Убрал проверку isInteractionPending здесь, так как она будет управляться следующим модальным окном
+                      if (!pendingTargetCard) return;
+                      void handlers.handleUseCard(pendingTargetCard, player.id); // Это устанавливает activeInteraction
+                      setPendingTargetCard(null); // Очищаем модальное окно выбора цели
                     }}
                     className="flex items-center gap-4 bg-white/5 hover:bg-purple-500/20 border border-white/10 hover:border-purple-500/50 p-3 rounded-2xl transition-all group"
                   >
@@ -874,7 +971,9 @@ function AppClean() {
                     key={`${cardId}-${idx}`}
                     type="button"
                     onClick={() => {
+                      if (isInteractionPending) return;
                       if (gameState.activeInteraction?.targetPlayerId) {
+                        setIsInteractionPending(true);
                         void handlers.handleSelectOpponentCard(gameState.activeInteraction.targetPlayerId, cardId);
                       }
                     }}
@@ -894,7 +993,12 @@ function AppClean() {
           </div>
 
           <button 
-            onClick={() => void handlers.handleCancelInteraction()}
+            disabled={isInteractionPending}
+            onClick={() => {
+              if (isInteractionPending) return;
+              setIsInteractionPending(true);
+              void handlers.handleCancelInteraction();
+            }}
             className="mt-12 text-white/30 hover:text-red-400 font-black uppercase text-xs tracking-[0.3em] transition-all flex items-center gap-2 group"
           >
             <span className="group-hover:rotate-90 transition-transform text-lg">✕</span> Отменить и вернуть карту
@@ -910,11 +1014,13 @@ function AppClean() {
             <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">Выбери одну из трех карт</p>
           </div>
           
-          <div className="flex gap-10">
+          <div className={`flex gap-10 ${isInteractionPending ? 'pointer-events-none opacity-60' : ''}`}>
             {gameState.activeInteraction.cards.map((cardId: string, idx: number) => (
               <div 
                 key={idx}
                 onClick={() => {
+                  if (isInteractionPending) return;
+                  setIsInteractionPending(true);
                   const card = allCards[cardId];
                   setGameAlert({ title: "Выпала карта!", message: `Вы получили: ${card.name}. ${card.description}` });
                   void handlers.handleFinishInteraction(cardId);
@@ -938,7 +1044,12 @@ function AppClean() {
                 {protectionCardsInInv.map((card) => (
                   <button
                     key={card.id}
-                    onClick={() => void handlers.handleFinishInteraction(undefined, 0, card.id)}
+                    disabled={isInteractionPending}
+                    onClick={() => {
+                      if (isInteractionPending) return;
+                      setIsInteractionPending(true);
+                      void handlers.handleFinishInteraction(undefined, 0, card.id);
+                    }}
                     className="bg-yellow-500 text-black px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white transition-all active:scale-95 shadow-[0_5px_0_#a16207] active:shadow-none active:translate-y-1"
                   >
                     Использовать "{card.name}"
@@ -958,7 +1069,7 @@ function AppClean() {
             <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">Ваши коины: {playerData.tiltCoins ?? 0} 🦖</p>
           </div>
           
-          <div className="flex gap-8 items-start">
+          <div className={`flex gap-8 items-start ${isInteractionPending ? 'pointer-events-none opacity-60' : ''}`}>
             {gameState.activeInteraction.cards.map((cardId: string, idx: number) => {
               const card = allCards[cardId];
               const price = getCardPrice(card as GameCardType);
@@ -970,8 +1081,12 @@ function AppClean() {
                     <GameCard card={card} index={0} totalCards={1} />
                   </div>
                   <button 
-                    disabled={!canAfford}
-                    onClick={() => void handlers.handleFinishInteraction(cardId, price)}
+                    disabled={!canAfford || isInteractionPending}
+                    onClick={() => {
+                      if (isInteractionPending) return;
+                      setIsInteractionPending(true);
+                      void handlers.handleFinishInteraction(cardId, price);
+                    }}
                     className={`w-full py-4 rounded-2xl font-black uppercase text-sm tracking-widest transition-all ${
                       canAfford 
                       ? "bg-pink-500 text-white hover:bg-pink-400 shadow-[0_10px_20px_rgba(236,72,153,0.3)]" 
@@ -986,11 +1101,137 @@ function AppClean() {
           </div>
 
           <button 
-            onClick={() => void handlers.handleFinishInteraction()}
+            disabled={isInteractionPending}
+            onClick={() => {
+              if (isInteractionPending) return;
+              setIsInteractionPending(true);
+              void handlers.handleFinishInteraction();
+            }}
             className="mt-12 text-white/30 hover:text-white font-black uppercase text-xs tracking-[0.3em] transition-all"
           >
             Ничего не покупать и уйти
           </button>
+        </div>
+      )}
+
+      {/* ЭКРАН ОТВЕТА НА ВЫЗОВ НА ДУЭЛЬ */}
+      {gameState.activeInteraction?.type === 'move_for_coins_selection' && gameState.activeInteraction.playerId === user?.uid && (
+        <div className="fixed inset-0 bg-emerald-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
+          <div className="text-center mb-10">
+            <h2 className="text-5xl font-black text-emerald-300 uppercase italic tracking-tighter">Оплатить движение</h2>
+            <p className="text-white/50 text-sm font-bold uppercase tracking-[0.3em] mt-4">
+              Монеты: {playerData.tiltCoins ?? 0}
+            </p>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col items-center gap-5 min-w-80">
+            <input
+              type="number"
+              min={1}
+              max={Math.min(playerData.tiltCoins ?? 0, 6)}
+              value={coinsToPay}
+              onChange={(event) => {
+                const max = Math.max(1, Math.min(playerData.tiltCoins ?? 0, 6));
+                const next = Math.max(1, Math.min(max, Number(event.target.value) || 1));
+                setCoinsToPay(next);
+              }}
+              className="w-24 bg-black/50 border border-emerald-400/40 rounded-xl px-4 py-3 text-center text-2xl font-black text-emerald-200"
+            />
+            <div className="flex gap-3">
+              <button
+                disabled={isInteractionPending || (playerData.tiltCoins ?? 0) <= 0}
+                onClick={() => {
+                  if (isInteractionPending) return;
+                  setIsInteractionPending(true);
+                  void handlers.handleConfirmMoveForCoins(coinsToPay);
+                }}
+                className="bg-emerald-500 text-black px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-white transition-all disabled:opacity-50"
+              >
+                Подтвердить
+              </button>
+              <button
+                disabled={isInteractionPending}
+                onClick={() => {
+                  if (isInteractionPending) return;
+                  setIsInteractionPending(true);
+                  void handlers.handleCancelInteraction();
+                }}
+                className="bg-zinc-800 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-zinc-700 transition-all"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {gameState.activeInteraction?.type === 'duel_challenge_response' && gameState.activeInteraction.playerId === user?.uid && (
+        <div className="fixed inset-0 bg-purple-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
+          <div className="text-center mb-12">
+            <h2 className="text-6xl font-black text-purple-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(168,85,247,0.5)]">Вызов на дуэль!</h2>
+            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">
+              Игрок <span className="text-white">{players.find(p => p.id === gameState.activeInteraction?.targetPlayerId)?.login}</span> вызвал вас на дуэль!
+            </p>
+            <p className="text-white/60 text-xs font-medium mt-2">
+              Подготовьтесь отстоять свою честь.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-6 items-center">
+            {gameState.activeInteraction.cards.includes("inv_006") && (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 p-6 rounded-[2rem] flex flex-col items-center gap-4 shadow-2xl animate-in slide-in-from-bottom-5 duration-700">
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-[10px] font-black text-yellow-300 uppercase tracking-[0.3em]">У вас есть карта защиты!</span>
+                  <p className="text-white/40 text-[9px] font-medium">Вы можете избежать дуэли, потратив карту "No, no, no mr. Fish"</p>
+                </div>
+                <button
+                  disabled={isInteractionPending}
+                  onClick={() => {
+                    if (isInteractionPending) return;
+                    const duelId = gameState.activeInteraction?.duelId;
+                    if (!duelId) return;
+                    setIsInteractionPending(true);
+                    void handlers.handleDuelChallengeResponse(duelId, 'use_protection');
+                  }}
+                  className="bg-yellow-500 text-black px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white transition-all active:scale-95 shadow-[0_5px_0_#a16207] active:shadow-none active:translate-y-1"
+                >
+                  Использовать "No, no, no mr. Fish"
+                </button>
+              </div>
+            )}
+
+            <button
+              disabled={isInteractionPending}
+              onClick={() => {
+                if (isInteractionPending) return;
+                const duelId = gameState.activeInteraction?.duelId;
+                if (!duelId) return;
+                setIsInteractionPending(true);
+                void handlers.handleDuelChallengeResponse(duelId, 'accept');
+              }}
+              className="bg-purple-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm hover:bg-purple-500 transition-all active:scale-95 shadow-[0_5px_0_#6d28d9] active:shadow-none active:translate-y-1"
+            >
+              Принять вызов
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ЭКРАН ВЫБОРА ОРУЖИЯ ДЛЯ ДУЭЛИ */}
+      {gameState.activeInteraction?.type === 'duel_weapon_selection' && (
+        <div className="fixed inset-0 bg-purple-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
+          <div className="text-center mb-12">
+            <h2 className="text-6xl font-black text-purple-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(168,85,247,0.5)]">Выберите оружие</h2>
+            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">
+              {gameState.activeInteraction.playerId === user?.uid ? "Ваш ход выбрать оружие для дуэли." : `Ожидаем выбора оружия от ${players.find(p => p.id === gameState.activeInteraction?.playerId)?.login}.`}
+            </p>
+          </div>
+          {gameState.activeInteraction.playerId === user?.uid && (
+            <div className="flex gap-8">
+              <button className="bg-purple-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm hover:bg-purple-500 transition-all active:scale-95 shadow-[0_5px_0_#6d28d9] active:shadow-none active:translate-y-1">Кубики</button>
+              <button className="bg-purple-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm hover:bg-purple-500 transition-all active:scale-95 shadow-[0_5px_0_#6d28d9] active:shadow-none active:translate-y-1">Игра по выбору</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1042,6 +1283,19 @@ function AppClean() {
           isRolling={visualRoll.rolling} 
           playerName={visualRoll.playerName} 
         />
+      )}
+
+      {/* Глобальный индикатор сетевого ожидания для карточных действий */}
+      {isInteractionPending && (
+        <div className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/10 backdrop-blur-[1px] cursor-wait pointer-events-auto">
+          <div className="bg-zinc-900/90 border-2 border-purple-500/50 p-6 rounded-[2rem] flex flex-col items-center gap-4 shadow-[0_0_80px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+            <div className="flex flex-col items-center text-center">
+              <span className="text-[10px] font-black uppercase tracking-[0.4em] text-purple-400">Магия Cormorant...</span>
+              <span className="text-[8px] font-bold uppercase tracking-widest text-zinc-500 mt-2">Обрабатываем действие</span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
