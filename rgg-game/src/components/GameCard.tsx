@@ -160,7 +160,7 @@ const GameCard: React.FC<GameCardProps> = ({
 
       {/* BOTTOM SECTION (40%) */}
       <div 
-        className="relative h-[40%] w-full p-6 flex flex-col items-center text-center justify-between border-t border-white/5 z-40 bg-zinc-900/80 backdrop-blur-xl rounded-b-[2.3rem]"
+        className="relative h-[40%] w-full overflow-hidden p-5 flex flex-col items-center gap-3 text-center border-t border-white/5 z-40 bg-zinc-900/80 backdrop-blur-xl rounded-b-[2.3rem]"
         style={{ 
           backgroundImage: card.faceCard ? `url("${card.faceCard}")` : 'none',
           backgroundSize: 'cover',
@@ -170,12 +170,12 @@ const GameCard: React.FC<GameCardProps> = ({
         {/* Tint overlay based on bgCard */}
         <div className="absolute inset-0 -z-10 opacity-30" style={{ backgroundColor: effectiveBg }} />
 
-        <div className="flex flex-col h-full justify-between px-3">
-         <h3 className="text-2xl font-black text-white uppercase tracking-tight italic line-clamp-2 leading-tight min-h-[3.5rem] flex items-center justify-center text-center">
+        <div className="flex min-h-0 flex-1 flex-col justify-start gap-2 px-3">
+         <h3 className="text-[22px] font-black text-white uppercase tracking-normal italic line-clamp-2 leading-tight min-h-[3.25rem] flex items-center justify-center text-center">
             {card.name}
           </h3>
          <p
-            className="text-[16px] leading-relaxed text-white font-medium italic line-clamp-3 min-h-[3.5rem] flex items-start justify-center text-center"
+            className="text-[14px] leading-snug text-white font-medium italic line-clamp-3 min-h-0 flex items-start justify-center text-center"
             style={{ fontFamily: "'Comfortaa', sans-serif" }}
           >
             {card.description}
@@ -189,7 +189,7 @@ const GameCard: React.FC<GameCardProps> = ({
               e.stopPropagation();
               onUse();
             }}
-            className="w-full py-4 mb-2 rounded-2xl font-black uppercase text-xs tracking-[0.2em] text-white transition-all active:scale-95 shadow-[0_10px_20px_rgba(0,0,0,0.4)] hover:brightness-125 border-t border-white/20"
+            className="mt-auto w-full shrink-0 py-3 rounded-2xl font-black uppercase text-xs tracking-[0.18em] text-white transition-all active:scale-95 shadow-[0_10px_20px_rgba(0,0,0,0.4)] hover:brightness-125 border-t border-white/20"
             style={{ 
               backgroundColor: effectiveBg,
               fontFamily: "'Comfortaa', sans-serif"

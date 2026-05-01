@@ -1,7 +1,11 @@
 export type CardDeck = 'inventory' | 'momental';
 export type CardRarity = 'common' | 'rare' | 'epic' | 'legendary';
 
-export type CardAction = 
+export type CardAction =
+  | 'discard_next_drawn'
+  | 'take_next_card'
+  | 'give_next_card'
+  | 'promo_code_benefit'
   | 'add_coins'        // Изменение баланса (может быть отрицательным)
   | 'move_steps'       // Сдвиг по клеткам (может быть отрицательным)
   | 'extra_roll'       // Доп. бросок кубика
@@ -9,25 +13,21 @@ export type CardAction =
   | 'teleport'         // Прямой телепорт на ID клетки
   | 'teleport_to_type' // Телепорт на ближайшую клетку определенного типа
   | 'skip_turn'        // Пропуск следующего хода
-  | 'steal_coins'      // Украсть монеты
-  | 'steal_card'       // Украсть карту
-  | 'discard_card'     // Сбросить карту противника
-  | 'freeze_player'    // Заморозить игрока
+  | 'steal_coins'
+  | 'steal_card'
+  | 'discard_card'
   | 'spin_wheel'       // Повторный запуск колеса
   | 'duel'             // Дуэль (PvP)
-  | 'challenge_gaben'  // Испытание Габена (Агент Габена)
   | 'prize'            // Призовая карта (легендарная)
   | 'judge_coins'      // Судья душ (бросок кубика для +/- монет цели)
   | 'deal_with_mage'   // Сделка с магом (бросок кубика для эффектов)
   | 'reflect_debuff'   // Отразить дебафф (Уно реверс)
   | 'move_target_for_coins' // Передвинуть цель за монеты (Заказное)
-  | 'discard_next_drawn' // Сбросить следующую полученную карту (Карт-бланш)
   | 'move_target_and_self' // Двигает цель и себя (Подвинься!)
   | 'pay_or_move_back' // Заплатить или отступить (Платити налоги!)
-  | 'passive_benefit'  // Пассивный бонус
-  | 'take_next_card'   // Присвоить следующую выпавшую карту (Благодетель)
-  | 'give_next_card'   // Отдать следующую карту другому игроку (Такой себе пир)
-  | 'fish_protection'; // Защита от игроков и отмена колеса
+  | 'passive_benefit'   // Пассивный бонус
+  | 'fish_protection'   // Защита от игроков и отмена колеса
+  | 'communism';        // Разделить монеты с другим игроком
 
 export type DuelWeapon = 'dice' | 'game';
 

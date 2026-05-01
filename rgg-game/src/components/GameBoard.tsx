@@ -100,6 +100,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const isLoopRunningRef = useRef(false);
   const movementCounterRef = useRef(0);
   const processedRollsRef = useRef<Set<string>>(new Set());
+  const lastCardMoveIdRef = useRef<string | null>(null);
 
   const [wheelGames, setWheelGames] = useState<{id: string, name: string, image?: string}[]>([]);
 
@@ -184,6 +185,15 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const STEP_DELAY = 300;
 
   useEffect(() => {
+    if (cardMove?.id && lastCardMoveIdRef.current !== cardMove.id) {
+      lastCardMoveIdRef.current = cardMove.id;
+      processedRollsRef.current.delete(`card-${cardMove.id}`);
+      activeMovementRef.current = null;
+      isLoopRunningRef.current = false;
+    }
+  }, [cardMove?.id]);
+
+  useEffect(() => {
     const isCardMove = cardMove?.controllerId === playerData.id;
     const activeSteps = isCardMove ? cardMove.steps : currentRoll;
     const isMyRoll = currentRollPlayerId === playerData.id;
@@ -199,21 +209,26 @@ const GameBoard: React.FC<GameBoardProps> = ({
       ? `card-${cardMove.id}`
       : `${currentRoll}-${currentRollPlayerId}-${targetId}`;
     if (processedRollsRef.current.has(rollKey)) return;
+    const processedRolls = processedRollsRef.current;
     
     // Если цикл уже запущен для этого броска, не входим второй раз
     if (isLoopRunningRef.current) return;
-
-    processedRollsRef.current.add(rollKey);
 
     const myId = ++movementCounterRef.current;
     activeMovementRef.current = myId;
 
     isLoopRunningRef.current = true;
-    const cancelled = false;
-    let currentPosition = targetPlayer.position ?? 0;
-    let cameFrom = targetPlayer.prevCell ?? null;
+    let cancelled = false;
+    let completed = false;
+    let currentPosition = isCardMove && typeof cardMove.position === "number"
+      ? cardMove.position
+      : targetPlayer.position ?? 0;
+    let cameFrom = isCardMove && cardMove.prevCell !== undefined
+      ? cardMove.prevCell
+      : targetPlayer.prevCell ?? null;
 
     const doMove = async () => {
+      if (cancelled) return;
       setIsAnimating(true);
       let stepsLeft = activeSteps;
 
@@ -278,6 +293,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
       }
 
       if (activeMovementRef.current === myId && !cancelled) {
+        processedRolls.add(rollKey);
         activeMovementRef.current = null;
         setIsAnimating(false);
         isLoopRunningRef.current = false;
@@ -288,6 +304,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
         await syncMovePosition(targetId, currentPosition, cameFrom, isCardMove);
         if (isCardMove) await wait(150);
         await onMoveCompleteRef.current(currentPosition, cameFrom, cellType, targetId, isCardMove);
+        completed = true;
       } else {
         isLoopRunningRef.current = false;
       }
@@ -296,8 +313,24 @@ const GameBoard: React.FC<GameBoardProps> = ({
     void doMove();
 
     return () => {
+      cancelled = true;
+      activeMovementRef.current = null;
+      if (isCardMove && !completed) {
+        processedRolls.delete(rollKey);
+        isLoopRunningRef.current = false;
+      }
     };
-  }, [currentRoll, currentRollPlayerId, rollConfirmed, playerData.id, forcedMovePlayerId, cardMove]);
+  }, [
+    currentRoll,
+    currentRollPlayerId,
+    rollConfirmed,
+    playerData.id,
+    forcedMovePlayerId,
+    cardMove?.id,
+    cardMove?.controllerId,
+    cardMove?.targetId,
+    cardMove?.steps,
+  ]);
 
   useEffect(() => {
     if ((!currentRoll || !currentRollPlayerId) && !cardMove) {
@@ -596,10 +629,52 @@ const GameBoard: React.FC<GameBoardProps> = ({
                 />
               )}
 
+              {/* Анимация появления статусов */}
+              {/* Этот блок CSS должен быть определен один раз, например, в глобальном CSS или в корневом компоненте */}
+              {/* Для избежания дублирования, оставляем его только в одном месте, например, в AppClean.tsx или глобальном CSS */}
+              {/* <style dangerouslySetInnerHTML={{ __html: `
+                @keyframes status-appear {
+                  0% { opacity: 0; transform: scale(0.5); }
+                  70% { opacity: 1; transform: scale(1.1); }
+                  100% { opacity: 1; transform: scale(1); }
+                }
+                .animate-status-appear {
+                  animation: status-appear 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+                }
+              `}} /> */}
+
               {otherPlayer.customStatus === 'fish_shield' && (
                 <div
                   className="absolute w-16 h-16 rounded-full blur-2xl opacity-80 animate-pulse"
                   style={{ background: "rgba(37, 99, 235, 0.7)" }}
+                />
+              )}
+
+              {/* Анимация появления статусов */}
+              <style dangerouslySetInnerHTML={{ __html: `
+                @keyframes status-appear {
+                  0% { opacity: 0; transform: scale(0.5); }
+                  70% { opacity: 1; transform: scale(1.1); }
+                  100% { opacity: 1; transform: scale(1); }
+                }
+                .animate-status-appear {
+                  animation: status-appear 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+                }
+              `}} />
+
+
+
+              {otherPlayer.customStatus === 'reflect_debuff' && (
+                <div
+                  className="absolute w-16 h-16 rounded-full blur-2xl opacity-80 animate-pulse"
+                  style={{ background: "rgba(168, 85, 247, 0.7)" }}
+                />
+              )}
+
+              {otherPlayer.customStatus === 'promo_code_active' && (
+                <div
+                  className="absolute w-16 h-16 rounded-full blur-2xl opacity-80 animate-pulse"
+                  style={{ background: "rgba(16, 185, 129, 0.7)" }}
                 />
               )}
 
@@ -613,8 +688,10 @@ const GameBoard: React.FC<GameBoardProps> = ({
                 style={{ fontFamily: "'Comfortaa', sans-serif" }}
               >
                 {otherPlayer.login}
-                {otherPlayer.hasProtection && <span title="Силовое поле">🛡️</span>}
-                {otherPlayer.customStatus === 'fish_shield' && <span title="No, no mr. Fish">🐟</span>}
+                {otherPlayer.hasProtection && <span title="Силовое поле" className="animate-status-appear">🛡️</span>}
+                {otherPlayer.customStatus === 'fish_shield' && <span title="No, no mr. Fish" className="animate-status-appear">🐟</span>}
+                {otherPlayer.customStatus === 'reflect_debuff' && <span title="Отражение" className="animate-status-appear">🔄</span>}
+                {otherPlayer.customStatus === 'promo_code_active' && <span title="Промокодик" className="animate-status-appear">🏷️</span>}
                 {isCurrentTurn && <span className="text-[8px] opacity-70">●</span>}
               </div>
 
@@ -663,10 +740,52 @@ const GameBoard: React.FC<GameBoardProps> = ({
             />
           )}
 
+          {/* Анимация появления статусов */}
+          {/* Этот блок CSS должен быть определен один раз, например, в глобальном CSS или в корневом компоненте */}
+          {/* Для избежания дублирования, оставляем его только в одном месте, например, в AppClean.tsx или глобальном CSS */}
+          {/* <style dangerouslySetInnerHTML={{ __html: `
+            @keyframes status-appear {
+              0% { opacity: 0; transform: scale(0.5); }
+              70% { opacity: 1; transform: scale(1.1); }
+              100% { opacity: 1; transform: scale(1); }
+            }
+            .animate-status-appear {
+              animation: status-appear 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+            }
+          `}} /> */}
+
           {activePlayer.customStatus === 'fish_shield' && (
             <div
               className="absolute w-16 h-16 rounded-full blur-2xl opacity-80 animate-pulse"
               style={{ background: "rgba(37, 99, 235, 0.7)" }}
+            />
+          )}
+
+          {/* Анимация появления статусов */}
+          <style dangerouslySetInnerHTML={{ __html: `
+            @keyframes status-appear {
+              0% { opacity: 0; transform: scale(0.5); }
+              70% { opacity: 1; transform: scale(1.1); }
+              100% { opacity: 1; transform: scale(1); }
+            }
+            .animate-status-appear {
+              animation: status-appear 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+            }
+          `}} />
+
+
+
+          {activePlayer.customStatus === 'reflect_debuff' && (
+            <div
+              className="absolute w-16 h-16 rounded-full blur-2xl opacity-80 animate-pulse"
+              style={{ background: "rgba(168, 85, 247, 0.7)" }}
+            />
+          )}
+
+          {activePlayer.customStatus === 'promo_code_active' && (
+            <div
+              className="absolute w-16 h-16 rounded-full blur-2xl opacity-80 animate-pulse"
+              style={{ background: "rgba(16, 185, 129, 0.7)" }}
             />
           )}
 
@@ -681,7 +800,9 @@ const GameBoard: React.FC<GameBoardProps> = ({
           >
             {activePlayer.login}
             {activePlayer.hasProtection && <span title="Силовое поле">🛡️</span>}
-            {activePlayer.customStatus === 'fish_shield' && <span title="No, no mr. Fish">🐟</span>}
+            {activePlayer.customStatus === 'fish_shield' && <span title="No, no mr. Fish" className="animate-status-appear">🐟</span>}
+            {activePlayer.customStatus === 'reflect_debuff' && <span title="Отражение" className="animate-status-appear">🔄</span>}
+            {activePlayer.customStatus === 'promo_code_active' && <span title="Промокодик" className="animate-status-appear">🏷️</span>}
             {activePlayer.id === currentTurnPlayerId && <span className="text-[8px] opacity-70">●</span>}
           </div>
 

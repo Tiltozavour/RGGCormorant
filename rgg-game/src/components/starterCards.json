@@ -183,7 +183,7 @@
     "number": 13
   },
   {
-    "id": "inv_015",
+    "id": "inv_014",
     "name": "Дуэль",
     "description": "Вызовите кого-нибудь на битву",
     "deck": "inventory",
@@ -195,25 +195,25 @@
     "price": 5,
     "howtowork": "Выберите оппонента и ставку. Оба бросают кубик, победитель забирает всё.",
     "requiresTarget": true,
-    "number": 15
+    "number": 14
 
   },
   {
-    "id": "inv_017",
+    "id": "inv_015",
     "name": "Платити налоги!",
     "description": "Заплатите 2 тильтокоина или получайте по жепе",
     "deck": "inventory",
     "rarity": "epic",
     "action": "pay_or_move_back",
-    "value": 5,
+    "value": 2,
     "faceCard": "/cards/card_back.svg",
     "artCard": "/cards/faces/nalog.gif",
     "price": null,
     "howtowork": "Все игроки (кроме вас) должны либо заплатить вам 2 монет, либо тянуть карту Гемблинг",
-    "number": 17
+    "number": 15
   },
   {
-    "id": "inv_018",
+    "id": "inv_016",
     "name": "Катжит не виноват!",
     "description": "Попытайтесь украсть коины у другого",
     "deck": "inventory",
@@ -224,10 +224,10 @@
     "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExaG0ybGtvY2VmaHdxNm9nazN4OHBwdjFybWhoM2h3NTNmMmk0cmV4NSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/aQuMoDDzHv4AivLPNn/giphy.gif",
     "price": 3,
     "howtowork": "Работает, если вы рядом с целью. Бросьте кубик: 4+ — успешно крадете 5 монет у цели, 1-3 — вас заметили, с ваш штраф - теряете 5 монет.",
-    "number": 18
+    "number": 16
   },
   {
-    "id": "inv_019",
+    "id": "inv_017",
     "name": "Подкрутка",
     "description": "Запустите колесо выбора игры еще раз",
     "deck": "inventory",
@@ -238,10 +238,10 @@
     "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExcmVtajZuaXVoOWtjbDE0b2czNndzdGk2dmZjZzhkejg4NW5xdTN5bSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/ztisqLhP99tVSHG136/giphy.gif",
     "price": 5,
     "howtowork": "Дает право на один повторный запуск колеса выбора игры.",
-    "number": 19
+    "number": 17
   },
   {
-    "id": "inv_021",
+    "id": "inv_018",
     "name": "Золотая карта",
     "description": "Цены в магазине для вас дешевле",
     "deck": "inventory",
@@ -252,7 +252,35 @@
     "artCard": "/cards/faces/coolest.gif",
     "price": null,
     "howtowork": "Выдается игроку с наименьшим количеством баллов за последнюю игру. Дает право покупать предметы в магазине  дешевле их обычной цены. Нельзя украсть или сбросить эту карту.",
-    "number": 21
+    "number": 18
+  },
+  {
+    "id": "inv_019",
+    "name": "Промокодик",
+    "description": "На распродаже возьмем!",
+    "deck": "inventory",
+    "rarity": "epic",
+    "action": "promo_code_benefit",
+    "value": 0,
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "/cards/faces/coolest.gif",
+    "price": null,
+    "howtowork": "В следующий раз, если вас заставят заплатить отдайте только половину стоимости (нечетные значения в пользу игрока с этой картой).",
+    "number": 19
+  },
+  {
+    "id": "inv_020",
+    "name": "Коммунизм",
+    "description": "Заберите половину монет у другого игрока.",
+    "deck": "inventory",
+    "rarity": "epic",
+    "action": "communism",
+    "value": 0,
+    "faceCard": "/cards/card_back.svg",
+    "artCard": "/cards/faces/coolest.gif",
+    "price": null,
+    "howtowork": "Выберите игрока: вы забираете половину его текущих монет, округляя в большую сторону в вашу пользу. Можно использовать вне своего хода.",
+    "number": 20
   },
   {
     "id": "mom_001",
@@ -266,7 +294,7 @@
     "artCard": "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExMnpnYXRpbTQxcmVkNGphOXJtMzBzNjNoa3R0bXpjN3lhMWJhM2d4NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/NEmydmd0cXFdj4ZH9m/giphy.gif",
     "price": null,
     "howtowork": "Мгновенно: вы теряете 4 монет при попадании на эту клетку.",
-    "number": 22
+    "number": 21
   },
   {
     "id": "mom_002",
@@ -280,7 +308,7 @@
     "artCard": "/cards/faces/maxwell.gif",
     "price": null,
     "howtowork": "Мгновенно: вы перемещаетесь на 4 клетки назад.",
-    "number": 23
+    "number": 22
   },
   {
     "id": "mom_003",
@@ -294,7 +322,7 @@
     "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExdWlleWFlY3U0cHVybTlpejdpZHBoZHQ0NGd3eHR2bThudnR0MWw5bCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/TJxjveDQwxFgSb1n55/giphy.gif",
     "price": null,
     "howtowork": "Мгновенно: получите 8 монет.",
-    "number": 24
+    "number": 23
   },
   {
     "id": "mom_004",
@@ -308,26 +336,12 @@
     "artCard": "/cards/faces/blackhole.gif",
     "price": null,
     "howtowork": "Мгновенно: телепортирует вас на стартовую клетку 6.",
-    "number": 25
+    "number": 24
   },
   {
     "id": "mom_005",
-    "name": "Да,, ты чо, а он чо?",
-    "description": "Вы заболтались с Расулом и пропускаете следующий ход",
-    "deck": "momental",
-    "rarity": "rare",
-    "action": "skip_turn",
-    "value": 1,
-    "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/PoPivu.gif",
-    "price": null,
-    "howtowork": "Мгновенно: вы пропускаете свой следующий ход.",
-    "number": 26
-  },
-  {
-    "id": "mom_006",
-    "name": "Штраф за азарт",
-    "description": "Казино берет свое. Потеряйте 6 монет.",
+    "name": "В первый раз, хм?",
+    "description": "Вы покупайте игру в стим в которую никто так и не пошёл",
     "deck": "momental",
     "rarity": "rare",
     "action": "add_coins",
@@ -336,10 +350,10 @@
     "artCard": "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExdHMzdWFleGNhaW02N25qYjVkZ2tjaHlkNmlndHVpZ2czc3JzbW5lbyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/3kzseOm93AHjfBC2EO/giphy.gif",
     "price": null,
     "howtowork": "Мгновенно: вы теряете 6 монет.",
-    "number": 27
+    "number": 25
   },
   {
-    "id": "mom_007",
+    "id": "mom_006",
     "name": "Паника на поле",
     "description": "Вы сделали ошибку и отступаете на 3 клетки.",
     "deck": "momental",
@@ -350,21 +364,21 @@
     "artCard": "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExaGp5M2J4bzQ4bnJvYzhrNGVmaGVjNW04c3RrYW1zc3Fya3JuMnQ3OCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/mpu7L6b0oRy0KOuyd7/giphy.gif",
     "price": null,
     "howtowork": "Мгновенно: вы перемещаетесь на 3 клетки назад.",
-    "number": 28
+    "number": 26
   },
-  {
-    "id": "mom_008",
-    "name": "Казино закрылось",
-    "description": "Вы застряли на клетке и пропускаете следующий ход.",
+    {
+    "id": "mom_007",
+    "name": "Да, давай, ура",
+    "description": "Тебе сказали сиять, и ты сиял!",
     "deck": "momental",
-    "rarity": "rare",
-    "action": "skip_turn",
+    "rarity": "common",
+    "action": "move_steps",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/agent.gif",
+    "artCard": "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExaGp5M2J4bzQ4bnJvYzhrNGVmaGVjNW04c3RrYW1zc3Fya3JuMnQ3OCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/mpu7L6b0oRy0KOuyd7/giphy.gif",
     "price": null,
-    "howtowork": "Мгновенно: вы пропускаете свой следующий ход.",
-    "number": 29
+    "howtowork": "Мгновенно: вы перемещаетесь на 1 клетку вперед.",
+    "number": 27
   },
   {
     "id": "leg_001",
@@ -377,8 +391,8 @@
     "faceCard": "/cards/card_face_light.svg",
     "artCard": "/cards/legend/amadehi.gif",
     "price": null,
-    "howtowork": "",
-    "number": 30
+    "howtowork": "Tiltozavour",
+    "number": 28
   },
   {
     "id": "leg_002",
@@ -391,8 +405,8 @@
     "faceCard": "/cards/card_face_light.svg",
     "artCard": "/cards/legend/beiker.gif",
     "price": null,
-    "howtowork": "",
-    "number": 31
+    "howtowork": "PlasticPug",
+    "number": 29
   },
   {
     "id": "leg_003",
@@ -405,7 +419,21 @@
     "faceCard": "/cards/card_face_light.svg",
     "artCard": "/cards/legend/cabrero.gif",
     "price": null,
-    "howtowork": "",
-    "number": 32
+    "howtowork": "Linkorn",
+    "number": 30
+  },
+    {
+    "id": "leg_004",
+    "name": "Джон Голт",
+    "description": "",
+    "deck": "inventory",
+    "rarity": "legendary",
+    "action": "prize",
+    "value": 0,
+    "faceCard": "/cards/card_face_light.svg",
+    "artCard": "/cards/legend/gold.gif",
+    "price": null,
+    "howtowork": "Icecream",
+    "number": 31
   }
 ]

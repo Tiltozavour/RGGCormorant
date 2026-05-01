@@ -1,11 +1,15 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Auth from "./Auth";
-import { syncWheelResult, syncWheelVisibility } from "./gameStateService";
+import { syncWheelResult, syncWheelVisibility } from "../services/gameStateService"; 
 import BottomPanel from "./BottomPanel";
 import GameBoard from "./GameBoard";
 import PlayersSidebar from "./PlayersSidebar";
 import ScoresDetailsPage from "./ScoresDetailsPage";
+import { collection, addDoc } from "firebase/firestore";
+import { db } from "../firebase";
+//import { v4 as uuidv4 } from 'uuid'; 
+
 import type { Player } from "../types/game";
 import type { GameCard as GameCardType } from "../types/card";
 import { useGameData } from "./useGameData";
@@ -14,6 +18,130 @@ import GameCard from "./GameCard";
 import DiceVisual from "./DiceVisual";
 import DuelDiceVisual from "./DuelDiceVisual"; // Import the new component
 import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS } from "./gameConstants";
+import type { GameEvent, ToastNotification } from "./useModalStates";
+
+// New conceptual components for notifications
+const ToastContainer: React.FC<{ toasts: ToastNotification[], removeToast: (id: string) => void, allCards: Record<string, GameCardType> }> = ({ toasts, removeToast, allCards }) => {
+  return (
+    <div className="fixed bottom-4 right-4 z-[20000] flex flex-col-reverse items-end space-y-2 pointer-events-none">
+      {toasts.map(toast => (
+        <div
+          key={toast.id}
+          className={`relative p-3 rounded-lg shadow-lg text-white text-sm font-medium animate-in fade-in slide-in-from-right-4 duration-300 pointer-events-auto
+            ${toast.type === 'success' ? 'bg-green-600' :
+              toast.type === 'error' ? 'bg-red-600' :
+              toast.type === 'warning' ? 'bg-yellow-600' : 'bg-blue-600'}`}
+          onClick={() => removeToast(toast.id)}
+        >
+          {looksLikeMojibake(toast.message) ? fallbackToastMessage(toast.type) : toast.message}
+          {/* Предпросмотр карты при наведении */}
+          {toast.cardId && allCards[toast.cardId] && ( 
+            // TODO: Реализовать всплывающее превью карты при наведении
+            <div className="absolute bottom-full right-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              {/* Mini card preview here */}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const EventLog: React.FC<{ gameEvents: GameEvent[], allCards: Record<string, GameCardType>, players: Player[] }> = ({ gameEvents, allCards, players }) => {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const getPlayerLogin = (playerId?: string) => players.find(p => p.id === playerId)?.login || 'Неизвестный';
+  void getPlayerLogin;
+  return (
+    <div className={`fixed top-1/2 -translate-y-1/2 left-0 h-1/2 w-80 z-30 transition-transform duration-300 ${isCollapsed ? '-translate-x-full' : 'translate-x-0'}`}>
+      <div className="h-full w-full bg-black/40 backdrop-blur-md border-r border-white/10 p-4 overflow-y-auto">
+        <h3 className="text-white text-lg font-bold mb-4">Лог событий</h3>
+        <div className="flex flex-col gap-2">
+          {gameEvents.map(event => {
+            const eventMessage = looksLikeMojibake(event.message)
+              ? fallbackEventMessage(event, allCards, players)
+              : event.message;
+
+            return (
+            <div key={event.id} className="text-xs text-zinc-400">
+              <span className="text-zinc-600 mr-2">[{new Date(event.timestamp).toLocaleTimeString()}]</span>
+              <span className={`
+                ${event.type === 'success' ? 'text-green-400' :
+                  event.type === 'error' ? 'text-red-400' :
+                  event.type === 'warning' ? 'text-yellow-400' : 'text-blue-400'}
+              `}>
+                {eventMessage}
+              </span>
+              {event.cardId && allCards[event.cardId] && (
+                <span className="ml-1 text-purple-300 cursor-help hover:underline">
+                  ({allCards[event.cardId].name})
+                </span>
+              )}
+            </div>
+            );
+          })}
+        </div>
+      </div>
+      <button 
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="absolute left-full top-0 mt-4 h-10 w-8 bg-black/60 backdrop-blur-md border border-l-0 border-white/20 flex items-center justify-center text-white/70 hover:text-white rounded-r-xl shadow-2xl transition-all"
+        title={isCollapsed ? "Развернуть лог" : "Свернуть лог"}
+      >
+        <span className="text-[10px] transition-transform duration-300" style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)' }}>◀</span>
+      </button>
+    </div>
+  );
+};
+
+const removeUndefinedFields = <T,>(value: T): T => {
+  if (Array.isArray(value)) {
+    return value.map(removeUndefinedFields) as T;
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entryValue]) => entryValue !== undefined)
+        .map(([key, entryValue]) => [key, removeUndefinedFields(entryValue)])
+    ) as T;
+  }
+
+  return value;
+};
+
+const looksLikeMojibake = (value?: string | null) =>
+  !!value && /(Р\s?[ВРС]|РЋ|Р†|РЎ|Рџ|Рќ|Р”|Р‘|Р’|СЃ|СЊ|С‹|С‚|С€|вЂ|�)/.test(value);
+
+const fallbackToastMessage = (type: ToastNotification['type']) => {
+  if (type === 'success') return 'Действие выполнено.';
+  if (type === 'error') return 'Произошла ошибка. Подробности в консоли.';
+  if (type === 'warning') return 'Проверьте условия действия.';
+  return 'Событие обновлено.';
+};
+
+const fallbackEventMessage = (
+  event: GameEvent,
+  allCards: Record<string, GameCardType> = {},
+  players: Player[] = [],
+) => {
+  const playerName = players.find((player) => player.id === event.playerId)?.login;
+  const targetName = players.find((player) => player.id === event.targetPlayerId)?.login;
+  const cardName = event.cardId ? allCards[event.cardId]?.name ?? event.cardId : null;
+  const actor = playerName ?? 'Игрок';
+
+  if (event.type === 'card_play') {
+    return cardName
+      ? `${actor} использует карту "${cardName}"${targetName ? ` на ${targetName}` : ''}.`
+      : `${actor} использует карту.`;
+  }
+  if (event.type === 'coin_change') return `${actor}: изменение монет.`;
+  if (event.type === 'movement') return `${actor}: событие перемещения.`;
+  if (event.type === 'duel') return targetName ? `Дуэль: ${actor} и ${targetName}.` : 'Событие дуэли.';
+  if (event.type === 'status_effect') return cardName ? `${actor}: эффект карты "${cardName}".` : `${actor}: эффект статуса.`;
+  if (event.type === 'error') return 'Ошибка действия. Подробности в консоли.';
+  if (event.type === 'warning') return 'Предупреждение игры.';
+  if (event.type === 'success') return 'Действие выполнено.';
+  return 'Событие игры.';
+};
 
 const RARITY_ORDER: Record<string, number> = {
   common: 1,
@@ -24,16 +152,10 @@ const RARITY_ORDER: Record<string, number> = {
 
 function AppClean() {
   const {
-    user, playerData, loading, players, gameState, allCards,
-    isAdmin, currentTurnPlayerId, canRoll, canConfirmRoll,
-    handlers, getPlayerById
-  } = useGameData();
-
-  const {
     isSidebarOpen, setIsSidebarOpen,
     isAvatarModalOpen, setIsAvatarModalOpen,
-    isScoresDetailsOpen, setIsScoresDetailsOpen,
-    isBottomPanelOpen, setIsBottomPanelOpen,
+    isScoresDetailsOpen, setIsScoresDetailsOpen, // Keep for modal
+    isBottomPanelOpen, setIsBottomPanelOpen, // Keep for panel
     isPlayersSidebarOpen, setIsPlayersSidebarOpen,
     isLegendsOpen, setIsLegendsOpen,
     selectedCard, setSelectedCard,
@@ -41,8 +163,55 @@ function AppClean() {
     isHandOpen, setIsHandOpen,
     gameAlert, setGameAlert,
     pendingTargetCard, setPendingTargetCard,
+    toasts, setToasts,
+    gameEvents: localEvents, setGameEvents: setLocalEvents,
     closeAll
   } = useModalStates();
+
+  const notify = useCallback((message: string, type: ToastNotification['type'] = 'info', cardId?: string) => {
+    const id = `${Date.now()}-${Math.random()}`;
+    const safeMessage = looksLikeMojibake(message) ? fallbackToastMessage(type) : message;
+    setToasts(prev => [
+      ...prev,
+      { id, message: safeMessage, type, cardId, timestamp: Date.now() },
+    ]);
+    window.setTimeout(() => {
+      setToasts(prev => prev.filter(toast => toast.id !== id));
+    }, type === 'error' ? 7000 : 4500);
+  }, [setToasts]);
+
+  const logEvent = useCallback(async (event: GameEvent) => {
+    const safeEvent = {
+      ...event,
+      message: looksLikeMojibake(event.message)
+        ? fallbackEventMessage(event)
+        : event.message,
+    };
+
+    setLocalEvents(prev => [safeEvent, ...prev].slice(0, 100));
+    try {
+      await addDoc(collection(db, "gameEvents"), removeUndefinedFields(safeEvent));
+    } catch (e) {
+      console.error("Firestore log error:", e);
+    }
+  }, [setLocalEvents]);
+
+  const {
+    user, playerData, loading, players, gameState, allCards, gameEvents,
+    isAdmin, currentTurnPlayerId, canRoll, canConfirmRoll,
+    handlers, getPlayerById
+  } = useGameData(notify, logEvent);
+  const visibleGameEvents = useMemo(() => {
+    const seen = new Set<string>();
+    return [...localEvents, ...gameEvents]
+      .filter((event) => {
+        if (seen.has(event.id)) return false;
+        seen.add(event.id);
+        return true;
+      })
+      .sort((left, right) => right.timestamp - left.timestamp)
+      .slice(0, 100);
+  }, [gameEvents, localEvents]);
 
   const getCardPrice = (card: GameCardType) => {
     const hasGoldenCard = playerData?.inventory?.includes("inv_021") ?? false;
@@ -57,6 +226,7 @@ function AppClean() {
   const [visualRoll, setVisualRoll] = useState<{ value: number; rolling: boolean; playerName: string } | null>(null);
   const [coinsToPay, setCoinsToPay] = useState<number>(1); // New state for coin input
   const lastProcessedRollRef = useRef<string | null>(null);
+  const scheduledDuelRollRef = useRef<string | null>(null);
   const lastShownNotifRef = useRef<number>(0);
   const lastShownCardMoveRef = useRef<string | null>(null);
 
@@ -78,6 +248,14 @@ function AppClean() {
   }, [gameState.activeInteraction, isShuffling, playerData?.inventory, gameState.rollConfirmed]);
 
   useEffect(() => {
+    setIsInteractionPending(false);
+  }, [
+    gameState.activeInteraction?.type,
+    gameState.activeInteraction?.playerId,
+    gameState.activeInteraction?.duelId,
+  ]);
+
+  useEffect(() => {
     if (gameState.activeInteraction?.type === 'discard_selection') {
       setIsShuffling(true);
       const timer = setTimeout(() => setIsShuffling(false), 1200); // 1.2 секунды на "тасовку"
@@ -96,7 +274,7 @@ function AppClean() {
       lastShownNotifRef.current = notif.timestamp;
       setGameAlert({
         title: "Внимание!",
-        message: notif.message,
+        message: looksLikeMojibake(notif.message) ? fallbackToastMessage('info') : notif.message,
         type: 'warning',
         cardId: notif.cardId
       });
@@ -108,7 +286,7 @@ function AppClean() {
     if (notif && notif.timestamp > lastShownNotifRef.current) {
       lastShownNotifRef.current = notif.timestamp;
       setGameAlert({
-        title: "Р’РЅРёРјР°РЅРёРµ!",
+        title: "Внимание!",
         message: notif.message,
         type: 'warning',
         cardId: notif.cardId
@@ -182,20 +360,18 @@ function AppClean() {
 
   // Logic for duel dice visual roll
   useEffect(() => {
-    const activeDuelId = gameState.activeInteraction?.duelId;
-    const activeDuel = activeDuelId ? gameState.activeDuels[activeDuelId] : null;
+    const activeDuel = Object.values(gameState.activeDuels || {})
+      .find(duel => duel.status === 'rolling' && duel.weapon === 'dice') ?? null;
 
     if (activeDuel && activeDuel.status === 'rolling' && activeDuel.weapon === 'dice') {
-      // Prevent re-triggering if already rolling for this duel
-      if (duelVisualRoll?.duelId === activeDuel.id && duelVisualRoll.challenger.rolling) return;
+      if (scheduledDuelRollRef.current === activeDuel.id) return;
+      scheduledDuelRollRef.current = activeDuel.id;
 
       const challengerPlayer = getPlayerById(activeDuel.challengerId);
       const targetPlayer = getPlayerById(activeDuel.targetId);
 
-      // Generate temporary random rolls for visual effect
-      const rollD6 = () => Math.floor(Math.random() * 6) + 1; // Define rollD6 locally for useEffect
-      const visualChallengerRoll = rollD6();
-      const visualTargetRoll = rollD6();
+      const visualChallengerRoll = activeDuel.rolls?.[activeDuel.challengerId] ?? 1;
+      const visualTargetRoll = activeDuel.rolls?.[activeDuel.targetId] ?? 1;
 
       setDuelVisualRoll({
         duelId: activeDuel.id,
@@ -222,12 +398,14 @@ function AppClean() {
         void handlers.handleFinishDuel(activeDuel.id);
         setDuelVisualRoll(null); // Clear visual after duel is finished
       }, 2500); // Total animation time + a bit
+    } else {
+      scheduledDuelRollRef.current = null;
     }
-  }, [gameState.activeDuels, gameState.activeInteraction, handlers, players, duelVisualRoll, getPlayerById]);
+  }, [gameState.activeDuels, handlers, getPlayerById]);
 
   // Проверка: требует ли карта выбора цели?
   const cardNeedsTarget = (card: GameCardType) => {
-    const targetActions = ['steal_coins', 'steal_card', 'discard_card', 'duel', 'judge_coins', 'freeze_player', 'reflect_debuff', 'move_target_for_coins', 'move_target_and_self', 'pay_or_move_back'];
+    const targetActions = ['steal_coins', 'steal_card', 'discard_card', 'duel', 'judge_coins', 'freeze_player', 'reflect_debuff', 'move_target_for_coins', 'move_target_and_self', 'pay_or_move_back', 'communism']; // inv_019 does not require target
     return card.requiresTarget || targetActions.includes(card.action);
   };
 
@@ -243,7 +421,7 @@ function AppClean() {
     return true;
   });
 
-  const handleCardClick = (card: GameCardType) => {
+  const handleCardClick = async (card: GameCardType) => {
     if (isInteractionPending) return;
 
     // Предварительная проверка правил использования (дублируем логику из хука для UI)
@@ -255,30 +433,31 @@ function AppClean() {
       const isExtraRoll = card.action === 'extra_roll';
       const isReflect = card.action === 'reflect_debuff';
       const isMovement = card.action === 'move_steps' || card.action === 'move_target_for_coins' || card.action === 'move_target_and_self';
+      const isPromoCode = card.action === 'promo_code_benefit';
 
       if (phase === 'next_game' && !isWheelCard && !(isFish && showWheel)) {
-        setGameAlert({ title: "Стоп!", message: "В этой фазе можно использовать только карту 'Подкрутка'!", type: 'warning' });
+        setGameAlert({ title: "Стоп!", message: "В этой фазе можно использовать только карту 'Подкрутка'!", type: 'warning', cardId: card.id });
         return;
       }
       
       if (phase === 'turn') {
-        // Защиту и Отражение можно всегда. Остальное только в свой ход.
-        if (!isProtection && !isFish && !isReflect && currentTurnPlayerId !== user?.uid) {
-          setGameAlert({ title: "Не твой ход", message: "Обычные карты можно использовать только в свою очередь.", type: 'info' });
+        // Защиту, Отражение и Промокодик можно всегда. Остальное только в свой ход.
+        if (!isProtection && !isFish && !isReflect && !isPromoCode && currentTurnPlayerId !== user?.uid) {
+          setGameAlert({ title: "Не твой ход", message: "Обычные карты можно использовать только в свою очередь.", type: 'info', cardId: card.id });
           return;
         }
 
         if (isMovement && gameState.rollConfirmed) {
-          setGameAlert({ title: "Движение начато", message: "Использовать карту перемещения можно только до подтверждения хода.", type: 'warning' });
+          setGameAlert({ title: "Движение начато", message: "Использовать карту перемещения можно только до подтверждения хода.", type: 'warning', cardId: card.id });
           return;
         }
 
         // Обычные карты (не движение, не защита, не переброс) только ДО броска
         const isSpecialAction = isProtection || isFish || isExtraRoll || isMovement;
         const isMyRollDone = currentRoll !== null && gameState.currentRollPlayerId === user?.uid;
-
+        
         if (!isSpecialAction && isMyRollDone) {
-          setGameAlert({ title: "Кубик брошен", message: "Обычные карты (не движение и не защита) используются ДО броска.", type: 'warning' });
+          setGameAlert({ title: "Кубик брошен", message: "Обычные карты (не движение и не защита) используются ДО броска.", type: 'warning', cardId: card.id });
           return;
         }
 
@@ -287,27 +466,32 @@ function AppClean() {
           return;
         }
       } else if (phase !== 'next_game' && !isFish) {
-        setGameAlert({ title: "Заблокировано", message: "Использование карт в этой фазе запрещено.", type: 'warning' });
+        setGameAlert({ title: "Заблокировано", message: "Использование карт в этой фазе запрещено.", type: 'warning', cardId: card.id });
         return;
       }
     }
 
     if (card.action === 'protection' && playerData?.hasProtection) {
-      setGameAlert({ title: "Уже защищен", message: "У вас уже активно Силовое поле! Не стоит тратить карту впустую.", type: 'info' });
+      setGameAlert({ title: "Уже защищен", message: "У вас уже активно Силовое поле! Не стоит тратить карту впустую.", type: 'info', cardId: card.id });
       return;
     }
 
     if (card.action === 'passive_benefit') {
-      setGameAlert({ title: "Пассивная карта", message: "Эта карта работает автоматически и не тратится при нажатии.", type: 'info' });
+      setGameAlert({ title: "Пассивная карта", message: "Эта карта работает автоматически и не тратится при нажатии.", type: 'info', cardId: card.id });
       return;
     }
 
     if (cardNeedsTarget(card)) {
       setPendingTargetCard(card);
+      setSelectedCard(null); // Закрываем предпросмотр, чтобы не мешал выбирать цель
     } else {
-      setIsInteractionPending(true);
-      void handlers.handleUseCard(card);
-      // Примечание: Флаг сбросится в useEffect выше, когда карта исчезнет из БД (playerData.inventory изменится)
+      setIsInteractionPending(true); // Устанавливаем pending перед вызовом
+      try {
+        await handlers.handleUseCard(card); // Делаем вызов асинхронным
+        setSelectedCard(null); 
+      } finally {
+        setIsInteractionPending(false); // Гарантируем сброс состояния после завершения или ошибки
+      }
     }
   };
   
@@ -842,9 +1026,14 @@ function AppClean() {
                   <button
                     key={player.id}
                     disabled={isInteractionPending}
-                    onClick={() => { // Убрал проверку isInteractionPending здесь, так как она будет управляться следующим модальным окном
+                    onClick={async () => {
                       if (!pendingTargetCard) return;
-                      void handlers.handleUseCard(pendingTargetCard, player.id); // Это устанавливает activeInteraction
+                      setIsInteractionPending(true);
+                      try {
+                        await handlers.handleUseCard(pendingTargetCard, player.id);
+                      } finally {
+                        setIsInteractionPending(false);
+                      }
                       setPendingTargetCard(null); // Очищаем модальное окно выбора цели
                     }}
                     className="flex items-center gap-4 bg-white/5 hover:bg-purple-500/20 border border-white/10 hover:border-purple-500/50 p-3 rounded-2xl transition-all group"
@@ -888,6 +1077,12 @@ function AppClean() {
         isOpen={isPlayersSidebarOpen}
         players={players}
         totalScores={gameState.scores}
+        gameState={gameState} // Передаем gameState
+        allCards={allCards}
+        isAdmin={isAdmin}
+        onUpdateCoins={handlers.handleAdminUpdateCoins}
+        onAddCard={handlers.handleAdminAddCard}
+        onRemoveCard={handlers.handleAdminRemoveCard}
         gameHistory={gameState.gameHistory}
         currentUserId={user?.uid || null}
         onClose={() => setIsPlayersSidebarOpen(false)}
@@ -1325,6 +1520,20 @@ function AppClean() {
             >
               Принять вызов
             </button>
+
+            <button
+              disabled={isInteractionPending || (playerData.tiltCoins ?? 0) < 3}
+              onClick={() => {
+                if (isInteractionPending) return;
+                const duelId = gameState.activeInteraction?.duelId;
+                if (!duelId) return;
+                setIsInteractionPending(true);
+                void handlers.handleDuelChallengeResponse(duelId, 'decline');
+              }}
+              className="bg-zinc-800 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm hover:bg-zinc-700 transition-all active:scale-95 shadow-[0_5px_0_#27272a] active:shadow-none active:translate-y-1 disabled:opacity-40"
+            >
+              Отказаться за 3 🦖
+            </button>
           </div>
         </div>
       )}
@@ -1393,7 +1602,7 @@ function AppClean() {
       )}
 
       {/* ЭКРАН ВВОДА СТАВОК ДЛЯ ДУЭЛИ */}
-      {gameState.activeInteraction?.type === 'duel_betting' && gameState.activeInteraction.duelId && (
+      {gameState.activeInteraction?.type === 'duel_betting' && gameState.activeInteraction.duelId && gameState.activeInteraction.playerId === user?.uid && (
         <div className="fixed inset-0 bg-purple-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
           <div className="text-center mb-12">
             <h2 className="text-6xl font-black text-purple-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(168,85,247,0.5)]">Дуэль: Ставки!</h2>
@@ -1407,7 +1616,7 @@ function AppClean() {
                 Оружие: Кубики. Победитель забирает весь банк.
               </p>
             )}
-            {gameState.activeDuels[gameState.activeInteraction.duelId]?.weapon === 'game' && (
+           {gameState.activeDuels[gameState.activeInteraction.duelId]?.weapon === 'game' && (
               <p className="text-white/60 text-xs font-medium mt-2">
                 Оружие: Игра по выбору. Победитель забирает весь банк.
               </p>
@@ -1417,51 +1626,108 @@ function AppClean() {
             </p>
           </div>
 
-          {gameState.activeInteraction.playerId === user?.uid && (
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col items-center gap-5 min-w-80">
-              <input
-                type="number"
-                min={1}
-                max={playerData.tiltCoins ?? 0}
-                value={duelBetAmount}
-                onChange={(event) => {
-                  const max = playerData.tiltCoins ?? 0;
-                  const next = Math.max(1, Math.min(max, Number(event.target.value) || 1));
-                  setDuelBetAmount(next);
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col items-center gap-5 min-w-80">
+            <input
+              type="number"
+              min={1}
+              value={duelBetAmount}
+              onChange={(event) => {
+                const next = Math.max(1, Math.floor(Number(event.target.value) || 1));
+                setDuelBetAmount(next);
+              }}
+              className="w-24 bg-black/50 border border-purple-400/40 rounded-xl px-4 py-3 text-center text-2xl font-black text-purple-200"
+            />
+            {duelBetAmount > (playerData.tiltCoins ?? 0) && (
+              <p className="max-w-xs text-center text-[10px] font-bold uppercase tracking-[0.18em] text-yellow-300">
+                Вы уйдете в минус, если проиграете.
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button
+                disabled={isInteractionPending || duelBetAmount <= 0}
+                onClick={() => {
+                  if (isInteractionPending) return;
+                  setIsInteractionPending(true);
+                  const duelId = gameState.activeInteraction?.duelId;
+                  if (!duelId) return;
+                  void handlers.handlePlaceDuelBet(duelId, duelBetAmount);
                 }}
-                className="w-24 bg-black/50 border border-purple-400/40 rounded-xl px-4 py-3 text-center text-2xl font-black text-purple-200"
-              />
-              <div className="flex gap-3">
-                <button
-                  disabled={isInteractionPending || (playerData.tiltCoins ?? 0) < duelBetAmount || duelBetAmount <= 0}
-                  onClick={() => {
-                    if (isInteractionPending) return;
-                    setIsInteractionPending(true);
-                    void handlers.handlePlaceDuelBet(gameState.activeInteraction?.duelId!, duelBetAmount);
-                  }}
-                  className="bg-purple-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-purple-500 transition-all disabled:opacity-50"
-                >
-                  Сделать ставку {duelBetAmount} 🦖
-                </button>
-                <button
-                  disabled={isInteractionPending}
-                  onClick={() => {
-                    if (isInteractionPending) return;
-                    setIsInteractionPending(true);
-                    void handlers.handleCancelInteraction(); // Or a specific cancel duel handler
-                  }}
-                  className="bg-zinc-800 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-zinc-700 transition-all"
-                >
-                  Отмена
-                </button>
-              </div>
+                className="bg-purple-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-purple-500 transition-all disabled:opacity-50"
+              >
+                Сделать ставку {duelBetAmount} 🦖
+              </button>
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      {gameState.activeInteraction?.type === 'duel_betting' && gameState.activeInteraction.duelId && gameState.activeInteraction.playerId !== user?.uid && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[10010] animate-in slide-in-from-top-4 fade-in duration-500 pointer-events-none w-full max-w-sm px-4">
+          <div className="bg-purple-900/40 border border-purple-500/40 backdrop-blur-xl px-8 py-5 rounded-[2rem] shadow-2xl flex items-center gap-5 border-l-4 border-l-purple-400">
+            <div className="w-3 h-3 bg-purple-400 rounded-full animate-pulse shrink-0" />
+            <div className="flex flex-col">
+              <span className="text-purple-400 text-[9px] font-black uppercase tracking-[0.3em]">Дуэль</span>
+              <span className="text-white text-xs font-bold mt-0.5 leading-tight">
+                {getPlayerById(gameState.activeInteraction.playerId)?.login || 'Игрок'} делает ставку...
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ПАНЕЛЬ АДМИНА ДЛЯ ПОДВЕДЕНИЯ ИТОГОВ ДУЭЛИ (Weapon: Game) */}
+      {isAdmin && Object.values(gameState.activeDuels || {}).some(d => d.status === 'admin_wait') && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[10020] w-full max-w-lg px-4 animate-in slide-in-from-top-10 duration-500">
+          {Object.values(gameState.activeDuels)
+            .filter(duel => duel.status === 'admin_wait')
+            .map(duel => {
+              const challenger = getPlayerById(duel.challengerId);
+              const target = getPlayerById(duel.targetId);
+              const pot = (duel.bets[duel.challengerId] || 0) + (duel.bets[duel.targetId] || 0);
+
+              return (
+                <div key={duel.id} className="bg-zinc-900 border-2 border-yellow-500/50 p-6 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.8)] backdrop-blur-xl">
+                  <div className="text-center mb-6">
+                    <span className="text-yellow-500 text-[10px] font-black uppercase tracking-[0.4em]">Панель Судьи</span>
+                    <h3 className="text-white text-xl font-black italic uppercase mt-1">Кто победил в мини-игре?</h3>
+                    <p className="text-zinc-500 text-xs mt-2">Банк дуэли: <span className="text-green-400 font-bold">{pot} 🦖</span></p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      onClick={() => void handlers.handleFinishDuel(duel.id, duel.challengerId)}
+                      className="flex flex-col items-center gap-2 bg-white/5 hover:bg-purple-500/20 border border-white/10 p-4 rounded-2xl transition-all group"
+                    >
+                      <img src={challenger?.avatar || FALLBACK_AVATAR} className="w-12 h-12 rounded-full border-2 border-purple-500 shadow-lg" alt="P1" />
+                      <span className="text-white font-bold text-xs truncate w-full text-center">{challenger?.login}</span>
+                      <span className="text-[9px] text-purple-400 font-black uppercase">Победитель</span>
+                    </button>
+
+                    <button
+                      onClick={() => void handlers.handleFinishDuel(duel.id, duel.targetId)}
+                      className="flex flex-col items-center gap-2 bg-white/5 hover:bg-emerald-500/20 border border-white/10 p-4 rounded-2xl transition-all group"
+                    >
+                      <img src={target?.avatar || FALLBACK_AVATAR} className="w-12 h-12 rounded-full border-2 border-emerald-500 shadow-lg" alt="P2" />
+                      <span className="text-white font-bold text-xs truncate w-full text-center">{target?.login}</span>
+                      <span className="text-[9px] text-emerald-400 font-black uppercase">Победитель</span>
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => void handlers.handleFinishDuel(duel.id, 'draw')}
+                    className="w-full mt-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all"
+                  >
+                    Объявить ничью (возврат ставок)
+                  </button>
+                </div>
+              );
+            })
+          }
         </div>
       )}
 
       {/* ЭКРАН ГОТОВНОСТИ К БРОСКУ ДЛЯ ДУЭЛИ */}
-      {gameState.activeInteraction?.type === 'duel_ready_to_roll' && gameState.activeInteraction.duelId && (
+      {gameState.activeInteraction?.type === 'duel_ready_to_roll' && gameState.activeInteraction.duelId && gameState.activeInteraction.playerId === user?.uid && (
         <div className="fixed inset-0 bg-purple-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
           <div className="text-center mb-12">
             <h2 className="text-6xl font-black text-purple-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(168,85,247,0.5)]">Дуэль: Готовы?</h2>
@@ -1472,19 +1738,33 @@ function AppClean() {
             </p>
           </div>
 
-          {gameState.activeInteraction.playerId === user?.uid && (
-            <button
-              disabled={isInteractionPending}
-              onClick={() => {
-                if (isInteractionPending) return;
-                setIsInteractionPending(true);
-                void handlers.handleStartDuelRoll(gameState.activeInteraction?.duelId!);
-              }}
-              className="bg-purple-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm hover:bg-purple-500 transition-all active:scale-95 shadow-[0_5px_0_#6d28d9] active:shadow-none active:translate-y-1 disabled:opacity-50"
-            >
-              Бросить кубики!
-            </button>
-          )}
+          <button
+            disabled={isInteractionPending}
+            onClick={() => {
+              if (isInteractionPending) return;
+              setIsInteractionPending(true);
+              const duelId = gameState.activeInteraction?.duelId;
+              if (!duelId) return;
+              void handlers.handleStartDuelRoll(duelId);
+            }}
+            className="bg-purple-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm hover:bg-purple-500 transition-all active:scale-95 shadow-[0_5px_0_#6d28d9] active:shadow-none active:translate-y-1 disabled:opacity-50"
+          >
+            Бросить кубики!
+          </button>
+        </div>
+      )}
+
+      {gameState.activeInteraction?.type === 'duel_ready_to_roll' && gameState.activeInteraction.duelId && gameState.activeInteraction.playerId !== user?.uid && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[10010] animate-in slide-in-from-top-4 fade-in duration-500 pointer-events-none w-full max-w-sm px-4">
+          <div className="bg-purple-900/40 border border-purple-500/40 backdrop-blur-xl px-8 py-5 rounded-[2rem] shadow-2xl flex items-center gap-5 border-l-4 border-l-purple-400">
+            <div className="w-3 h-3 bg-purple-400 rounded-full animate-pulse shrink-0" />
+            <div className="flex flex-col">
+              <span className="text-purple-400 text-[9px] font-black uppercase tracking-[0.3em]">Дуэль</span>
+              <span className="text-white text-xs font-bold mt-0.5 leading-tight">
+                {getPlayerById(gameState.activeInteraction.playerId)?.login || 'Игрок'} запускает итог дуэли...
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1561,6 +1841,20 @@ function AppClean() {
           </div>
         </div>
       )}
+
+      {/* Всплывающие уведомления (Toasts) */}
+      <ToastContainer 
+        toasts={toasts} 
+        removeToast={(id) => setToasts(prev => prev.filter(t => t.id !== id))} 
+        allCards={allCards} 
+      />
+
+      {/* Лог игровых событий */}
+      <EventLog 
+        gameEvents={visibleGameEvents} 
+        allCards={allCards} 
+        players={players} 
+      />
     </div>
   );
 }

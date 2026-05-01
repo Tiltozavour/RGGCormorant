@@ -1,12 +1,19 @@
-import type { Player, GameHistoryEntry } from "../types/game";
+import type { DuelState, GameState, Player, GameHistoryEntry } from "../types/game";
 import {
   buildPlayerScoreRows,
 } from "./scoreUtils";
+import type { GameCard } from "../types/card";
 
 interface PlayersSidebarProps {
   isOpen: boolean;
   players: Player[];
   totalScores: Record<string, number>;
+  gameState: GameState; // Добавляем gameState
+  allCards: Record<string, GameCard>;
+  isAdmin: boolean;
+  onUpdateCoins: (targetId: string, amount: number) => Promise<void>;
+  onAddCard: (targetId: string, cardId: string) => Promise<void>;
+  onRemoveCard: (targetId: string, cardId: string) => Promise<void>;
   gameHistory: GameHistoryEntry[];
   currentUserId: string | null;
   onClose: () => void;
@@ -21,6 +28,12 @@ function PlayersSidebar({
   isOpen,
   players,
   totalScores,
+  gameState, // Принимаем gameState
+  allCards,
+  isAdmin,
+  onUpdateCoins,
+  onAddCard,
+  onRemoveCard,
   gameHistory,
   currentUserId,
   onClose,
@@ -35,6 +48,11 @@ function PlayersSidebar({
   const topPlayerId = [...players]
     .filter(p => p.role !== "admin")
     .sort((a, b) => (b.tiltCoins ?? 0) - (a.tiltCoins ?? 0))[0]?.id;
+
+  const activeDuels = Object.values(gameState.activeDuels || {}).filter(
+    (duel) => duel.status !== "finished"
+  );
+
 
   return (
     <>
@@ -121,6 +139,33 @@ function PlayersSidebar({
                               это вы
                             </div>
                           )}
+                          {/* Админ-панель управления инвентарем */}
+                          {isAdmin && (
+                            <div className="mt-1 flex flex-wrap gap-1 max-w-[240px]">
+                              {player?.inventory?.map((cardId, i) => (
+                                <div key={i} className="flex items-center bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-[9px] group/card">
+                                  <span className="text-zinc-400 truncate max-w-[80px]" title={allCards[cardId]?.name || cardId}>
+                                    {allCards[cardId]?.name || cardId}
+                                  </span>
+                                  <button 
+                                    onClick={() => void onRemoveCard(row.playerId, cardId)}
+                                    className="ml-1 text-red-500 opacity-0 group-hover/card:opacity-100 transition-opacity hover:text-red-400"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ))}
+                              <button 
+                                onClick={() => {
+                                  const cid = prompt("Введите ID карты (например, inv_001):");
+                                  if (cid) void onAddCard(row.playerId, cid);
+                                }}
+                                className="px-1.5 py-0.5 bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 rounded text-[9px] hover:bg-yellow-500/20 transition-colors"
+                              >
+                                + Карта
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -134,8 +179,38 @@ function PlayersSidebar({
                       +{bonusScore}
                     </td>
 
-                    <td className="px-4 py-3 text-green-300 font-medium">
-                      {player?.tiltCoins ?? 0}
+                    <td className="px-4 py-3 text-green-300 font-medium group">
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{player?.tiltCoins ?? 0}</span>
+                        {isAdmin && (
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => void onUpdateCoins(row.playerId, (player?.tiltCoins ?? 0) + 1)}
+                              className="w-6 h-6 bg-green-500/20 hover:bg-green-500/40 border border-green-500/30 rounded flex items-center justify-center text-xs text-green-300 transition-colors"
+                            >
+                              +
+                            </button>
+                            <button
+                              onClick={() => void onUpdateCoins(row.playerId, Math.max(0, (player?.tiltCoins ?? 0) - 1))}
+                              className="w-6 h-6 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded flex items-center justify-center text-xs text-red-300 transition-colors"
+                            >
+                              -
+                            </button>
+                            <button
+                              onClick={() => {
+                                const val = prompt(`Установить количество монет для ${row.login}:`, String(player?.tiltCoins ?? 0));
+                                if (val !== null) {
+                                  const num = parseInt(val, 10);
+                                  if (!isNaN(num)) void onUpdateCoins(row.playerId, num);
+                                }
+                              }}
+                              className="w-6 h-6 bg-yellow-500/20 hover:bg-yellow-500/40 border border-yellow-500/30 rounded flex items-center justify-center text-[10px] text-yellow-300 transition-colors"
+                            >
+                              ✎
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -143,6 +218,79 @@ function PlayersSidebar({
             </tbody>
           </table>
         </div>
+
+        {/* Секция активных дуэлей */}
+        {activeDuels.length > 0 && (
+          <section className="mb-8 rounded-2xl border border-yellow-500/15 bg-zinc-950/60 p-4 backdrop-blur-md">
+            <h2 className="mb-4 text-lg text-yellow-200">Активные дуэли</h2>
+            <div className="flex flex-col gap-4">
+              {activeDuels.map((duel: DuelState) => {
+                const challenger = players.find(p => p.id === duel.challengerId);
+                const target = players.find(p => p.id === duel.targetId);
+                const totalBet = (duel.bets[duel.challengerId] || 0) + (duel.bets[duel.targetId] || 0);
+
+                let statusText = "";
+                let actionPlayerId: string | null = null;
+
+                switch (duel.status) {
+                  case "pending":
+                    statusText = "Ожидает ответа";
+                    actionPlayerId = duel.targetId;
+                    break;
+                  case "accepted":
+                    statusText = "Выбор оружия";
+                    actionPlayerId = duel.targetId; // Цель выбирает оружие первой
+                    break;
+                  case "betting":
+                    statusText = "Размещение ставок";
+                    // Определяем, кто еще не сделал ставку
+                    if (!duel.isReady[duel.challengerId]) actionPlayerId = duel.challengerId;
+                    else if (!duel.isReady[duel.targetId]) actionPlayerId = duel.targetId;
+                    break;
+                  case "ready_to_roll":
+                    statusText = "Готовность к броску";
+                    actionPlayerId = duel.challengerId; // Инициатор бросает кубики
+                    break;
+                  case "rolling":
+                    statusText = "Бросок кубиков";
+                    break;
+                  case "admin_wait":
+                    statusText = "Ожидание решения админа";
+                    actionPlayerId = "admin"; // Условно, чтобы показать, что админ должен действовать
+                    break;
+                  default:
+                    statusText = "Неизвестный статус";
+                }
+
+                return (
+                  <div key={duel.id} className="bg-zinc-800/50 p-3 rounded-xl border border-zinc-700/50">
+                    <p className="text-zinc-300 text-sm font-bold">
+                      {challenger?.login} <span className="text-zinc-500">vs</span> {target?.login}
+                    </p>
+                    <p className="text-zinc-400 text-xs mt-1">
+                      Статус: <span className="text-yellow-400">{statusText}</span>
+                    </p>
+                    {duel.weapon && (
+                      <p className="text-zinc-400 text-xs">
+                        Оружие: <span className="text-blue-400">{duel.weapon === 'dice' ? 'Кубики' : 'Игра по выбору'}</span>
+                      </p>
+                    )}
+                    {totalBet > 0 && (
+                      <p className="text-zinc-400 text-xs">
+                        Банк: <span className="text-green-400">{totalBet} 🦖</span>
+                      </p>
+                    )}
+                    {actionPlayerId && actionPlayerId !== "admin" && (
+                      <p className="text-zinc-400 text-xs">
+                        Действует: <span className="text-purple-400">{players.find(p => p.id === actionPlayerId)?.login}</span>
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         <button
           onClick={onOpenDetails}

@@ -19,7 +19,7 @@ export interface GameHistoryEntry {
   createdAt?: unknown;
 }
 
-export type DuelWeapon = "dice" | "custom";
+export type DuelWeapon = "dice" | "game";
 
 export interface DuelState {
   id: string;
@@ -29,6 +29,7 @@ export interface DuelState {
   weapon: DuelWeapon | null;
   bets: Record<string, number>;
   isReady: Record<string, boolean>;
+  rolls?: Record<string, number>;
   winnerId?: string | "draw";
 }
 
