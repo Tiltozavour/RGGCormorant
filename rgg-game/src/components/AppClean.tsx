@@ -854,7 +854,7 @@ function AppClean() {
 
           {playerData?.inventory && playerData.inventory.length > 0 ? (
             <div
-              className="flex gap-8 px-[10vw] pt-24 pb-20 overflow-x-auto overflow-y-visible max-w-full custom-scrollbar items-end select-none"
+              className="flex gap-8 px-[10vw] pt-64 pb-20 overflow-x-auto overflow-y-visible max-w-full custom-scrollbar items-end select-none"
               onWheel={(e) => {
                 if (e.deltaY !== 0) {
                   e.currentTarget.scrollLeft += e.deltaY;

@@ -619,6 +619,11 @@ export function useGameData(
             return;
           }
 
+          if (card.id === "inv_005" && currentRoll !== null) {
+            notify("Карту \"Квантовый прыжок\" можно использовать только до броска кубика.", 'warning', card.id);
+            return;
+          }
+
           if (!isMovement && !isExtraRoll && currentRoll !== null) {
             notify("Кубик уже брошен. Обычные карты используются ДО броска.", 'warning');
             return;
