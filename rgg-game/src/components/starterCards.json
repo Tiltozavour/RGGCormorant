@@ -2,7 +2,7 @@
   {
     "id": "inv_001",
     "name": "Мешочек тильтокоинов",
-    "description": "Вы находите заначку тильтозавра, в ней было +5 коинов.",
+    "description": "Вы находите заначку тильтозавра",
     "deck": "inventory",
     "rarity": "rare",
     "action": "add_coins",
@@ -16,7 +16,7 @@
   {
     "id": "inv_002",
     "name": "Банни хоп",
-    "description": "Позволяет сделать рывок вперед на 1 клетку.",
+    "description": "Учишься балету, Поттер?",
     "deck": "inventory",
     "rarity": "common",
     "action": "move_steps",
@@ -30,7 +30,7 @@
   {
     "id": "inv_003",
     "name": "Энергетик 'Тильто-драйв'",
-    "description": "Дает возможность перебросить кубик еще раз.",
+    "description": "Ну это точно был не мой ролл. Давайте ещё раз.",
     "deck": "inventory",
     "rarity": "rare",
     "action": "extra_roll",
@@ -44,7 +44,7 @@
   {
     "id": "inv_004",
     "name": "В завязке от гемблинга",
-    "description": "Защищает от клетки Gambling.",
+    "description": "Сегодня я не играю в азартные игры. Сегодня они играют без меня.",
     "deck": "inventory",
     "rarity": "rare",
     "action": "protection",
@@ -58,7 +58,7 @@
   {
     "id": "inv_005",
     "name": "Квантовый прыжок",
-    "description": "Телепортирует вас на случайную ячейку b-shop впереди вас.",
+    "description": "Пацаны, я на Б!",
     "deck": "inventory",
     "rarity": "epic",
     "action": "teleport_to_type",
@@ -72,7 +72,7 @@
   {
     "id": "inv_006",
     "name": "No, no, no mr. Fish",
-    "description": "Блокирует действие любой карты, от игрока или поля.",
+    "description": "Ю донт ду зис, ю го ту ёбанный тазик, блядь",
     "deck": "inventory",
     "rarity": "rare",
     "action": "fish_protection",
@@ -86,7 +86,7 @@
   {
     "id": "inv_007",
     "name": "Только вперед!",
-    "description": "Передвинуть себя или игрока на +2 клетки.",
+    "description": "Я - скорость!",
     "deck": "inventory",
     "rarity": "common",
     "action": "move_steps",
@@ -95,12 +95,13 @@
     "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExYnhrYmhuaXNtYzRkbXJoMm1xYzZiMHVuOXRieTc1YTYya3ZvZDAxMyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/bjE9JbNSckM0w/giphy.gif",
     "price": 3,
     "howtowork": "Позволяет переместить себя или любого другого игрока на 2 клетки вперёд.",
+    "requiresTarget": true,
     "number": 7
   },
   {
     "id": "inv_008",
     "name": "Судья душ",
-    "description": "Выберете жертву и решите, получит жертва +2 монеты или потеряет",
+    "description": "Судьба решит. Но кубик — быстрее.",
     "deck": "inventory",
     "rarity": "rare",
     "action": "judge_coins",
@@ -114,7 +115,7 @@
   {
     "id": "inv_009",
     "name": "Сделка с магом",
-    "description": "Испытайте удачу и получите монеты...или нет",
+    "description": "Магия для пи....",
     "deck": "inventory",
     "rarity": "rare",
     "action": "deal_with_mage",
@@ -128,7 +129,7 @@
   {
     "id": "inv_010",
     "name": "Репорт откину",
-    "description": "Сбросьте одну карточку у другого игрока",
+    "description": "Репорт принят. Карта удалена.",
     "deck": "inventory",
     "rarity": "epic",
     "action": "discard_card",
@@ -142,13 +143,13 @@
   {
     "id": "inv_011",
     "name": "Иди нахуй, я на мид пойду",
-    "description": "Заберите случайную карту у другого игрока",
+    "description": "Спасибо за лут, я пошёл",
     "deck": "inventory",
     "rarity": "epic",
     "action": "steal_card",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdnJnOWNwNWtqeDNjYXV5dW9hYndlaHNrcGw3MnpyZ2d0ejB0NGMxaSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/AxRjMaovFNBztkPtxd/giphy.gif",
+    "artCard": "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ2Q5eWNvdG8xN3ByNDVyOGVodWJqY3RvNDl0Mm4xZnFxcnh5MjF3eCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/2Tx2smt0cqbCUhmKBQ/giphy.gif",
     "price": 8,
     "howtowork": "Выберите оппонента и заберите одну любую его карту (на ваш выбор) себе.",
     "number": 11
@@ -156,7 +157,7 @@
   {
     "id": "inv_012",
     "name": "А может тебя?",
-    "description": "Отразите дебафф на наложившего",
+    "description": "А может всё таки чайку?",
     "deck": "inventory",
     "rarity": "epic",
     "action": "reflect_debuff",
@@ -170,7 +171,7 @@
   {
     "id": "inv_013",
     "name": "Коррупция",
-    "description": "Оплатите передвижение другого игрока",
+    "description": "Деньги решают. Даже за чужие ноги.",
     "deck": "inventory",
     "rarity": "common",
     "action": "move_target_for_coins",
@@ -185,7 +186,7 @@
   {
     "id": "inv_014",
     "name": "Дуэль",
-    "description": "Вызовите кого-нибудь на битву",
+    "description": "Го один на один на миду?",
     "deck": "inventory",
     "rarity": "common",
     "action": "duel",
@@ -201,7 +202,7 @@
   {
     "id": "inv_015",
     "name": "Платити налоги!",
-    "description": "Заплатите 2 тильтокоина или получайте по жепе",
+    "description": "Отдавай свои штаны!",
     "deck": "inventory",
     "rarity": "epic",
     "action": "pay_or_move_back",
@@ -215,7 +216,7 @@
   {
     "id": "inv_016",
     "name": "Катжит не виноват!",
-    "description": "Попытайтесь украсть коины у другого",
+    "description": "Если не заметят — значит твоё",
     "deck": "inventory",
     "rarity": "common",
     "action": "steal_coins",
@@ -229,7 +230,7 @@
   {
     "id": "inv_017",
     "name": "Подкрутка",
-    "description": "Запустите колесо выбора игры еще раз",
+    "description": "Вы чо блин, я это качать не буду!",
     "deck": "inventory",
     "rarity": "rare",
     "action": "spin_wheel",
@@ -243,7 +244,7 @@
   {
     "id": "inv_018",
     "name": "Золотая карта",
-    "description": "Цены в магазине для вас дешевле",
+    "description": "VIP-режим активирован.",
     "deck": "inventory",
     "rarity": "epic",
     "action": "passive_benefit",
@@ -263,7 +264,7 @@
     "action": "promo_code_benefit",
     "value": 0,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/coolest.gif",
+    "artCard": "/cards/faces/agent.gif",
     "price": null,
     "howtowork": "В следующий раз, если вас заставят заплатить отдайте только половину стоимости (нечетные значения в пользу игрока с этой картой).",
     "number": 19
@@ -271,13 +272,13 @@
   {
     "id": "inv_020",
     "name": "Коммунизм",
-    "description": "Заберите половину монет у другого игрока.",
+    "description": "Теперь это наше.",
     "deck": "inventory",
     "rarity": "epic",
     "action": "communism",
     "value": 0,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/coolest.gif",
+    "artCard": "/cards/faces/comr.gif",
     "price": null,
     "howtowork": "Выберите игрока: вы забираете половину его текущих монет, округляя в большую сторону в вашу пользу. Можно использовать вне своего хода.",
     "number": 20
@@ -285,7 +286,7 @@
   {
     "id": "mom_001",
     "name": "Налоговая инспекция",
-    "description": "Ой! Придется заплатить штраф в казну общества. Теряете 4 коина.",
+    "description": "Отдавай штаны говорю!",
     "deck": "momental",
     "rarity": "common",
     "action": "add_coins",
@@ -313,7 +314,7 @@
   {
     "id": "mom_003",
     "name": "Фортуна Николая",
-    "description": "Звезды сошлись удачно. Получите +8 коинов немедленно.",
+    "description": "Сегодня вселенная за тебя.",
     "deck": "momental",
     "rarity": "epic",
     "action": "add_coins",
@@ -327,7 +328,7 @@
   {
     "id": "mom_004",
     "name": "I don't feel so good",
-    "description": "Пространство искажается. Вы возвращаетесь на клетку 6.",
+    "description": "Пока-пока!",
     "deck": "momental",
     "rarity": "epic",
     "action": "teleport",
@@ -335,7 +336,7 @@
     "faceCard": "/cards/card_back.svg",
     "artCard": "/cards/faces/blackhole.gif",
     "price": null,
-    "howtowork": "Мгновенно: телепортирует вас на стартовую клетку 6.",
+    "howtowork": "Мгновенно: телепортирует вас на стартовую клетку 6 или 15. ",
     "number": 24
   },
   {
@@ -345,25 +346,25 @@
     "deck": "momental",
     "rarity": "rare",
     "action": "add_coins",
-    "value": -6,
+    "value": -2,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExdHMzdWFleGNhaW02N25qYjVkZ2tjaHlkNmlndHVpZ2czc3JzbW5lbyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/3kzseOm93AHjfBC2EO/giphy.gif",
+    "artCard": "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcWx3d2Jsamd0eW1nazJuemt2eXJrdWR1cTNqZ3RuYWl4eWVmZGF4YiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/iAIwyKeZlKBgIpH4TZ/giphy.gif",
     "price": null,
-    "howtowork": "Мгновенно: вы теряете 6 монет.",
+    "howtowork": "Хорошо, что она была по скидке. Мгновенно: вы теряете 2 монеты.",
     "number": 25
   },
   {
     "id": "mom_006",
-    "name": "Паника на поле",
-    "description": "Вы сделали ошибку и отступаете на 3 клетки.",
+    "name": "Что у вас здесь происходит?!",
+    "description": "Вы оступаетесь на одну клетку назад",
     "deck": "momental",
-    "rarity": "rare",
+    "rarity": "common",
     "action": "move_steps",
-    "value": -3,
+    "value": -1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExaGp5M2J4bzQ4bnJvYzhrNGVmaGVjNW04c3RrYW1zc3Fya3JuMnQ3OCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/mpu7L6b0oRy0KOuyd7/giphy.gif",
+    "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExNjl5cTczMGp6ajI0NjRma3J2bnJka3l4aHh2enp0b2xya3V5aWU2dyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/ZxekGULV81ITNh6Dd8/giphy.gif",
     "price": null,
-    "howtowork": "Мгновенно: вы перемещаетесь на 3 клетки назад.",
+    "howtowork": "Мгновенно: вы перемещаетесь на 1 клетку назад.",
     "number": 26
   },
     {
@@ -375,7 +376,7 @@
     "action": "move_steps",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExaGp5M2J4bzQ4bnJvYzhrNGVmaGVjNW04c3RrYW1zc3Fya3JuMnQ3OCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/mpu7L6b0oRy0KOuyd7/giphy.gif",
+    "artCard": "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdzB1cWg0Zm5nNjEzcTd5b3RqdmdlaDE0cXpvZG5xMmU1cW01OHpnYyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/VeTIkcoBeync63rDWy/giphy.gif",
     "price": null,
     "howtowork": "Мгновенно: вы перемещаетесь на 1 клетку вперед.",
     "number": 27

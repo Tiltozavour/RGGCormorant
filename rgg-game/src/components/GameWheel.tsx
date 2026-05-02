@@ -10,11 +10,22 @@ interface Item {
   active?: boolean;
 }
 
+interface WheelActionCard {
+  id: string;
+  name: string;
+  image?: string;
+  count?: number;
+  disabled?: boolean;
+  requiresResult?: boolean;
+  onUse: () => void;
+}
+
 interface Props {
   items: Item[];
   onResult: (result: string) => void;
   onClose?: () => void;
   canSpin: boolean;
+  actionCards?: WheelActionCard[];
 }
 
 export const GameWheel: React.FC<Props> = ({
@@ -22,6 +33,7 @@ export const GameWheel: React.FC<Props> = ({
   onResult,
   onClose,
   canSpin,
+  actionCards = [],
 }) => {
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
@@ -52,12 +64,23 @@ export const GameWheel: React.FC<Props> = ({
           if (data.winnerIndex !== null && items[data.winnerIndex]) {
             setWinner(items[data.winnerIndex]);
           }
+          void updateDoc(doc(db, "game_settings", "wheel"), {
+            isSpinning: false,
+            updatedAt: Date.now(),
+          }).catch((error) => {
+            console.error("Не удалось зафиксировать остановку колеса:", error);
+          });
         }, 5000);
       }
 
       // Если админ сбросил результат в БД
       if (data.winnerIndex === null && !data.isSpinning) {
         setWinner(null);
+      }
+
+      if (!data.isSpinning && typeof data.winnerIndex === "number" && items[data.winnerIndex]) {
+        setRotation(Number(data.targetRotation ?? rotation));
+        setWinner(items[data.winnerIndex]);
       }
     });
 
@@ -103,8 +126,52 @@ export const GameWheel: React.FC<Props> = ({
     await setDoc(doc(db, "game_settings", "wheel"), {
       isSpinning: true,
       targetRotation: final,
-      winnerIndex: selectedIndex
-    });
+      winnerIndex: selectedIndex,
+      previousWinnerIndex: null,
+      previousTargetRotation: rotation,
+      lastSpinSource: "admin",
+      rerollBy: null,
+      wheelCardStack: [],
+      updatedAt: Date.now(),
+    }, { merge: true });
+  };
+
+  const renderActionCards = () => {
+    if (actionCards.length === 0) return null;
+
+    return (
+      <div className="flex flex-wrap justify-center gap-3 max-w-md">
+        {actionCards.map((card) => {
+          const isDisabled = spinning || card.disabled || (card.requiresResult && !winner);
+          return (
+            <button
+              key={card.id}
+              type="button"
+              disabled={isDisabled}
+              onClick={card.onUse}
+              className="group relative flex h-24 w-40 items-center gap-3 rounded-xl border border-yellow-500/30 bg-zinc-950/85 p-2 text-left shadow-[0_12px_30px_rgba(0,0,0,0.45)] transition-all hover:border-yellow-400 hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ fontFamily: "'Comfortaa', sans-serif" }}
+            >
+              <div className="h-20 w-14 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-zinc-800">
+                {card.image ? (
+                  <img src={card.image} alt={card.name} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="h-full w-full bg-purple-700/50" />
+                )}
+              </div>
+              <span className="min-w-0 text-[10px] font-black uppercase leading-snug text-white">
+                {card.name}
+              </span>
+              {(card.count ?? 0) > 1 && (
+                <span className="absolute right-2 top-2 rounded-full bg-yellow-500 px-2 py-0.5 text-[10px] font-black text-black">
+                  x{card.count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    );
   };
 
   const handleConfirmResult = async (game: Item) => {
@@ -236,6 +303,7 @@ export const GameWheel: React.FC<Props> = ({
                 КРУТИТЬ!
               </div>
             )}
+            {!winner && renderActionCards()}
             {!spinning && (
               <button onClick={onClose} className="text-zinc-500 hover:text-white hover:scale-105 active:scale-95 transition-all text-sm uppercase font-bold tracking-widest" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
                 Закрыть
@@ -296,6 +364,7 @@ export const GameWheel: React.FC<Props> = ({
               </div>
             )}
             <div className="flex flex-col w-full gap-3 mt-2">
+              {!canSpin && renderActionCards()}
               {canSpin && (
                 <button onClick={() => handleConfirmResult(winner)} className="w-full bg-yellow-500 text-black py-4 rounded-2xl font-black text-lg hover:bg-white transition-all uppercase" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
                   Принять выбор

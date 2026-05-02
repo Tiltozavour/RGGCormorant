@@ -19,6 +19,15 @@ interface GameBoardProps {
   showWheel?: boolean;
   onWheelResult?: (gameName: string) => void;
   onCloseWheel?: () => void;
+  wheelActionCards?: {
+    id: string;
+    name: string;
+    image?: string;
+    count?: number;
+    disabled?: boolean;
+    requiresResult?: boolean;
+    onUse: () => void;
+  }[];
   round: number;
   forcedMovePlayerId?: string | null;
   cardMove?: {
@@ -81,6 +90,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   showWheel,
   onWheelResult,
   onCloseWheel,
+  wheelActionCards,
   round,
 }) => {
   // Иници                  ализируем локальную позицию сразу координатами из текущей клетки в БД
@@ -482,6 +492,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
     }}
     onClose={onCloseWheel}
     canSpin={isAdminView}
+    actionCards={wheelActionCards}
   />
 )}
       <div className="relative w-full h-full">

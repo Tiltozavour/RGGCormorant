@@ -65,8 +65,9 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     try {
       await action();
     } catch (e) {
-      setIsPending(false);
       console.error(e);
+    } finally {
+      setIsPending(false);
     }
   };
 
@@ -87,15 +88,18 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   const myPlayerData = players.find(p => p.id === currentUser?.uid);
   const firstCardId = myPlayerData?.inventory?.[0];
 
+  const isMyTurn = currentTurnPlayerId === currentUser?.uid;
   const turnLabel =
     gameState.turnOrder.length === 0
       ? "Свободный ход"
-      : currentTurnPlayerId === currentUser?.uid
+      : isMyTurn
         ? "Ход: ваш"
         : `Ход: ${currentTurnPlayer?.login || "ожидание..."}`;
 
   const rollLabel = isDiceRolling
     ? "Бросаем..."
+    : (gameState.phase === "turn" && !isMyTurn && gameState.turnOrder.length > 0)
+    ? "Ход другого игрока"
     : gameState.currentRoll !== null
     ? `Выпало: ${gameState.currentRoll}`
     : (gameState.rollBonus ?? 0) > 0
@@ -120,7 +124,12 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   const handleSaveResults = async () => {
     if (!isAdmin) return;
     try {
-      const playerUpdates = Object.entries(tempScores).map(([playerId, score]) =>
+      const roundResults = Object.fromEntries(
+        players
+          .filter((player) => player.role !== "admin")
+          .map((player) => [player.id, tempScores[player.id] ?? 0])
+      );
+      const playerUpdates = Object.entries(roundResults).map(([playerId, score]) =>
         updateDoc(doc(db, "players", playerId), {
           tiltCoins: increment(score),
           lastTiltoCoins: score,
@@ -128,7 +137,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         })
       );
       await Promise.all(playerUpdates);
-      await updateDoc(doc(db, "gameState", "current"), { currentResults: tempScores });
+      await updateDoc(doc(db, "gameState", "current"), { currentResults: roundResults });
       setIsFillingResults(false);
       onNextPhase();
     } catch (e) {

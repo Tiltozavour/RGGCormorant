@@ -7,6 +7,7 @@ import {
   deleteField,
   doc,
   getDocs,
+  getDoc,
   onSnapshot,
   updateDoc,
   setDoc,
@@ -60,18 +61,74 @@ const shuffle = <T,>(array: T[]): T[] => {
   return result;
 };
 
+type WheelCardStackEntry = {
+  cardId: "inv_017" | "inv_006";
+  playerId: string;
+  previousWinnerIndex: number;
+  resultWinnerIndex: number;
+  timestamp: number;
+};
+
+type WheelSettings = {
+  isSpinning?: boolean;
+  targetRotation?: number;
+  winnerIndex?: number | null;
+  previousWinnerIndex?: number | null;
+  previousTargetRotation?: number | null;
+  wheelCardStack?: WheelCardStackEntry[];
+  lastSpinSource?: string;
+};
+
+const buildWheelSpinPayload = (
+  itemCount: number,
+  currentRotation: number,
+  previousWinnerIndex: number | null,
+  source: "admin" | "participant_reroll" | "inv_017",
+  playerId?: string,
+) => {
+  const selectedIndex = Math.floor(Math.random() * itemCount);
+  const angleStep = 360 / itemCount;
+  const targetSegmentCenter = selectedIndex * angleStep + angleStep / 2;
+  const currentRotationDegrees = currentRotation % 360;
+  const extraDegrees = (270 - currentRotationDegrees - targetSegmentCenter + 1440) % 360;
+  const targetRotation = currentRotation + 1800 + extraDegrees;
+
+  return {
+    isSpinning: true,
+    targetRotation,
+    winnerIndex: selectedIndex,
+    previousWinnerIndex,
+    previousTargetRotation: currentRotation,
+    lastSpinSource: source,
+    rerollBy: playerId ?? null,
+    updatedAt: Date.now(),
+  };
+};
+
 const clearTemporaryStatus = {
   customStatus: null,
   statusDuration: 0,
 };
 
+const addOneCardToInventory = (inventory: string[] | undefined, cardId: string) => [
+  ...(inventory ?? []),
+  cardId,
+];
+
+const removeOneCardFromInventory = (inventory: string[] | undefined, cardId: string) => {
+  const nextInventory = [...(inventory ?? [])];
+  const cardIndex = nextInventory.indexOf(cardId);
+  if (cardIndex >= 0) nextInventory.splice(cardIndex, 1);
+  return nextInventory;
+};
+
 /**
- * Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў, Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В Р Р‹Р В Р РЏР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р СћРІР‚ВР В  Р В РІР‚В Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР’В¦ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР’В¦.
- * @param player1Id ID Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р В РІР‚В Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°.
- * @param player2Id ID Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°.
- * @param allPlayers Р В  Р РЋРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚ВР В  Р В РІР‚В  Р В  Р В РІР‚В Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В¦ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р В РІР‚В  Р В  Р В РІР‚В  Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’Вµ.
- * @param map Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ.
- * @returns true, Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚В Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р РЋР’В, Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’Вµ false.
+ * Проверяет, находится ли игрок в пределах одной клетки (соседняя или та же).
+ * @param player1Id ID первого игрока.
+ * @param player2Id ID второго игрока.
+ * @param allPlayers Список всех активных игроков.
+ * @param map Текущая карта игрового поля.
+ * @returns true, если игроки находятся рядом, иначе false.
  */
 const isPlayerNearby = (
   player1Id: string,
@@ -210,7 +267,7 @@ export function useGameData(
   const isAdmin = playerData?.role === "admin";
   const currentTurnPlayerId = gameState.turnOrder[gameState.currentTurnIndex] ?? null;
   const isTurnPhase = gameState.phase === "turn";
-  const isCurrentPlayersTurn = gameState.turnOrder.length === 0 || currentTurnPlayerId === user?.uid;
+  const isCurrentPlayersTurn = currentTurnPlayerId === user?.uid;
 
   const canRoll =
     !isAdmin &&
@@ -226,9 +283,9 @@ export function useGameData(
     gameState.currentRoll !== null &&
     !gameState.rollConfirmed;
 
-  // Р В  Р вЂ™Р’В­Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р РЋРІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљР’В¦ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В· Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљР’В¦
+  // Текст восстановлен после сбоя кодировки.
   useEffect(() => {
-    // Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р РЋРІР‚СњР В  Р РЋРІР‚Сћ Р В  Р вЂ™Р’В°Р В  Р СћРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚ВР В  Р В РІР‚В¦, Р В Р Р‹Р Р†Р вЂљР Р‹Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В¶Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р В РІР‚В  Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚В
+    // Текст восстановлен после сбоя кодировки.
     if (!isAdmin || !gameState.activeDuels) return;
 
     const finishedDuelIds = Object.keys(gameState.activeDuels).filter(
@@ -237,7 +294,7 @@ export function useGameData(
 
     if (finishedDuelIds.length === 0) return;
 
-    // Р В  Р В РІвЂљВ¬Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В¶Р В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ (Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™, 15 Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В  Р В РІР‚В¦Р В  Р СћРІР‚В), Р В Р Р‹Р Р†Р вЂљР Р‹Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚В Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р РЋРІР‚СљР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В·Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ў
+    // Текст восстановлен после сбоя кодировки.
     const timer = setTimeout(async () => {
       const gsRef = doc(db, "gameState", "current");
       const updates: Record<string, any> = {};
@@ -246,22 +303,23 @@ export function useGameData(
         updates[`activeDuels.${id}`] = deleteField();
       });
 
-      await updateDoc(gsRef, updates).catch(e => console.error("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р РЋРІР‚В Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњ:", e));
+      await updateDoc(gsRef, updates);
     }, 15000);
 
     return () => clearTimeout(timer);
   }, [gameState.activeDuels, isAdmin]);
 
-  // Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р РЋРІР‚СљР В  Р В РІР‚В¦Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљ Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“
+  // Текст восстановлен после сбоя кодировки.
   const applyMomentalCardEffect = useCallback(
     async (
-      player: Player, // Р В  Р вЂ™Р’ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ, Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°
-      momentalCard: GameCard, // Р В  Р РЋРЎв„ўР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°
+      player: Player,
+      momentalCard: GameCard,
       transaction: any, // Firestore transaction
-    ) => {
+      fromCardMove: boolean = false,
+    ): Promise<boolean> => {
       if (!momentalCard || momentalCard.deck !== "momental") {
-        console.error("Р В  Р РЋРЎСџР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ-Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°:", momentalCard);
-        return;
+        console.error("Ошибка действия.");
+        return false;
       }
 
       const playerDocRef = doc(db, "players", player.id);
@@ -269,68 +327,130 @@ export function useGameData(
 
       let actualValue = momentalCard.value;
       let promoCodeUsed = false;
+      let openedSpecialInteraction = false;
+      const getInteractionCards = (type: "gambling" | "bshop") => {
+        const cardsArray = Object.values(allCards).filter((card): card is GameCard => Boolean(card?.id && card.deck && card.rarity));
+        if (cardsArray.length === 0) return [];
+        const result: string[] = [];
 
-      // Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ, Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р РЋРІР‚СњР В  Р РЋРІР‚Сћ Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂњР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р Р†РІР‚С›РІР‚вЂњ
+        for (let i = 0; i < 3; i += 1) {
+          if (type === "bshop") {
+            const pool = cardsArray.filter((card) => card.deck === "inventory" && typeof card.price === 'number');
+            const selected = pickRandom(pool);
+            if (selected) result.push(selected.id);
+          } else {
+            const rarity = pickWeighted(
+              GAMBLING_RARITY_WEIGHTS.filter(({ rarity }) =>
+                cardsArray.some((card) => card.rarity === rarity),
+              ),
+              ({ weight }) => weight,
+            )?.rarity;
+
+            const pool = rarity
+              ? cardsArray.filter((card) => card.rarity === rarity)
+              : cardsArray.filter((card) => card.rarity !== "legendary");
+            const selected = pickWeighted(
+              pool,
+              (card) => (card.deck === "momental" ? GAMBLING_MOMENTAL_WEIGHT : 1),
+            );
+            if (selected) result.push(selected.id);
+          }
+        }
+
+        return result;
+      };
+
+      const openSpecialInteractionIfNeeded = (position: number) => {
+        const finalCell = gameMap.find((cell) => cell.id === position);
+        const cellType = finalCell?.type === "b-shop" ? "bshop" : finalCell?.type;
+        if (cellType !== "gambling" && cellType !== "bshop") return;
+
+        openedSpecialInteraction = true;
+        transaction.update(gameStateRef, {
+          activeInteraction: {
+            playerId: player.id,
+            type: cellType,
+            cards: getInteractionCards(cellType),
+            fromCardMove,
+          },
+        });
+      };
+
+      // Текст восстановлен после сбоя кодировки.
       if (
         (momentalCard.action === "add_coins" && momentalCard.value < 0) ||
         (momentalCard.action === "move_steps" && momentalCard.value < 0) ||
         momentalCard.action === "skip_turn" ||
-        (momentalCard.action === "teleport" && momentalCard.value === 0) // Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњР В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В, Р В Р Р‹Р Р†Р вЂљР Р‹Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚Сћ Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° 0 - Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂњР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р Р†РІР‚С›РІР‚вЂњ
+        (momentalCard.action === "teleport" && momentalCard.value === 0)
       ) {
         if (player.customStatus === "promo_code_active") {
-          actualValue = Math.ceil(momentalCard.value / 2); // Р В  Р В РІвЂљВ¬Р В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В РІР‚в„– Р В  Р В РІР‚В Р В  Р СћРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚СћР В  Р вЂ™Р’Вµ, Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂњР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В Р Р‹Р В Р РЏ Р В  Р В РІР‚В  Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„– Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В Р Р‹Р РЋРІР‚Сљ
+          actualValue = Math.ceil(momentalCard.value / 2);
           promoCodeUsed = true;
-          transaction.update(playerDocRef, clearTemporaryStatus); // Р В  Р В Р вЂ№Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РЎвЂњ Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°
-          notify(`Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»! Р В  Р Р†Р вЂљРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р Р†РІР‚С™Р’В¬ Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎвЂє Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${momentalCard.name}" Р В Р Р‹Р РЋРІР‚СљР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦ Р В  Р СћРІР‚ВР В  Р РЋРІР‚Сћ ${Math.abs(actualValue)} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў.`, 'success', momentalCard.id);
+          transaction.update(playerDocRef, clearTemporaryStatus);
+          notify("Событие игры обновлено.", 'success');
           logEvent({
             id: `promo_code_used_momental_${momentalCard.id}_${Date.now()}`,
             timestamp: Date.now(), type: 'status_effect',
-            message: `${player.login} Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В Р Р‹Р РЋРІР‚СљР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${momentalCard.name}".`,
+            message: "Событие игры.",
             playerId: player.id, cardId: momentalCard.id,
             details: { originalAmount: momentalCard.value, finalAmount: actualValue }
           });
         }
       }
 
-      // Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ў
+      // Текст восстановлен после сбоя кодировки.
       if (momentalCard.action === "add_coins") {
-        transaction.update(playerDocRef, { tiltCoins: increment(actualValue) });
-        if (!promoCodeUsed) {
-          notify(`${player.login} ${actualValue > 0 ? 'Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»' : 'Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’В»'} ${Math.abs(actualValue)} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${momentalCard.name}".`, actualValue > 0 ? 'success' : 'error', momentalCard.id);
-          logEvent({
-            id: `momental_coin_change_${momentalCard.id}_${Date.now()}`,
-            timestamp: Date.now(), type: 'coin_change',
-            message: `${player.login} ${actualValue > 0 ? 'Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»' : 'Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’В»'} ${Math.abs(actualValue)} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${momentalCard.name}".`,
-            playerId: player.id, cardId: momentalCard.id, details: { amount: actualValue, reason: 'momental_card_effect', cardName: momentalCard.name }
-          });
-        }
+        const cardName = momentalCard.id === "mom_001" ? "Налоговая инспекция" : momentalCard.name;
+        const coinText = actualValue > 0 ? "получил" : "потерял";
+        const amount = Math.abs(actualValue);
+        const message = `${player.login} ${coinText} ${amount} монет по карте "${cardName}".`;
+
+        transaction.update(playerDocRef, {
+          tiltCoins: increment(actualValue),
+          lastNotification: {
+            message,
+            timestamp: Date.now(),
+            cardId: momentalCard.id,
+          },
+        });
+        notify(promoCodeUsed ? `${message} Промокодик смягчил эффект.` : message, actualValue > 0 ? 'success' : 'error', momentalCard.id);
+        logEvent({
+          id: `momental_coin_change_${momentalCard.id}_${Date.now()}`,
+          timestamp: Date.now(), type: 'coin_change',
+          message,
+          playerId: player.id, targetPlayerId: undefined, cardId: momentalCard.id, details: { amount: actualValue, reason: 'momental_card_effect', cardName, promoCodeUsed }
+        });
       } else if (momentalCard.action === "move_steps") {
         const currentPos = player.position || 0;
+        const finalPosition = Math.max(0, currentPos + actualValue);
         transaction.update(playerDocRef, {
-          position: Math.max(0, currentPos + actualValue),
+          position: finalPosition,
           prevCell: null,
         });
-        notify(`${player.login} Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${actualValue} Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${momentalCard.name}".`, 'info', momentalCard.id);
+        openSpecialInteractionIfNeeded(finalPosition);
+        notify(`${player.login} переместился на ${actualValue} клеток по карте "${momentalCard.name}".`, 'info', momentalCard.id);
         logEvent({
           id: `momental_move_${momentalCard.id}_${Date.now()}`,
           timestamp: Date.now(), type: 'movement',
-          message: `${player.login} Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${actualValue} Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${momentalCard.name}".`,
-          playerId: player.id, cardId: momentalCard.id, details: { steps: actualValue, reason: 'momental_card_effect', cardName: momentalCard.name }
+          message: `${player.login} переместился на ${actualValue} клеток по моментальной карте "${momentalCard.name}".`,
+          playerId: player.id, targetPlayerId: undefined, cardId: momentalCard.id, details: { steps: actualValue, reason: 'momental_card_effect', cardName: momentalCard.name }
         });
       } else if (momentalCard.action === "teleport") {
         transaction.update(playerDocRef, { position: actualValue, prevCell: null });
-        notify(`${player.login} Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ ${actualValue} Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${momentalCard.name}".`, 'info', momentalCard.id);
+        openSpecialInteractionIfNeeded(actualValue);
+        notify(`${player.login} телепортировался на клетку ${actualValue} по карте "${momentalCard.name}".`, 'info', momentalCard.id);
         logEvent({
           id: `momental_teleport_${momentalCard.id}_${Date.now()}`,
           timestamp: Date.now(), type: 'movement',
-          message: `${player.login} Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ ${actualValue} Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${momentalCard.name}".`,
-          playerId: player.id, cardId: momentalCard.id, details: { targetPosition: actualValue, reason: 'momental_card_effect', cardName: momentalCard.name }
+          message: `${player.login} телепортировался на клетку ${actualValue} по моментальной карте "${momentalCard.name}".`,
+          playerId: player.id, targetPlayerId: undefined, cardId: momentalCard.id, details: { targetPosition: actualValue, reason: 'momental_card_effect', cardName: momentalCard.name }
         });
       }
-      // Р В  Р Р†Р вЂљРЎСљР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В  Р В РІР‚В  Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’Вµ
+      // Добавляем карту в список раскрытых
       transaction.update(gameStateRef, { revealedCards: arrayUnion(momentalCard.id) });
+      return openedSpecialInteraction;
     },
-    [allCards, notify, logEvent] // Р В  Р Р†Р вЂљРІР‚СњР В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚В Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ useCallback
+    [allCards, notify, logEvent]
   );
 
   const getPlayerById = useCallback(
@@ -396,111 +516,234 @@ export function useGameData(
     try {
       await runTransaction(db, async (transaction) => {
         const prizeSnap = await transaction.get(prizeRef);
+        const playerSnap = await transaction.get(playerRef);
         if (!prizeSnap.exists()) return;
 
         const prizeData = prizeSnap.data() as GameCard;
         if (prizeData.isUnique && prizeData.isWon) return;
 
-        transaction.update(playerRef, { inventory: arrayUnion(cardId) });
+        transaction.update(playerRef, {
+          inventory: addOneCardToInventory((playerSnap.data() as Player | undefined)?.inventory, cardId),
+        });
         transaction.update(prizeRef, { isWon: true, winnerId: playerId });
       });
     } catch (e) {
-      console.error("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°:", e);
+      console.error("Ошибка при выдаче легендарной карты:", e);
     }
   };
 
-  const handleUseCard = async (card: GameCard, targetPlayerId?: string) => {
+  const handleRerollWheel = async (source: "participant_reroll" | "inv_017" = "participant_reroll") => {
+    if (!user || !playerData) return;
+    if (!gameState.showWheel) {
+      notify("Колесо сейчас закрыто.", "warning");
+      return;
+    }
+
+    const wheelSettingsRef = doc(db, "game_settings", "wheel");
+    const wheelSettingsSnap = await getDoc(wheelSettingsRef);
+    const wheelSettings = wheelSettingsSnap.data() as WheelSettings | undefined;
+
+    if (wheelSettings?.isSpinning) {
+      notify("Дождитесь остановки колеса.", "info");
+      return;
+    }
+
+    if (typeof wheelSettings?.winnerIndex !== "number") {
+      notify("Сначала нужно запустить колесо и получить результат.", "warning");
+      return;
+    }
+
+    const gamesSnap = await getDocs(collection(db, "wheel"));
+    const activeGames = gamesSnap.docs
+      .filter((gameDoc) => gameDoc.data().active === true)
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    if (activeGames.length === 0) {
+      notify("В коллекции wheel нет активных игр для переброса.", "warning");
+      return;
+    }
+
+    const spinPayload = buildWheelSpinPayload(
+      activeGames.length,
+      Number(wheelSettings?.targetRotation ?? 0),
+      wheelSettings.winnerIndex,
+      source,
+      user.uid,
+    );
+    const wheelCardStack = [
+      ...(wheelSettings?.wheelCardStack ?? []),
+      {
+        cardId: "inv_017" as const,
+        playerId: user.uid,
+        previousWinnerIndex: wheelSettings.winnerIndex,
+        resultWinnerIndex: spinPayload.winnerIndex,
+        timestamp: Date.now(),
+      },
+    ];
+
+    await setDoc(
+      wheelSettingsRef,
+      {
+        ...spinPayload,
+        wheelCardStack,
+      },
+      { merge: true },
+    );
+
+    notify(source === "inv_017" ? "Колесо переброшено картой \"Подкрутка\"." : "Колесо переброшено.", "info", source === "inv_017" ? "inv_017" : undefined);
+  };
+
+  const handleUseCard = async (card: GameCard, targetPlayerId: string | null = null) => {
     if (!user || !playerData) return;
 
     if (!isAdmin) {
       const { phase, currentRoll } = gameState;
 
       if (phase === "next_game") {
-        if (card.action !== "spin_wheel") {
-          alert("Р В  Р вЂ™Р’В­Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р РЋРІР‚СњР В  Р РЋРІР‚Сћ Р В  Р В РІР‚В Р В  Р РЋРІР‚Сћ Р В  Р В РІР‚В Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В Р Р‹Р В Р РЏ Р В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ!");
+        if (card.action !== "spin_wheel" && !(card.action === "fish_protection" && gameState.showWheel)) {
+          notify("В этой фазе можно использовать только карту 'Подкрутка'!", 'warning');
           return;
         }
       } else if (phase === "turn") {
         const isProtection = card.action === "protection";
+        const isFish = card.action === "fish_protection";
+        const isReflect = card.action === "reflect_debuff";
         const isExtraRoll = card.action === "extra_roll";
         const isMovement = card.action === "move_steps";
         const isCommunism = card.action === "communism";
         const isPromoCode = card.action === "promo_code_benefit";
 
-        if (!isProtection && !isCommunism && !isPromoCode) {
+        if (!isProtection && !isFish && !isReflect && !isCommunism && !isPromoCode) {
           if (!isCurrentPlayersTurn) {
-            notify("Р В  Р В Р вЂ№Р В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†РІР‚С™Р’В¬ Р В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚В!", 'warning');
+            notify("Сейчас не ваш ход!", 'warning');
             return;
           }
 
           if (!isMovement && !isExtraRoll && currentRoll !== null) {
-            notify("Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р вЂ™Р’Вµ Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ. Р В  Р РЋРІР‚С”Р В  Р вЂ™Р’В±Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В  Р РЋРІР‚Сћ Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°.", 'warning');
+            notify("Кубик уже брошен. Обычные карты используются ДО броска.", 'warning');
             return;
           }
         }
 
         if (isExtraRoll && currentRoll === null) {
-          notify("Р В  Р В Р вЂ№Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ!", 'warning');
+          notify("Сначала бросьте кубик!", 'warning');
           return;
         }
       } else {
-        notify("Р В  Р В Р вЂ№Р В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“. Р В  Р Р†Р вЂљРЎСљР В  Р РЋРІР‚СћР В  Р вЂ™Р’В¶Р В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“.", 'warning');
-        return;
+        if (card.action !== "fish_protection") {
+          notify("Использование карт в этой фазе запрещено.", 'warning');
+          return;
+        }
       }
     }
 
     if (card.action === "protection" && playerData.hasProtection) {
-      notify("Р В  Р В РІвЂљВ¬ Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњ Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р вЂ™Р’Вµ Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р В Р вЂ№Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р РЋРІР‚СћР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ! Р В  Р РЋРЎС™Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ў Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В  Р В РІР‚В Р В  Р РЋРІР‚вЂќР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–.", 'info');
+      notify("У вас уже активно Силовое поле!", 'info');
+      return;
+    }
+
+    if (card.action === "passive_benefit") {
+      notify("Эта карта работает автоматически и не тратится при нажатии.", 'info');
       return;
     }
 
     const targetRef = targetPlayerId ? doc(db, "players", targetPlayerId) : null;
     const targetPlayer = getPlayerById(targetPlayerId);
+    const displayCardName = card.id === "inv_016" ? "Катжит не виноват!" : card.name;
 
-    // --- Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ inv_018 Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’ВµР В  Р РЋР’В ---
-    // Р В  Р вЂ™Р’В­Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚вЂњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў, Р В Р Р‹Р Р†Р вЂљР Р‹Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р вЂ™Р’В±Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°, Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“.
+    // Текст восстановлен после сбоя кодировки.
+    // Текст восстановлен после сбоя кодировки.
     if (card.id === "inv_016" && card.action === "steal_coins") {
       if (!targetPlayerId || !targetPlayer) {
-        notify("Р В  Р РЋРЎС™Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚Сћ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В¶Р В  Р РЋРІР‚В Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў.", 'warning'); // Changed from alert
+        notify(`Выберите игрока рядом, у которого хотите украсть монеты картой "${displayCardName}".`, 'warning', card.id);
         logEvent({
           id: `card_use_fail_${card.id}_${Date.now()}`,
           timestamp: Date.now(),
           type: 'error',
-          message: `${playerData.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${card.name}".`,
-          cardId: card.id, playerId: user.uid
+          message: `${playerData.login} не выбрал цель для карты "${displayCardName}".`,
+          cardId: card.id,
+          playerId: user.uid
         });
-        return; // Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ
+        return;
       }
 
       const currentPlayerPosition = playerData.position;
       const targetPlayerPosition = targetPlayer.position;
       if (currentPlayerPosition === undefined || targetPlayerPosition === undefined) {
-        notify("Р В  Р РЋРЎС™Р В  Р вЂ™Р’Вµ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В·Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р В РІР‚В .", 'error'); // Changed from alert
+        notify(`Не удалось проверить расстояние до ${targetPlayer.login}. Попробуйте еще раз.`, 'error', card.id);
         logEvent({
           id: `card_use_fail_${card.id}_${Date.now()}`,
           timestamp: Date.now(),
           type: 'error',
-          message: `${playerData.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РЎвЂњР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњ Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${card.name}" Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·-Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚В Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В·Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљ Р В  Р РЋРІР‚ВР В  Р Р†РІР‚С›РІР‚вЂњ.`,
-          cardId: card.id, playerId: user.uid
+          message: `Не удалось проверить расстояние для карты "${displayCardName}".`,
+          cardId: card.id,
+          playerId: user.uid
         });
-        return; // Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ
+        return;
       }
 
       if (!isPlayerNearby(user.uid, targetPlayerId, players, gameMap)) {
-        notify("Р В  Р вЂ™Р’В¦Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р вЂ™Р’В±Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р вЂ™Р’В¶Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњ.", 'warning'); // Changed from alert
+        notify(`Карта "${displayCardName}" работает только рядом с целью. ${targetPlayer.login} слишком далеко.`, 'warning', card.id);
         logEvent({
           id: `card_use_fail_${card.id}_${Date.now()}`,
           timestamp: Date.now(),
           type: 'warning',
-          message: `${playerData.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РЎвЂњР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњ Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${card.name}": Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р РЋР’В.`,
-          cardId: card.id, playerId: user.uid, targetPlayerId: targetPlayerId
+          message: `${playerData.login} не смог использовать "${displayCardName}": цель слишком далеко.`,
+          cardId: card.id,
+          playerId: user.uid,
+          targetPlayerId
         });
-        return; // Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ
+        return;
       }
     }
-    // --- Р В  Р РЋРІвЂћСћР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљ  Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СњР В  Р РЋРІР‚В ---
+    // Текст восстановлен после сбоя кодировки.
 
     const playerRef = doc(db, "players", user.uid);
+
+    if (card.action === "spin_wheel") {
+      if (!gameState.showWheel) {
+        notify("Карту \"Подкрутка\" можно использовать только после первого результата колеса.", "warning", card.id);
+        return;
+      }
+
+      const wheelSettingsSnap = await getDoc(doc(db, "game_settings", "wheel"));
+      const wheelSettings = wheelSettingsSnap.data() as WheelSettings | undefined;
+      if (wheelSettings?.isSpinning) {
+        notify("Дождитесь остановки колеса.", "warning", card.id);
+        return;
+      }
+
+      if (typeof wheelSettings?.winnerIndex !== "number") {
+        notify("Сначала нужно запустить колесо и получить результат.", "warning", card.id);
+        return;
+      }
+    }
+
+    if (card.action === "fish_protection" && gameState.showWheel) {
+      const wheelSettingsSnap = await getDoc(doc(db, "game_settings", "wheel"));
+      const wheelSettings = wheelSettingsSnap.data() as WheelSettings | undefined;
+      const lastCard = wheelSettings?.wheelCardStack?.at(-1);
+
+      if (wheelSettings?.isSpinning) {
+        notify("Дождитесь остановки колеса.", "warning", card.id);
+        return;
+      }
+
+      if (typeof wheelSettings?.winnerIndex !== "number") {
+        notify("Сначала нужно запустить колесо и получить результат.", "warning", card.id);
+        return;
+      }
+
+      if (!lastCard) {
+        notify("No, no, no Mr.Fish отменяет только последнюю активную карту на колесе, а не само колесо.", "warning", card.id);
+        return;
+      }
+
+      if (lastCard.playerId === user.uid) {
+        notify("No, no, no Mr.Fish нельзя использовать на свою же последнюю карту.", "warning", card.id);
+        return;
+      }
+    }
 
     try {
       const targetHasReflect = targetPlayer?.customStatus === "reflect_debuff";
@@ -512,13 +755,13 @@ export function useGameData(
         id: `card_play_${card.id}_${Date.now()}`,
         timestamp: Date.now(),
         type: 'card_play',
-        message: `${playerData.login} Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${card.name}"${targetPlayer ? ` Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${targetPlayer.login}` : ''}.`,
+        message: "Событие игры.",
         cardId: card.id,
         playerId: user.uid,
-        targetPlayerId: targetPlayerId
+        targetPlayerId: targetPlayerId ?? undefined
       });
 
-      await updateDoc(playerRef, { inventory: arrayRemove(card.id) });
+      await updateDoc(playerRef, { inventory: removeOneCardFromInventory(playerData.inventory, card.id) });
       await updateDoc(doc(db, "gameState", "current"), { revealedCards: arrayUnion(card.id) });
 
       switch (card.action) {
@@ -530,12 +773,12 @@ export function useGameData(
             lastBaseRoll: null,
             rollBonus: activeBonus,
           });
-          notify("Р В  Р РЋРЎСџР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњ Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦. Р В  Р Р†Р вЂљР’ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·.", 'info', card.id); // Changed from alert
+          notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `extra_roll_activated_${Date.now()}`,
             timestamp: Date.now(),
             type: 'status_effect',
-            message: `${playerData.login} Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњ Р В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°.`,
+            message: "Событие игры.",
             playerId: user.uid,
             cardId: card.id
           });
@@ -544,10 +787,12 @@ export function useGameData(
 
         case "add_coins":
           await updateDoc(playerRef, { tiltCoins: increment(card.value) });
-          notify(`Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В ${card.value} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў.`, 'success', card.id); // Changed from alert
+          notify("Событие игры обновлено.", 'success');
           logEvent({
             id: `coin_gain_${card.id}_${Date.now()}`,
-            timestamp: Date.now(), type: 'coin_change', message: `${playerData.login} Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В» ${card.value} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў.`,
+            timestamp: Date.now(),
+            type: 'coin_change',
+            message: "\u0421\u043e\u0431\u044b\u0442\u0438\u0435 \u0438\u0433\u0440\u044b.",
             playerId: user.uid, cardId: card.id, details: { amount: card.value, reason: 'card_effect' }
           });
           break;
@@ -560,54 +805,81 @@ export function useGameData(
             }
             if (card.id === "inv_016") {
               const roll = rollD6();
+              const timestamp = Date.now();
+
               if (roll >= 4) {
-                let stealAmount = card.value; // Default steal amount (5 for inv_016)
-                let victimLoss = card.value; // Default victim loss (5 for inv_016)
+                let victimLoss = card.value;
+                let promoCodeMessage = "";
 
                 if (targetHasPromoCode) {
-                  stealAmount = 2; // Thief gets only 2 coins as per inv_019 description
-                  victimLoss = 2; // Victim loses 2 coins
-                  await updateDoc(targetRef, clearTemporaryStatus); // Clear promo code status from victim
-                  notify(`Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»! ${targetPlayer.login} Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’В» Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р РЋРІР‚СњР В  Р РЋРІР‚Сћ 2 Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“, Р В  Р вЂ™Р’В° ${playerData.login} Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В» 2.`, 'success', card.id);
+                  victimLoss = 2;
+                  promoCodeMessage = " Промокодик цели снизил сумму до 2 монет.";
                   logEvent({
-                    id: `promo_code_used_katjit_${card.id}_${Date.now()}`,
-                    timestamp: Date.now(), type: 'status_effect',
-                    message: `${targetPlayer.login} Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В  Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°.`,
-                    playerId: targetPlayer.id, cardId: card.id,
-                    details: { originalSteal: card.value, actualSteal: stealAmount }
+                    id: `promo_code_used_katjit_${card.id}_${timestamp}`,
+                    timestamp,
+                    type: 'status_effect',
+                    message: `${targetPlayer.login} использовал Промокодик против карты "${displayCardName}".`,
+                    playerId: targetPlayer.id,
+                    cardId: card.id,
+                    details: { originalSteal: card.value, actualSteal: victimLoss }
                   });
                 }
 
-                if (stealAmount > 0) {
-                  await runTransaction(db, async (transaction) => {
-                    const targetSnap = await transaction.get(targetRef);
-                    const currentTargetCoins = targetSnap.data()?.tiltCoins || 0;
-                    const actualVictimLoss = Math.min(currentTargetCoins, victimLoss); // Victim can't lose more than they have
-
-                    transaction.update(targetRef, { tiltCoins: increment(-actualVictimLoss) });
-                    transaction.update(playerRef, { tiltCoins: increment(actualVictimLoss) }); // Thief gets what victim actually lost
+                const actualVictimLoss = victimLoss;
+                await runTransaction(db, async (transaction) => {
+                  transaction.update(targetRef, {
+                    tiltCoins: increment(-actualVictimLoss),
+                    lastNotification: {
+                      message: `${playerData.login} украл у вас ${actualVictimLoss} монет картой "${displayCardName}" (бросок ${roll}).${promoCodeMessage}`,
+                      timestamp,
+                      cardId: card.id,
+                    },
+                    ...(targetHasPromoCode ? clearTemporaryStatus : {}),
                   });
-                  notify(`Р В  Р РЋРІвЂћСћР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ: ${roll}. Р В  Р В РІвЂљВ¬Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°. Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В ${stealAmount} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў.`, 'success', card.id);
-                } else {
-                  notify("Р В  Р В РІвЂљВ¬ Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В¶Р В  Р РЋРІР‚В.", 'info');
-                }
+                  transaction.update(playerRef, { tiltCoins: increment(actualVictimLoss) });
+                });
+
+                const resultMessage = actualVictimLoss > 0
+                  ? `Катжит: бросок ${roll}. Успех! Вы украли ${actualVictimLoss} монет у ${targetPlayer.login}.${promoCodeMessage}`
+                  : `Катжит: бросок ${roll}. Успех, но у ${targetPlayer.login} нет монет, украсть нечего.${promoCodeMessage}`;
+                notify(resultMessage, actualVictimLoss > 0 ? 'success' : 'info', card.id);
+                logEvent({
+                  id: `katjit_success_${card.id}_${timestamp}`,
+                  timestamp,
+                  type: 'coin_change',
+                  message: `${playerData.login} успешно использовал "${displayCardName}" против ${targetPlayer.login}: бросок ${roll}, украдено ${actualVictimLoss} монет.`,
+                  playerId: user.uid,
+                  targetPlayerId: targetPlayer.id,
+                  cardId: card.id,
+                  details: { roll, success: true, amount: actualVictimLoss, promoCodeReduced: targetHasPromoCode }
+                });
               } else {
-                await updateDoc(playerRef, { tiltCoins: increment(-card.value) }); // inv_016 value is 5
-                notify(`Р В  Р РЋРІвЂћСћР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ: ${roll}. Р В  Р РЋРЎС™Р В  Р вЂ™Р’ВµР В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°. Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В ${card.value} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў.`, 'error', card.id);
+                await updateDoc(playerRef, { tiltCoins: increment(-card.value) });
+                notify(`Катжит: бросок ${roll}. Провал! Вас заметили, вы теряете ${card.value} монет.`, 'error', card.id);
+                logEvent({
+                  id: `katjit_fail_${card.id}_${timestamp}`,
+                  timestamp,
+                  type: 'coin_change',
+                  message: `${playerData.login} провалил "${displayCardName}" против ${targetPlayer.login}: бросок ${roll}, штраф ${card.value} монет.`,
+                  playerId: user.uid,
+                  targetPlayerId: targetPlayer.id,
+                  cardId: card.id,
+                  details: { roll, success: false, penalty: card.value }
+                });
               }
             } else {
               await runTransaction(db, async (transaction) => {
                 const targetSnap = await transaction.get(targetRef);
                 const currentTargetCoins = targetSnap.data()?.tiltCoins || 0;
-                const stealAmount = Math.min(currentTargetCoins, card.value);
+                const stealAmount = Math.min(Math.max(0, currentTargetCoins), card.value);
                 transaction.update(targetRef, { tiltCoins: increment(-stealAmount) });
                 transaction.update(playerRef, { tiltCoins: increment(stealAmount) });
               });
-              notify(`Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В ${card.value} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В Р Р‹Р РЋРІР‚Сљ ${targetPlayer.login}.`, 'success', card.id); // Changed from alert
+              notify("Событие игры обновлено.", 'success');
               logEvent({
                 id: `steal_other_card_${card.id}_${Date.now()}`,
                 timestamp: Date.now(), type: 'coin_change',
-                message: `${playerData.login} Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» ${card.value} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В Р Р‹Р РЋРІР‚Сљ ${targetPlayer.login} Р В Р Р‹Р В РЎвЂњ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР’В°Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РІР‚в„– Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${card.name}".`,
+                message: "Событие игры.",
                 playerId: user.uid, targetPlayerId: targetPlayer.id, cardId: card.id,
                 details: { amount: card.value, cardName: card.name }
               });
@@ -621,83 +893,84 @@ export function useGameData(
           const isHostile = targetId !== user.uid;
 
           if (isForward && gameState.phase === "turn") {
-            // Р В  Р Р†Р вЂљРЎвЂќР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "Р В  Р РЋРЎвЂєР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р РЋРІР‚СњР В  Р РЋРІР‚Сћ Р В  Р В РІР‚В Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚В!" (inv_007) Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°
             if (card.id === "inv_007" && isHostile) {
               if (targetHasFish) {
                 await updateDoc(targetRef!, clearTemporaryStatus);
-                notify(`${targetPlayer?.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ!`, 'warning', allCards[targetPlayer.inventory?.find(id => allCards[id]?.action === 'fish_protection') || '']?.id);
+                notify(`${targetPlayer?.login} защитился картой "No, no, no Mr.Fish".`, 'warning', card.id);
                 logEvent({
                   id: `move_blocked_${card.id}_${Date.now()}`,
-                  timestamp: Date.now(), type: 'status_effect',
-                  message: `${targetPlayer?.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў ${playerData.login} Р В Р Р‹Р В РЎвЂњ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР’В°Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РІР‚в„– Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚В.`,
-                  playerId: targetPlayer?.id, targetPlayerId: user.uid, cardId: card.id,
+                  timestamp: Date.now(),
+                  type: 'status_effect',
+                  message: `${targetPlayer?.login} заблокировал карту "${card.name}".`,
+                  playerId: targetPlayer?.id,
+                  targetPlayerId: user.uid,
+                  cardId: card.id,
                   details: { protectionCard: 'inv_006' }
                 });
                 break;
               }
-              
+
+              const timestamp = Date.now();
               await updateDoc(doc(db, "gameState", "current"), {
-                forcedMovePlayerId: targetId,
-                currentRoll: card.value,
-                currentRollPlayerId: user.uid,
-                rollConfirmed: false
+                cardMove: {
+                  id: `${card.id}_${timestamp}`,
+                  controllerId: user.uid,
+                  controllerName: playerData.login,
+                  targetId,
+                  steps: card.value,
+                  cardId: card.id,
+                  cardName: card.name,
+                },
+                forcedMovePlayerId: null,
+                currentRoll: null,
+                currentRollPlayerId: null,
+                rollConfirmed: false,
               });
-              notify(`Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° ${targetPlayer?.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${card.value} Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњ(Р В  Р вЂ™Р’В°).`, 'info', card.id);
+              notify(`Вы управляете фишкой игрока ${targetPlayer?.login} на ${card.value} клетки.`, 'info', card.id);
               logEvent({
-                id: `forced_move_start_${card.id}_${Date.now()}`,
-                timestamp: Date.now(), type: 'movement',
-                message: `${playerData.login} Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў ${targetPlayer?.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${card.value} Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р В РІР‚В .`,
-                playerId: user.uid, targetPlayerId: targetId, cardId: card.id,
-                details: { steps: card.value, reason: 'card_effect' }
+                id: `card_move_start_${card.id}_${timestamp}`,
+                timestamp,
+                type: 'movement',
+                message: `${playerData.login} управляет фишкой ${targetPlayer?.login} по карте "${card.name}".`,
+                playerId: user.uid,
+                targetPlayerId: targetId,
+                cardId: card.id,
+                details: { steps: card.value }
               });
               break;
             }
 
-            const isMyRollActive = 
-              gameState.currentRoll !== null && gameState.currentRollPlayerId === user.uid;
-
-            // Р В  Р Р†Р вЂљРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚В Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В¶Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В  Р РЋРІР‚Сћ switch-case
-            // Р В  Р Р†Р вЂљРЎС›Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋР’ВР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В РІР‚в„–Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°, Р В  Р вЂ™Р’В·Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ў, Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р вЂ™Р’В±Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚Сћ.
-
-            if (!isMyRollActive) {
-              notify(`Р В  Р РЋРІвЂћСћ Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В Р Р‹Р РЋРІР‚Сљ Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ Р В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ ${card.value} Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р В РІР‚В .`, 'info', card.id); // Changed from alert
-              logEvent({
-                id: `roll_bonus_${card.id}_${Date.now()}`,
-                timestamp: Date.now(), type: 'status_effect',
-                message: `${playerData.login} Р В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В» ${card.value} Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р В РІР‚В  Р В  Р РЋРІР‚Сњ Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В Р Р‹Р РЋРІР‚Сљ Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ.`,
-                playerId: user.uid, cardId: card.id,
-                details: { amount: card.value, effect: 'roll_bonus' }
-              });
-              await updateDoc(doc(db, "gameState", "current"), {
-                rollBonus: increment(card.value),
-              });
-            } else {
-              notify(`Р В  Р РЋРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР’В°Р В  Р РЋРІР‚ВР В  Р Р†РІР‚С›РІР‚вЂњ Р В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚В Р В Р Р‹Р РЋРІР‚СљР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦ Р В  Р СћРІР‚ВР В  Р РЋРІР‚Сћ ${(gameState.currentRoll || 0) + card.value}.`, 'info', card.id); // Changed from alert
-              logEvent({
-                id: `current_roll_increased_${card.id}_${Date.now()}`,
-                timestamp: Date.now(), type: 'movement',
-                message: `${playerData.login} Р В Р Р‹Р РЋРІР‚СљР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР’В°Р В  Р РЋРІР‚ВР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${card.value} Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р В РІР‚В .`,
-                playerId: user.uid, cardId: card.id,
-                details: { amount: card.value, effect: 'current_roll_increase' }
-              });
+            const isMyRollActive = gameState.currentRoll !== null && gameState.currentRollPlayerId === user.uid;
+            if (isMyRollActive) {
               await updateDoc(doc(db, "gameState", "current"), {
                 currentRoll: increment(card.value),
                 currentRollPlayerId: targetId,
                 rollConfirmed: false,
               });
+              notify(`Ваш текущий ход увеличен на ${card.value} (итого: ${(gameState.currentRoll || 0) + card.value}).`, 'info', card.id);
+            } else {
+              await updateDoc(doc(db, "gameState", "current"), {
+                rollBonus: increment(card.value),
+              });
+              notify(`Следующий бросок получит бонус +${card.value}.`, 'info', card.id);
             }
           } else {
-            notify(targetPlayerId ? `${targetPlayer?.login} Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${card.value} Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р В РІР‚В .` : `Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${card.value} Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р В РІР‚В .`, 'info', card.id); // Changed from alert
-            logEvent({
-              id: `player_moved_${card.id}_${Date.now()}`,
-              timestamp: Date.now(), type: 'movement', message: `${targetPlayerId ? targetPlayer?.login : playerData.login} Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${card.value} Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р В РІР‚В .`, playerId: targetPlayerId || user.uid, cardId: card.id, details: { steps: card.value, reason: 'card_effect' } // Log after protection checks
-            });
-            const subjectRef = targetRef || playerRef; // Use subjectRef after protection checks
-            const currentPos =
-              (targetPlayerId ? getPlayerById(targetPlayerId) : playerData)?.position || 0;
+            const subjectRef = targetRef || playerRef;
+            const subjectPlayer = targetPlayerId ? getPlayerById(targetPlayerId) : playerData;
+            const currentPos = subjectPlayer?.position || 0;
             await updateDoc(subjectRef, {
               position: Math.max(0, currentPos + card.value),
               prevCell: null,
+            });
+            notify(`${subjectPlayer?.login || playerData.login} переместился на ${card.value} клеток по карте "${card.name}".`, 'info', card.id);
+            logEvent({
+              id: `player_moved_${card.id}_${Date.now()}`,
+              timestamp: Date.now(),
+              type: 'movement',
+              message: `${subjectPlayer?.login || playerData.login} переместился на ${card.value} клеток по карте "${card.name}".`,
+              playerId: targetPlayerId || user.uid,
+              cardId: card.id,
+              details: { steps: card.value, reason: 'card_effect' }
             });
           }
           break;
@@ -705,12 +978,12 @@ export function useGameData(
 
         case "teleport":
           await updateDoc(playerRef, { position: card.value, prevCell: null });
-          notify(`Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ ${card.value}.`, 'info', card.id); // Changed from alert
+          notify(`Вы телепортировались на клетку ${card.value}.`, 'info', card.id);
           logEvent({
             id: `teleport_${card.id}_${Date.now()}`,
             timestamp: Date.now(),
             type: 'movement',
-            message: `${playerData.login} Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ ${card.value}.`,
+            message: `${playerData.login} телепортировался на клетку ${card.value}.`,
             playerId: user.uid,
             cardId: card.id,
             details: { targetPosition: card.value, reason: 'card_effect' }
@@ -719,137 +992,156 @@ export function useGameData(
 
         case "teleport_to_type": {
           const currentPos = playerData.position ?? 0;
-          const reachableBShops: number[] = []; // Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р РЋРІР‚В B-Shop, Р В  Р СћРІР‚ВР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљР’В¦ Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚В
-          const visited = new Set<number>();
-          const queue = [...(gameMap.find((c) => c.id === currentPos)?.next || [])]; // Р В  Р РЋРЎС™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚Сњ Р В Р Р‹Р В РЎвЂњ Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР’В¦ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ
+          const bshops = gameMap.filter((cell) => cell.type === "b-shop").map((cell) => cell.id).sort((a, b) => a - b);
+          const targetPosition = bshops.find((id) => id > currentPos) ?? bshops[0];
 
-          while (queue.length > 0) {
-            const currId = queue.shift()!;
-            if (visited.has(currId)) continue;
-            visited.add(currId);
-
-            const cell = gameMap.find((c) => c.id === currId);
-            if (!cell) continue; // Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В, Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°
-
-            if (cell.type === "b-shop" && currId !== currentPos) reachableBShops.push(currId);
-            queue.push(...cell.next);
+          if (targetPosition === undefined) {
+            notify("На карте не найден B-Shop.", 'warning', card.id);
+            break;
           }
 
-          if (reachableBShops.length > 0) {
-            const targetId = pickRandom(reachableBShops);
-            if (targetId === null) break;
-
-            await runTransaction(db, async (transaction) => {
-              transaction.update(playerRef, { position: targetId, prevCell: null });
-              transaction.update(doc(db, "gameState", "current"), {
-                activeInteraction: {
-                  playerId: user.uid,
-                  type: "bshop",
-                  cards: getRandomInteractionCards("bshop"),
-                },
-              });
-            });
-            notify(`Р В  Р РЋРІвЂћСћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В¶Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ ${targetId}.`, 'info', card.id);
-            logEvent({
-              id: `teleport_to_type_${card.id}_${Date.now()}`,
-              timestamp: Date.now(), type: 'movement',
-              message: `${playerData.login} Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В¶Р В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р Р†РІР‚С›РІР‚вЂњ B-Shop (${targetId}).`,
-              playerId: user.uid, cardId: card.id,
-              details: { targetPosition: targetId, reason: 'card_effect' }
-            });
-          } else {
-            notify("Р В  Р Р†Р вЂљРІвЂћСћР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р РЋРІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р В РІР‚В¦Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ B-Shop.", 'warning', card.id);
-            // Р В  Р Р†Р вЂљРЎС›Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В B-Shop Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦, Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ. Р В  Р Р†Р вЂљРІвЂћСћР В  Р РЋРІР‚СћР В  Р вЂ™Р’В·Р В  Р В РІР‚В Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В.
-            await updateDoc(playerRef, { inventory: arrayUnion(card.id) });
-            await updateDoc(doc(db, "gameState", "current"), { revealedCards: arrayRemove(card.id) });
-          }
-          // Р В  Р Р†Р вЂљРЎС›Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ, Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р вЂ™Р’В±Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В· Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏ Р В  Р В РІР‚В  Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ handleUseCard.
-          // Р В  Р вЂ™Р’В­Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚Сћ Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В±Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’Вµ Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В  Р РЋРІР‚В, Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ "teleport_to_type" Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚Сћ Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ.
-          // Р В  Р Р†Р вЂљРІвЂћСћ Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р вЂ™Р’Вµ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°. Р В  Р Р†Р вЂљРЎС›Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ B-Shop, Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В Р В  Р В РІР‚В¦Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р В РІР‚В¦Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ°.
-          // Р В  Р вЂ™Р’В­Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚Сћ Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РЎвЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’Вµ: await updateDoc(playerRef, { inventory: arrayUnion(card.id) });
+          await updateDoc(playerRef, { position: targetPosition, prevCell: null });
+          notify(`Вы телепортировались в B-Shop на клетку ${targetPosition}.`, 'info', card.id);
+          logEvent({
+            id: `teleport_to_bshop_${card.id}_${Date.now()}`,
+            timestamp: Date.now(),
+            type: 'movement',
+            message: `${playerData.login} телепортировался в B-Shop на клетку ${targetPosition}.`,
+            playerId: user.uid,
+            cardId: card.id,
+            details: { targetPosition, reason: 'card_effect' }
+          });
           break;
         }
 
         case "spin_wheel":
-          await updateDoc(doc(db, "gameState", "current"), { showWheel: true });
+          if (gameState.showWheel) {
+            await handleRerollWheel("inv_017");
+          } else {
+            await updateDoc(doc(db, "gameState", "current"), { showWheel: true });
+            notify("Колесо открыто. Дождитесь результата, чтобы использовать переброс.", "info", card.id);
+          }
           break;
 
         case "protection":
           await updateDoc(playerRef, { hasProtection: true });
+          notify("Силовое поле активно.", 'info', card.id);
           break;
         
         case "fish_protection":
           if (gameState.showWheel) {
-            await updateDoc(doc(db, "gameState", "current"), { showWheel: false });
-            notify("Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В°!", 'info', card.id);
+            const wheelSettingsRef = doc(db, "game_settings", "wheel");
+            const wheelSettingsSnap = await getDoc(wheelSettingsRef);
+            const wheelSettings = wheelSettingsSnap.data() as WheelSettings | undefined;
+            const wheelCardStack = wheelSettings?.wheelCardStack ?? [];
+            const lastCard = wheelCardStack.at(-1);
+
+            if (!lastCard || lastCard.playerId === user.uid) {
+              notify("No, no, no Mr.Fish отменяет только последнюю чужую активную карту на колесе.", 'warning', card.id);
+              break;
+            }
+
+            const fishEntry: WheelCardStackEntry = {
+              cardId: "inv_006",
+              playerId: user.uid,
+              previousWinnerIndex: Number(wheelSettings?.winnerIndex ?? lastCard.resultWinnerIndex),
+              resultWinnerIndex: lastCard.previousWinnerIndex,
+              timestamp: Date.now(),
+            };
+
+            await setDoc(
+              wheelSettingsRef,
+              {
+                isSpinning: false,
+                winnerIndex: fishEntry.resultWinnerIndex,
+                lastSpinSource: "inv_006",
+                wheelCardStack: [...wheelCardStack, fishEntry],
+                updatedAt: Date.now(),
+              },
+              { merge: true },
+            );
+            notify("Вы отменили последнюю активную карту на колесе картой No, no, no Mr.Fish.", 'info', card.id);
           } else {
             await updateDoc(playerRef, {
               customStatus: "fish_shield",
               statusDuration: 1,
             });
-            notify("No no no mr. Fish Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦. Р В  Р В Р вЂ№Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р вЂ™Р’В±Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°.", 'info', card.id);
+            notify("Защита No, no, no Mr.Fish активна.", 'info', card.id);
           }
           break;
 
-        case "prize": // Р В  Р Р†Р вЂљРЎвЂќР В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂњР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“
-          notify(`Р В  Р В Р вЂ№Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™-Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·: ${card.name}. Р В  Р В Р вЂ№Р В  Р В РІР‚В Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В Р Р‹Р В РЎвЂњ Р В  Р вЂ™Р’В°Р В  Р СћРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’В.`, 'success', card.id);
+        case "prize":
+          notify("Легендарная карта активирована.", 'success', card.id);
           break;
 
         case "judge_coins":
           if (targetPlayerId && targetRef) {
             const isHostile = targetPlayerId !== user.uid;
-            
-            // 1. Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ (Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р РЋРІР‚СњР В  Р РЋРІР‚Сћ Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В Р вЂ Р В РІР‚С™Р Р†Р вЂљРЎСљ Р В  Р СћРІР‚ВР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ)
             if (isHostile && targetHasFish) {
               await updateDoc(targetRef, clearTemporaryStatus);
-              notify(`${targetPlayer?.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ў Р В Р Р‹Р В РЎвЂњР В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В Р Р‹Р В Р вЂ°Р В  Р РЋРІР‚В Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ!`, 'warning', 'inv_006');
+              notify(`${targetPlayer?.login} защитился картой "No, no, no Mr.Fish".`, 'warning', card.id);
               logEvent({
                 id: `judge_blocked_${card.id}_${Date.now()}`,
                 timestamp: Date.now(),
                 type: 'status_effect',
-                message: `${targetPlayer?.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» "Р В  Р В Р вЂ№Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РІР‚в„– Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†РІР‚С™Р’В¬" Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў ${playerData.login} Р В Р Р‹Р В РЎвЂњ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР’В°Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РІР‚в„– Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚В.`,
-                playerId: targetPlayerId, targetPlayerId: user.uid, cardId: card.id
+                message: `${targetPlayer?.login} заблокировал карту "Судья душ".`,
+                playerId: targetPlayerId,
+                targetPlayerId: user.uid,
+                cardId: card.id
               });
               break;
             }
 
-            // 2. Р В  Р Р†Р вЂљРЎвЂќР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В¶Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В° Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В
-            const targetDoc = (isHostile && targetHasReflect) ? playerRef : (targetRef || playerRef);
-            const targetLabel = targetHasReflect ? "Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“" : targetPlayer?.login || "Р В  Р вЂ™Р’ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ";
+            const targetDoc = (isHostile && targetHasReflect) ? playerRef : targetRef;
+            const affectedPlayerId = (isHostile && targetHasReflect) ? user.uid : targetPlayerId;
+            const affectedPlayerName = (isHostile && targetHasReflect) ? playerData.login : (targetPlayer?.login || "игрок");
+            const originalTargetName = targetPlayer?.login || "игрок";
             
             if (isHostile && targetHasReflect) {
               await updateDoc(targetRef, clearTemporaryStatus);
-              notify(`${targetPlayer?.login} Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ў Р В Р Р‹Р В РЎвЂњР В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В Р Р‹Р В Р вЂ°Р В  Р РЋРІР‚В!`, 'warning', 'inv_012');
+              notify(`${originalTargetName} отразил карту "Судья душ". Эффект вернулся к вам.`, 'warning', card.id);
             }
 
-            // 3. Р В  Р Р†Р вЂљР’ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ Р В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚В Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°
             const roll = rollD6();
-            // Р В  Р Р†Р вЂљРЎС›Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В 4+ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В value (2), Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В 1-3 Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В value (2)
             const delta = roll >= 4 ? (card.value || 2) : -(card.value || 2);
+            const amount = Math.abs(delta);
+            const resultText = delta >= 0 ? `получает ${amount} монет` : `теряет ${amount} монет`;
+            const resultMsg = `Судья душ: бросок ${roll}. ${affectedPlayerName} ${resultText}.`;
             
             await updateDoc(targetDoc, { tiltCoins: increment(delta) });
+            if (affectedPlayerId !== user.uid) {
+              await updateDoc(doc(db, "gameState", "current"), {
+                [`notifications.${affectedPlayerId}`]: {
+                  message: `${playerData.login} использовал карту "Судья душ" против вас: бросок ${roll}, вы ${delta >= 0 ? `получаете ${amount} монет` : `теряете ${amount} монет`}.`,
+                  type: delta >= 0 ? 'success' : 'warning',
+                  cardId: card.id,
+                  timestamp: Date.now(),
+                }
+              });
+            }
 
-            // 4. Р В  Р В РІвЂљВ¬Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚В Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ
-            const resultMsg = `${targetLabel} ${delta >= 0 ? "Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў" : "Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў"} ${Math.abs(delta)} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў. Р В  Р РЋРІвЂћСћР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ: ${roll}.`;
             notify(resultMsg, delta >= 0 ? 'success' : 'warning', card.id);
             logEvent({
               id: `judge_coins_result_${card.id}_${Date.now()}`,
               timestamp: Date.now(),
               type: 'coin_change',
-              message: `${playerData.login} Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» "Р В  Р В Р вЂ№Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РІР‚в„– Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†РІР‚С™Р’В¬". ${resultMsg}`,
+              message: `${playerData.login} использовал "Судья душ": бросок ${roll}, ${affectedPlayerName} ${resultText}.`,
               playerId: user.uid,
-              targetPlayerId: targetHasReflect ? user.uid : targetPlayerId,
+              targetPlayerId: affectedPlayerId,
               cardId: card.id,
-              details: { roll, delta, target: targetLabel }
+              details: { roll, delta, target: affectedPlayerName, reflected: isHostile && targetHasReflect }
             });
           } else {
-            notify("Р В  Р РЋРЎС™Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚Сћ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°.", "warning");
+            notify("Выберите игрока для карты \"Судья душ\".", 'warning', card.id);
           }
           break;
-
         case "deal_with_mage": {
           const roll = rollD6();
+          const timestamp = Date.now();
+          const mageCardName = "Сделка с магом";
+
           if (roll === 1) {
+            const message = `Сделка с магом: бросок ${roll}. Монет нет, маг отправляет вас на gambling.`;
             await updateDoc(doc(db, "gameState", "current"), {
               activeInteraction: {
                 playerId: user.uid,
@@ -857,10 +1149,25 @@ export function useGameData(
                 cards: getRandomInteractionCards("gambling"),
               },
             });
-            alert(`Р В  Р РЋРІвЂћСћР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ: ${roll}. Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚В Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В Р Р‹Р РЋРІР‚Сљ Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р РЏР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ gambling-Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ.`);
-            notify(`Р В  Р РЋРІвЂћСћР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ: ${roll}. Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚В Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В Р Р‹Р РЋРІР‚Сљ Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р РЏР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ gambling-Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ.`, 'warning', card.id);
+            await updateDoc(playerRef, {
+              lastNotification: { message, timestamp, cardId: card.id },
+            });
+            notify(message, 'warning', card.id);
+            logEvent({
+              id: `mage_deal_${card.id}_${timestamp}`,
+              timestamp,
+              type: 'card_play',
+              message: `${playerData.login} использовал "${mageCardName}": бросок ${roll}, открыт gambling без монет.`,
+              playerId: user.uid,
+              cardId: card.id,
+              details: { roll, coins: 0, gambling: true }
+            });
           } else if (roll <= 4) {
-            await updateDoc(playerRef, { tiltCoins: increment(card.value) });
+            const message = `Сделка с магом: бросок ${roll}. Вы получаете ${card.value} монет и отправляетесь на gambling.`;
+            await updateDoc(playerRef, {
+              tiltCoins: increment(card.value),
+              lastNotification: { message, timestamp, cardId: card.id },
+            });
             await updateDoc(doc(db, "gameState", "current"), {
               activeInteraction: {
                 playerId: user.uid,
@@ -868,19 +1175,40 @@ export function useGameData(
                 cards: getRandomInteractionCards("gambling"),
               },
             });
-            notify(`Р В  Р РЋРІвЂћСћР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ: ${roll}. Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В ${card.value} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚В Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р РЏР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ gambling-Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ.`, 'info', card.id);
+            notify(message, 'info', card.id);
+            logEvent({
+              id: `mage_deal_${card.id}_${timestamp}`,
+              timestamp,
+              type: 'coin_change',
+              message: `${playerData.login} использовал "${mageCardName}": бросок ${roll}, +${card.value} монет и открыт gambling.`,
+              playerId: user.uid,
+              cardId: card.id,
+              details: { roll, coins: card.value, gambling: true }
+            });
           } else {
-            await updateDoc(playerRef, { tiltCoins: increment(card.value) });
-            notify(`Р В  Р РЋРІвЂћСћР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ: ${roll}. Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В ${card.value} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў.`, 'success', card.id);
+            const message = `Сделка с магом: бросок ${roll}. Вы получаете ${card.value} монет. Gambling не открывается.`;
+            await updateDoc(playerRef, {
+              tiltCoins: increment(card.value),
+              lastNotification: { message, timestamp, cardId: card.id },
+            });
+            notify(message, 'success', card.id);
+            logEvent({
+              id: `mage_deal_${card.id}_${timestamp}`,
+              timestamp,
+              type: 'coin_change',
+              message: `${playerData.login} использовал "${mageCardName}": бросок ${roll}, +${card.value} монет без gambling.`,
+              playerId: user.uid,
+              cardId: card.id,
+              details: { roll, coins: card.value, gambling: false }
+            });
           }
           break;
         }
-
         case "discard_card":
           if (targetRef && targetPlayerId) {
             if (targetHasFish) {
               await updateDoc(targetRef, clearTemporaryStatus); // Clear fish shield
-              notify(`${targetPlayer?.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ!`, 'warning', 'inv_006');
+              notify("Событие игры обновлено.", 'warning');
               break;
             }
 
@@ -888,7 +1216,7 @@ export function useGameData(
             const victim = getPlayerById(victimId);
 
             if (!victim || !victim.inventory || victim.inventory.length === 0) {
-              notify("Р В  Р В РІвЂљВ¬ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В°.", 'info');
+              notify("Событие игры обновлено.", 'info');
               break;
             }
 
@@ -896,18 +1224,18 @@ export function useGameData(
               await updateDoc(targetRef, clearTemporaryStatus);
             }
 
-            // Р В  Р Р†Р вЂљРІвЂћСћР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚Сћ Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ, Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В  Р РЋР’В Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“
+            // Текст восстановлен после сбоя кодировки.
             await updateDoc(doc(db, "gameState", "current"), {
               activeInteraction: {
                 playerId: user.uid,
                 type: "discard_selection",
                 targetPlayerId: victimId,
-                // Р В  Р РЋРЎСџР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚В Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р РЋР’В Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ
+                // Текст восстановлен после сбоя кодировки.
                 cards: shuffle(victim.inventory),
                 actingCardId: card.id,
               }
             });
-            if (targetHasReflect) alert("Р В  Р вЂ™Р’В­Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В¶Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦! Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В· Р В Р Р‹Р В РЎвЂњР В  Р В РІР‚В Р В  Р РЋРІР‚СћР В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В°.");
+            if (targetHasReflect) alert("Событие игры обновлено.");
           }
           break;
 
@@ -915,7 +1243,7 @@ export function useGameData(
           if (targetRef && targetPlayerId) {
             if (targetHasFish) {
               await updateDoc(targetRef, clearTemporaryStatus);
-              alert(`${targetPlayer?.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В¶Р В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ!`);
+              alert("Событие игры обновлено.");
               break;
             }
 
@@ -924,7 +1252,7 @@ export function useGameData(
             const recipientId = targetHasReflect ? targetPlayerId : user.uid;
 
             if (!victim || !victim.inventory || victim.inventory.length === 0) {
-              alert("Р В  Р В РІвЂљВ¬ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В¶Р В  Р РЋРІР‚В.");
+              alert("Событие игры обновлено.");
               break;
             }
 
@@ -932,19 +1260,19 @@ export function useGameData(
               await updateDoc(targetRef, clearTemporaryStatus);
             }
 
-            // Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В  Р РЋР’В Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ (Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚ВР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ discard_card)
+            // Текст восстановлен после сбоя кодировки.
             await updateDoc(doc(db, "gameState", "current"), {
               activeInteraction: {
                 playerId: user.uid,
                 type: "discard_selection",
                 targetPlayerId: victimId,
                 recipientId: recipientId,
-                // Р В  Р РЋРЎСџР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚В Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р РЋР’В Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ
+                // Текст восстановлен после сбоя кодировки.
                 cards: shuffle(victim.inventory),
                 actingCardId: card.id,
               }
             });
-            if (targetHasReflect) notify("Р В  Р вЂ™Р’В­Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В¶Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦! Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В Р Р‹Р РЋРІР‚Сљ Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В±Р В Р Р‹Р В Р РЏ (Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ).", 'warning');
+            notify("Событие игры обновлено.", 'warning');
           }
           break;
 
@@ -953,25 +1281,25 @@ export function useGameData(
             customStatus: "reflect_debuff",
             statusDuration: 1,
           });
-          notify("Р В  Р В Р вЂ№Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р РЋРІР‚ВР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂє Р В  Р вЂ™Р’В±Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В¶Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦.", 'info', card.id);
+          notify("Событие игры обновлено.", 'info');
           break;
 
         case "move_target_for_coins": {
           if (!targetRef || !targetPlayerId) {
-            notify("Р В  Р РЋРЎС™Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚Сћ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ.", 'warning');
+            notify("Событие игры обновлено.", 'warning');
             break;
           }
 
             if (targetHasFish) {
               await updateDoc(targetRef, clearTemporaryStatus);
-              notify(`${targetPlayer?.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ!`, 'warning', 'inv_006');
+              notify("Событие игры обновлено.", 'warning');
               break;
             }
             const steps = Math.min(playerData.tiltCoins ?? 0, 6);
             if (steps <= 0) {
               // This alert will be handled by AppClean.tsx
-              // alert("Р В  Р В РІвЂљВ¬ Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“.");
-              await updateDoc(playerRef, { inventory: arrayUnion(card.id) }); // Return card if no coins
+              // Текст восстановлен после сбоя кодировки.
+              await updateDoc(playerRef, { inventory: playerData.inventory ?? [card.id] }); // Return card if no coins
               await updateDoc(doc(db, "gameState", "current"), { revealedCards: arrayRemove(card.id) });
               break;
             }
@@ -996,7 +1324,7 @@ export function useGameData(
             logEvent({
               id: `move_for_coins_start_${card.id}_${Date.now()}`,
               timestamp: Date.now(), type: 'card_play',
-              message: `${playerData.login} Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў "Р В  Р РЋРІвЂћСћР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В Р Р‹Р Р†Р вЂљ Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚в„–" Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${targetPlayer?.login}.`,
+              message: "Событие игры.",
               playerId: user.uid, targetPlayerId: targetPlayer?.id, cardId: card.id,
               details: { reflected: targetHasReflect }
             });
@@ -1005,11 +1333,11 @@ export function useGameData(
 
         case "discard_next_drawn":
           await updateDoc(playerRef, { discardNextDrawn: true });
-          notify("Р В  Р В Р вЂ№Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р вЂ™Р’В±Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°.", 'info', card.id); // Changed from alert
+          notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `discard_next_drawn_${card.id}_${Date.now()}`,
             timestamp: Date.now(), type: 'status_effect',
-            message: `${playerData.login} Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» "Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ў-Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В Р Р‹Р Р†РІР‚С™Р’В¬". Р В  Р В Р вЂ№Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р вЂ™Р’В±Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°.`,
+            message: "Событие игры.",
             playerId: user.uid, cardId: card.id,
             details: { status: 'discardNextDrawn' }
           });
@@ -1017,11 +1345,11 @@ export function useGameData(
 
         case "duel": {
           if (!targetRef || !targetPlayerId || !targetPlayer) {
-            notify("Р В  Р РЋРЎС™Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚Сћ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В.", 'warning'); // Changed from alert
+            notify("Событие игры обновлено.", 'warning');
             logEvent({
               id: `duel_fail_${card.id}_${Date.now()}`,
               timestamp: Date.now(), type: 'error',
-              message: `${playerData.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В.`,
+              message: "Событие игры.",
               cardId: card.id, playerId: user.uid
             });
             break;
@@ -1033,14 +1361,15 @@ export function useGameData(
 
           const targetHasFishProtection = targetPlayer.inventory?.includes("inv_006");
 
-          // Р В  Р Р†Р вЂљРЎС™Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В Р Р‹Р РЋРІР‚СљР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р Р†РІР‚С›РІР‚вЂњ ID Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В
+          // Текст восстановлен после сбоя кодировки.
           const newDuelId = `duel_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          const challengerWaitMessage = `Вы вызвали ${targetPlayer.login} на дуэль. Ожидаем ответа.`;
 
           const initialDuelState: DuelState = {
             id: newDuelId,
             challengerId: duelChallengerId,
             targetId: duelTargetId,
-            status: 'pending', // Р В  Р Р†Р вЂљРЎСљР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СћР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ
+            status: 'pending',
             weapon: null,
             bets: {
               [duelChallengerId]: 0,
@@ -1062,16 +1391,11 @@ export function useGameData(
               actingCardId: duelCardId,
               targetPlayerId: duelChallengerId,
             },
-            [`notifications.${duelTargetId}`]: {
-              message: `${playerData.login} Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В·Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°. Р В  Р РЋРЎв„ўР В  Р РЋРІР‚СћР В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р В Р РЏР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ°, Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В° 3 Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° inv_006.`,
-              timestamp: Date.now(),
-              cardId: duelCardId,
-            },
           });
 
           await updateDoc(playerRef, {
             lastNotification: {
-              message: `Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В·Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В ${targetPlayer.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°. Р В  Р РЋРІР‚С”Р В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°.`,
+              message: challengerWaitMessage,
               timestamp: Date.now(),
               cardId: duelCardId,
             },
@@ -1080,7 +1404,7 @@ export function useGameData(
           logEvent({
             id: `duel_challenge_${card.id}_${Date.now()}`,
             timestamp: Date.now(), type: 'duel',
-            message: `${playerData.login} Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В·Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» ${targetPlayer.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°.`,
+            message: `${playerData.login} вызвал ${targetPlayer.login} на дуэль.`,
             playerId: user.uid, targetPlayerId: targetPlayer.id, cardId: card.id,
             details: { status: 'pending', canUseProtection: targetHasFishProtection }
           });
@@ -1091,11 +1415,11 @@ export function useGameData(
           if (targetRef && targetPlayerId) {
             if (targetHasFish) {
               await updateDoc(targetRef, clearTemporaryStatus);
-              notify(`${targetPlayer?.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ!`, 'warning', targetPlayer.inventory?.find(id => allCards[id]?.action === 'fish_protection')); // Changed from alert
+              notify("Событие игры обновлено.", 'warning');
               logEvent({
                 id: `move_and_self_blocked_${card.id}_${Date.now()}`,
                 timestamp: Date.now(), type: 'status_effect',
-                message: `${targetPlayer?.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ў "Р В  Р РЋРЎСџР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ!" Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў ${playerData.login} Р В Р Р‹Р В РЎвЂњ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР’В°Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РІР‚в„– Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚В.`,
+                message: "Событие игры.",
                 playerId: targetPlayer?.id, targetPlayerId: user.uid, cardId: card.id,
                 details: { protectionCard: 'inv_006' }
               });
@@ -1109,11 +1433,11 @@ export function useGameData(
               position: Math.max(0, (playerData.position ?? 0) - 1),
               prevCell: null,
             });
-            notify("Р В  Р вЂ™Р’В¦Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° 2 Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р РЋРІР‚В, Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° 1.", 'info', card.id); // Changed from alert
+            notify("Событие игры обновлено.", 'info');
             logEvent({
               id: `move_and_self_${card.id}_${Date.now()}`,
               timestamp: Date.now(), type: 'movement',
-              message: `${playerData.login} Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» "Р В  Р РЋРЎСџР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ!". ${targetPlayer?.login} Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° 2 Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р РЋРІР‚В, ${playerData.login} Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° 1.`,
+              message: "Событие игры.",
               playerId: user.uid, targetPlayerId: targetPlayer?.id, cardId: card.id,
               details: { selfMove: -1, targetMove: 2 }
             });
@@ -1122,7 +1446,7 @@ export function useGameData(
 
         case "pay_or_move_back":
           {
-            // Р В  Р Р†Р вЂљРЎС›Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°, Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р Р†Р вЂљРІвЂћСћР В  Р В Р вЂ№Р В  Р Р†Р вЂљРЎС›Р В  Р СћРЎвЂ™ Р В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° (inv_015)
+            // Текст восстановлен после сбоя кодировки.
             const targetIds = targetPlayerId 
               ? [targetPlayerId] 
               : players.filter(p => p.id !== user.uid && p.inGame && p.role !== 'admin').map(p => p.id);
@@ -1138,7 +1462,7 @@ export function useGameData(
               
               if (hasFish) {
                 await updateDoc(tRef, clearTemporaryStatus);
-                notify(`${tData.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚В Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ!`, 'warning');
+                notify("Событие игры обновлено.", 'warning');
                 continue;
               }
 
@@ -1150,17 +1474,14 @@ export function useGameData(
 
               const currentCoins = victimData.tiltCoins ?? 0;
               let paymentAmount = card.value;
-              let promoCodeUsed = false;
-
               if (hasPromoCode) {
                 paymentAmount = Math.ceil(card.value / 2); // Victim pays half, rounding up
-                promoCodeUsed = true;
                 await updateDoc(actualPRef, clearTemporaryStatus); // Clear promo code status
-                notify(`Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»! ${victimData.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р РЋРІР‚СњР В  Р РЋРІР‚Сћ ${paymentAmount} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў.`, 'success', card.id);
+                notify("Событие игры обновлено.", 'success');
                 logEvent({
                   id: `promo_code_used_taxes_${card.id}_${Date.now()}`,
                   timestamp: Date.now(), type: 'status_effect',
-                  message: `${victimData.login} Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В Р Р‹Р РЋРІР‚СљР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р вЂ™Р’В°.`,
+                  message: "Событие игры.",
                   playerId: victimData.id, cardId: card.id,
                   details: { originalAmount: card.value, finalAmount: paymentAmount }
                 });
@@ -1171,9 +1492,9 @@ export function useGameData(
                   transaction.update(actualPRef, { tiltCoins: increment(-paymentAmount) });
                   transaction.update(actualRecipientRef, { tiltCoins: increment(paymentAmount) });
                 });
-                if (!promoCodeUsed) notify(`${victimData.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р вЂ™Р’В» ${paymentAmount} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў.`, 'info');
+                notify("Событие игры обновлено.", 'info');
               } else {
-                // Р В  Р Р†Р вЂљРІвЂћСћР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ, Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р РЏР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Gambling Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ
+                // Текст восстановлен после сбоя кодировки.
                 const gamblingCards = getRandomInteractionCards("gambling");
                 const randomMomentalCardId = pickRandom(gamblingCards);
                 const randomMomentalCard = randomMomentalCardId ? allCards[randomMomentalCardId] : null;
@@ -1182,16 +1503,16 @@ export function useGameData(
                   await runTransaction(db, async (transaction) => {
                     await applyMomentalCardEffect(victimData, randomMomentalCard, transaction);
                   });
-                  notify(`${victimData.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РЎвЂњР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњ Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњ Р В  Р РЋРІР‚В Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р РЏР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Gambling Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${randomMomentalCard.name}".`, 'warning');
+                  notify("Событие игры обновлено.", 'warning');
                   logEvent({
                     id: `taxes_gambling_${card.id}_${Date.now()}`,
                     timestamp: Date.now(), type: 'status_effect',
-                    message: `${victimData.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РЎвЂњР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњ Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў ${playerData.login} Р В  Р РЋРІР‚В Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р РЏР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Gambling Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${randomMomentalCard.name}".`,
+                    message: "Событие игры.",
                     playerId: victimData.id, cardId: card.id,
                     details: { reason: 'failed_to_pay_taxes', momentalCardId: randomMomentalCard.id }
                   });
                 } else {
-                  notify(`${victimData.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РЎвЂњР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњ Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњ, Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚В Gambling Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ.`, 'error');
+                  notify("Событие игры обновлено.", 'error');
                 }
               }
             }
@@ -1201,11 +1522,11 @@ export function useGameData(
         case "take_next_card": {
           const nextPlayerId = getNextPlayerId(user.uid);
           if (!nextPlayerId) {
-            notify("Р В  Р РЋРЎС™Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р РЋР’ВР В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„– Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ.", 'warning', card.id); // Changed from alert
+            notify("Событие игры обновлено.", 'warning');
             logEvent({
               id: `take_next_card_fail_${card.id}_${Date.now()}`,
               timestamp: Date.now(), type: 'info',
-              message: `${playerData.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В» Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "Р В  Р Р†Р вЂљР’ВР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°".`,
+              message: "Событие игры.",
               playerId: user.uid, cardId: card.id,
               details: { outcome: 'no_next_player' }
             });
@@ -1214,11 +1535,11 @@ export function useGameData(
           await updateDoc(doc(db, "players", nextPlayerId), {
             redirectNextDrawnToPlayerId: user.uid,
           });
-          notify("Р В  Р В Р вЂ№Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В Р Р‹Р РЋРІР‚СљР В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р РЋР’В.", 'info', card.id); // Changed from alert
+          notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `take_next_card_${card.id}_${Date.now()}`,
             timestamp: Date.now(), type: 'status_effect',
-            message: `${playerData.login} Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» "Р В  Р Р†Р вЂљР’ВР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°". Р В  Р В Р вЂ№Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° ${getPlayerById(nextPlayerId)?.login} Р В Р Р‹Р РЋРІР‚СљР В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў ${playerData.login}.`,
+            message: "Событие игры.",
             playerId: user.uid, targetPlayerId: nextPlayerId, cardId: card.id,
             details: { effect: 'redirect_next_drawn' }
           });
@@ -1228,22 +1549,22 @@ export function useGameData(
         case "give_next_card": {
           const nextPlayerId = getNextPlayerId(user.uid);
           if (!nextPlayerId) {
-            notify("Р В  Р РЋРЎС™Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р РЋР’ВР В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„– Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ.", 'warning', card.id); // Changed from alert
+            notify("Событие игры обновлено.", 'warning');
             logEvent({
               id: `give_next_card_fail_${card.id}_${Date.now()}`,
               timestamp: Date.now(), type: 'info',
-              message: `${playerData.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В» Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "Р В  Р РЋРЎвЂєР В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В±Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™".`,
+              message: "Событие игры.",
               playerId: user.uid, cardId: card.id,
               details: { outcome: 'no_next_player' }
             });
             break;
           }
           await updateDoc(playerRef, { giveNextDrawnToPlayerId: nextPlayerId });
-          notify("Р В  Р В Р вЂ№Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В Р Р‹Р РЋРІР‚СљР В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р РЋР’ВР В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ.", 'info', card.id); // Changed from alert
+          notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `give_next_card_${card.id}_${Date.now()}`,
             timestamp: Date.now(), type: 'status_effect',
-            message: `${playerData.login} Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» "Р В  Р РЋРЎвЂєР В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В±Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™". Р В  Р В Р вЂ№Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° ${playerData.login} Р В Р Р‹Р РЋРІР‚СљР В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў ${getPlayerById(nextPlayerId)?.login}.`,
+            message: "Событие игры.",
             playerId: user.uid, targetPlayerId: nextPlayerId, cardId: card.id,
             details: { effect: 'give_next_drawn' }
           });
@@ -1254,7 +1575,7 @@ export function useGameData(
           if (targetRef && targetPlayerId && targetPlayer) {
             if (targetHasFish) {
               await updateDoc(targetRef, clearTemporaryStatus);
-              notify(`${targetPlayer.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРІвЂћСћР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋР’ВР В Р Р‹Р РЋРІР‚СљР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋР’В Р В  Р вЂ™ Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ!`, 'warning');
+              notify("Событие игры обновлено.", 'warning');
               break;
             }
 
@@ -1264,12 +1585,12 @@ export function useGameData(
             
             if (targetHasReflect) {
               await updateDoc(targetRef, clearTemporaryStatus);
-              notify(`${targetPlayer.login} Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В  Р РЋРІвЂћСћР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋР’ВР В Р Р‹Р РЋРІР‚СљР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋР’В!`, 'warning');
+              notify("Событие игры обновлено.", 'warning');
             }
 
-            // Р В  Р РЋРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°: Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р РЋР’В Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р вЂ™Р’Вµ Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р В РІР‚В¦Р В Р Р‹Р В Р РЏР В Р Р‹Р В Р РЏ Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В Р Р‹Р РЋРІР‚Сљ Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’В° (victim)
-            // Р В  Р РЋРЎС™Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™: 7 Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў. 7 / 2 = 3.5 -> Math.floor(3.5) = 3. 
-            // Р В  Р Р†Р вЂљРІвЂћСћР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™ Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў 3, Р В Р Р‹Р РЋРІР‚Сљ Р В  Р вЂ™Р’В¶Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ 4.
+            // Текст восстановлен после сбоя кодировки.
+            // Текст восстановлен после сбоя кодировки.
+            // Текст восстановлен после сбоя кодировки.
             const currentVictimCoins = victimData.tiltCoins ?? 0;
             const stealAmount = Math.floor(currentVictimCoins / 2);
 
@@ -1279,19 +1600,19 @@ export function useGameData(
                 transaction.update(actualRecipientRef, { tiltCoins: increment(stealAmount) });
               });
               
-              const victimName = targetHasReflect ? "Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњ" : targetPlayer.login;
-              const getterName = targetHasReflect ? targetPlayer.login : "Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњ";
-              notify(`Р В  Р вЂ™ Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В» Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р вЂ™Р’В°! ${getterName} Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В ${stealAmount} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў ${victimName}.`, 'success', card.id);
+              const victimName = targetHasReflect ? "\u0446\u0435\u043b\u044c" : targetPlayer.login;
+              const getterName = targetHasReflect ? targetPlayer.login : "\u0446\u0435\u043b\u044c";
+              notify(`${getterName} \u043f\u043e\u043b\u0443\u0447\u0438\u043b ${stealAmount} \u043c\u043e\u043d\u0435\u0442 \u043e\u0442 ${victimName}.`, 'success');
               
               logEvent({
                 id: `communism_${card.id}_${Date.now()}`,
                 timestamp: Date.now(), type: 'coin_change',
-                message: `${playerData.login} Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРІвЂћСћР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋР’ВР В Р Р‹Р РЋРІР‚СљР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋР’В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${targetPlayer.login}. Р В  Р РЋРЎСџР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ ${stealAmount} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў.`,
-                playerId: user.uid, targetPlayerId: targetPlayerId, cardId: card.id,
+                message: `${getterName} \u043f\u043e\u043b\u0443\u0447\u0438\u043b ${stealAmount} \u043c\u043e\u043d\u0435\u0442 \u043e\u0442 ${victimName}.`,
+                playerId: user.uid, targetPlayerId: targetPlayerId ?? undefined, cardId: card.id,
                 details: { amount: stealAmount, reflected: targetHasReflect }
               });
             } else {
-              notify("Р В  Р В РІвЂљВ¬ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°.", 'info');
+              notify("Событие игры обновлено.", 'info');
             }
           }
           break;
@@ -1301,11 +1622,11 @@ export function useGameData(
             customStatus: "promo_code_active",
             statusDuration: 1, // Lasts for one "event"
           });
-          notify("Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦! Р В  Р В Р вЂ№Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р РЋРІР‚ВР В  Р Р†РІР‚С›РІР‚вЂњ Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎвЂє Р В  Р вЂ™Р’В±Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В Р Р‹Р РЋРІР‚СљР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦ Р В  Р В РІР‚В Р В  Р СћРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚СћР В  Р вЂ™Р’Вµ.", 'info', card.id);
+          notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `promo_code_activated_${card.id}_${Date.now()}`,
             timestamp: Date.now(), type: 'status_effect',
-            message: `${playerData.login} Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ.`,
+            message: "Событие игры.",
             playerId: user.uid, cardId: card.id,
             details: { status: 'promo_code_active' }
           });
@@ -1314,24 +1635,24 @@ export function useGameData(
 
 
         default:
-          console.warn("Р В  Р Р†Р вЂљРЎСљР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В·Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ:", card.action);
-          notify(`Р В  Р Р†Р вЂљРЎСљР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${card.name}" Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В·Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ.`, 'error', card.id); // Changed from alert
+          console.warn("\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u043a\u0430\u0440\u0442\u044b:", card.action);
+          notify("Событие игры обновлено.", 'error');
       }
     } catch (e) {
       console.error(e);
-      await updateDoc(playerRef, { inventory: arrayUnion(card.id) }).catch((restoreError) => {
-        console.error("Р В  Р РЋРЎС™Р В  Р вЂ™Р’Вµ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р В РІР‚В¦Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚В:", restoreError);
+      await updateDoc(playerRef, { inventory: playerData.inventory ?? [card.id] }).catch(() => {
+        console.error("Ошибка действия.");
       });
-      await updateDoc(doc(db, "gameState", "current"), { revealedCards: arrayRemove(card.id) }).catch((restoreError) => {
-        console.error("Р В  Р РЋРЎС™Р В  Р вЂ™Р’Вµ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В· revealedCards Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚В:", restoreError);
+      await updateDoc(doc(db, "gameState", "current"), { revealedCards: arrayRemove(card.id) }).catch(() => {
+        console.error("Ошибка действия.");
       });
-      notify(`Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "${card.name}".`, 'error', card.id); // Changed from alert
+      notify("Событие игры обновлено.", 'error');
     }
   };
 
   const getRandomInteractionCards = useCallback(
     (type: "gambling" | "bshop"): string[] => {
-      const cardsArray = Object.values(allCards);
+      const cardsArray = Object.values(allCards).filter((card): card is GameCard => Boolean(card?.id && card.deck && card.rarity));
       if (cardsArray.length === 0) return [];
       const result: string[] = [];
 
@@ -1367,7 +1688,7 @@ export function useGameData(
     [allCards],
   );
 
-  // Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂњР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р РЋРІР‚СљР В  Р В РІР‚В¦Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљ Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ (Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ў-Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В Р Р‹Р Р†РІР‚С™Р’В¬, Р В  Р Р†Р вЂљР’ВР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°, Р В  Р РЋРЎвЂєР В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В±Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™)
+  // Текст восстановлен после сбоя кодировки.
   const handleDrawnCardDistribution = useCallback(
     async (
       player: Player,
@@ -1376,59 +1697,71 @@ export function useGameData(
     ) => {
       const playerRef = doc(db, "players", player.id);
       let suppressCard = false;
-      let finalRecipientRef = playerRef;
+      let finalRecipientId = player.id;
+
+      if (player.redirectNextDrawnToPlayerId) {
+        finalRecipientId = player.redirectNextDrawnToPlayerId;
+      } else if (player.giveNextDrawnToPlayerId) {
+        finalRecipientId = player.giveNextDrawnToPlayerId;
+      }
+
+      const finalRecipientRef = doc(db, "players", finalRecipientId);
+      let recipientInventory = player.inventory;
+      if (finalRecipientId !== player.id) {
+        const recipientSnap = await transaction.get(finalRecipientRef);
+        recipientInventory = (recipientSnap.data() as Player | undefined)?.inventory;
+      }
 
       if (player.discardNextDrawn) {
         suppressCard = true;
         transaction.update(playerRef, { discardNextDrawn: false });
-        notify(`Р В  Р Р†Р вЂљРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° "Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ў-Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В Р Р‹Р Р†РІР‚С™Р’В¬" Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°. Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° "${card.name}" Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°.`, 'info', card.id);
+        notify("Событие игры обновлено.", 'info');
         logEvent({
           id: `card_discarded_by_effect_${card.id}_${Date.now()}`,
           timestamp: Date.now(), type: 'card_play',
-          message: `${player.login} Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${card.name}" Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·-Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В° Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° "Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ў-Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В Р Р‹Р Р†РІР‚С™Р’В¬".`,
+          message: "Событие игры.",
           playerId: player.id, cardId: card.id,
           details: { reason: 'discard_next_drawn' }
         });
       } else if (player.redirectNextDrawnToPlayerId) {
-        finalRecipientRef = doc(db, "players", player.redirectNextDrawnToPlayerId);
         transaction.update(playerRef, { redirectNextDrawnToPlayerId: null });
-        notify(`Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° "${card.name}" Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ ${getPlayerById(player.redirectNextDrawnToPlayerId)?.login}.`, 'info', card.id);
+        notify("Событие игры обновлено.", 'info');
       } else if (player.giveNextDrawnToPlayerId) {
-        finalRecipientRef = doc(db, "players", player.giveNextDrawnToPlayerId);
         transaction.update(playerRef, { giveNextDrawnToPlayerId: null });
-        notify(`Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° "${card.name}" Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ ${getPlayerById(player.giveNextDrawnToPlayerId)?.login}.`, 'info', card.id);
+        notify("Событие игры обновлено.", 'info');
       }
 
       if (!suppressCard) {
-        transaction.update(finalRecipientRef, { inventory: arrayUnion(card.id) });
+        transaction.update(finalRecipientRef, {
+          inventory: addOneCardToInventory(recipientInventory, card.id),
+        });
       }
     },
-    [notify, logEvent, getPlayerById]
+    [notify, logEvent]
   );
-
   const handleSelectOpponentCard = async (targetPlayerId: string, cardId: string) => {
     if (!user || !playerData) return;
 
     // --- START: Golden Card Protection (inv_018) ---
     if (cardId === "inv_018") {
-      notify("Р В  Р Р†Р вЂљРІР‚СњР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„– Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В Р Р‹Р В Р РЏ Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ°!", 'warning', cardId);
+      notify("Событие игры обновлено.", 'warning');
       logEvent({
         id: `golden_card_protection_${cardId}_${Date.now()}`,
         timestamp: Date.now(), type: 'warning',
-        message: `${playerData.login} Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ°/Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р Р†Р вЂљРІР‚СњР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РІР‚в„– Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В Р Р‹Р РЋРІР‚Сљ ${getPlayerById(targetPlayerId)?.login}, Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°.`,
+        message: "Событие игры.",
         playerId: user.uid, targetPlayerId: targetPlayerId, cardId: cardId,
         details: { action: 'steal_or_discard', outcome: 'blocked' }
       });
-      await updateDoc(doc(db, "gameState", "current"), { activeInteraction: null }); // Р В  Р Р†Р вЂљРІР‚СњР В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљ Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚в„–
+      await updateDoc(doc(db, "gameState", "current"), { activeInteraction: null });
       return;
     }
     // --- END: Golden Card Protection ---
 
     if (!user || !playerData) return;
 
-    console.log("Р В  Р Р†Р вЂљРІР‚СњР В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚Сњ handleSelectOpponentCard Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ:", targetPlayerId, "Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°:", cardId);
+    console.log("\u0412\u044b\u0431\u043e\u0440 \u043a\u0430\u0440\u0442\u044b \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430:", targetPlayerId, "\u043a\u0430\u0440\u0442\u0430:", cardId);
     const targetRef = doc(db, "players", targetPlayerId);
-    const cardName = allCards[cardId]?.name || "Р В  Р РЋРЎС™Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°";
+    const cardName = allCards[cardId]?.name || "\u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u043a\u0430\u0440\u0442\u0430";
     const actingCardId = gameState.activeInteraction?.actingCardId;
 
     try {
@@ -1440,56 +1773,63 @@ export function useGameData(
         const interaction = (gsSnap.data() as GameState).activeInteraction;
         const isSteal = interaction?.actingCardId === "inv_011";
         const recipientId = interaction?.recipientId;
+        const targetSnap = await transaction.get(targetRef);
+        const targetInventory = (targetSnap.data() as Player | undefined)?.inventory;
+        let recipientInventory: string[] | undefined;
+        if (isSteal && recipientId) {
+          const recipientSnap = await transaction.get(doc(db, "players", recipientId));
+          recipientInventory = (recipientSnap.data() as Player | undefined)?.inventory;
+        }
 
-        // 1. Р В  Р В РІвЂљВ¬Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В Р Р‹Р РЋРІР‚Сљ Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В
+        // Текст восстановлен после сбоя кодировки.
         transaction.update(targetRef, {
-          inventory: arrayRemove(cardId),
-          // Р В  Р Р†Р вЂљРЎСљР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В Р Р‹Р РЋРІР‚СљР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ, Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р вЂ™Р’Вµ UI Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р вЂ™Р’В¶Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ°
+          inventory: removeOneCardFromInventory(targetInventory, cardId),
+          // Текст восстановлен после сбоя кодировки.
           lastNotification: {
             message: isSteal 
-              ? `Р В  Р вЂ™Р’ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ "${playerData.login}" Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В Р Р‹Р РЋРІР‚Сљ Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${cardName}"`
-              : `Р В  Р вЂ™Р’ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ "${playerData.login}" Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В· Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${cardName}"`,
+              ? `\u0418\u0433\u0440\u043e\u043a "${playerData.login}" \u0437\u0430\u0431\u0440\u0430\u043b \u0443 \u0432\u0430\u0441 \u043a\u0430\u0440\u0442\u0443 "${cardName}"`
+              : `\u0418\u0433\u0440\u043e\u043a "${playerData.login}" \u0441\u0431\u0440\u043e\u0441\u0438\u043b \u0432\u0430\u0448\u0443 \u043a\u0430\u0440\u0442\u0443 "${cardName}"`,
             timestamp: Date.now(),
             cardId: cardId
           }
         });
 
-        // 2. Р В  Р Р†Р вЂљРЎС›Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В¶Р В  Р вЂ™Р’В° (11 Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°), Р В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В РІР‚в„–
+        // Текст восстановлен после сбоя кодировки.
         if (isSteal && recipientId) {
           const recipientRef = doc(db, "players", recipientId);
           transaction.update(recipientRef, {
-            inventory: arrayUnion(cardId)
+            inventory: addOneCardToInventory(recipientInventory, cardId)
           });
         }
 
-        // 3. Р В  Р Р†Р вЂљРІР‚СњР В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В  Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°
+        // Текст восстановлен после сбоя кодировки.
         transaction.update(gsRef, {
           activeInteraction: null
         });
 
-        // 4. Р В  Р Р†Р вЂљРЎСљР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р В РІР‚В  Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚в„– Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљР’В¦ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ў
+        // Текст восстановлен после сбоя кодировки.
         transaction.update(gsRef, {
           revealedCards: arrayUnion(cardId)
         });
       });
     } catch (e) {
-      console.error("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°:", e);
+      console.error("Ошибка действия.");
       if (actingCardId) {
-        await updateDoc(doc(db, "players", user.uid), { inventory: arrayUnion(actingCardId) }).catch((restoreError) => {
-          console.error("Р В  Р РЋРЎС™Р В  Р вЂ™Р’Вµ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р В РІР‚В¦Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚В:", restoreError);
+        await updateDoc(doc(db, "players", user.uid), { inventory: addOneCardToInventory(playerData.inventory, actingCardId) }).catch(() => {
+          console.error("Ошибка действия.");
         });
         await updateDoc(doc(db, "gameState", "current"), {
           activeInteraction: null,
           revealedCards: arrayRemove(actingCardId),
-        }).catch((restoreError) => {
-          console.error("Р В  Р РЋРЎС™Р В  Р вЂ™Р’Вµ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚В:", restoreError);
+        }).catch(() => {
+          console.error("Ошибка действия.");
         });
       }
-      notify("Р В  Р РЋРЎС™Р В  Р вЂ™Р’Вµ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ. Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В° Р В  Р В РІР‚В  Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Firebase.", 'error'); // Changed from alert
+      notify("Событие игры обновлено.", 'error');
       logEvent({
         id: `select_opponent_card_error_${Date.now()}`,
         timestamp: Date.now(), type: 'error',
-        message: `Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°: ${e instanceof Error ? e.message : String(e)}.`,
+        message: "Событие игры.",
         playerId: user.uid, targetPlayerId: targetPlayerId, cardId: cardId,
         details: { error: e }
       });
@@ -1529,13 +1869,13 @@ export function useGameData(
         const currentPlayerCoins = pSnap.data()?.tiltCoins || 0;
 
         if (currentPlayerCoins < steps) {
-          throw new Error("Р В  Р В РІвЂљВ¬ Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ.");
+          throw new Error("Ошибка действия.");
         }
 
         // Deduct coins from the card user
         transaction.update(playerRef, { tiltCoins: increment(-steps) });
-        // Remove the card from the card user's inventory
-        transaction.update(playerRef, { inventory: arrayRemove(card.id) });
+        // Remove one copy of the card from the card user's inventory
+        transaction.update(playerRef, { inventory: removeOneCardFromInventory((pSnap.data() as Player).inventory, card.id) });
         // Add the card to revealed cards
         transaction.update(gameStateRef, { revealedCards: arrayUnion(card.id) });
 
@@ -1543,7 +1883,7 @@ export function useGameData(
 
         transaction.update(playerRef, {
           lastNotification: {
-            message: `Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р РЋРІР‚ВР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° "${getPlayerById(targetPlayerId)?.login ?? "Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ"}" Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${steps} Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂњ(Р В  Р РЋРІР‚СћР В  Р В РІР‚В ) Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ "${card.name}".`,
+            message: "Событие игры.",
             timestamp,
             cardId: card.id,
           },
@@ -1568,22 +1908,22 @@ export function useGameData(
           activeInteraction: null,
         });
       });
-    } catch (e: any) {
-      console.error("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В¶Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В° Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“:", e);
-      await updateDoc(playerRef, { inventory: arrayUnion(card.id) }).catch((restoreError) => {
-        console.error("Р В  Р РЋРЎС™Р В  Р вЂ™Р’Вµ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р В РІР‚В¦Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІвЂћСћР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В Р Р‹Р Р†Р вЂљ Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚в„– Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚В:", restoreError);
+    } catch (e) {
+      console.error("Ошибка действия.");
+      await updateDoc(playerRef, { inventory: addOneCardToInventory(playerData.inventory, card.id) }).catch(() => {
+        console.error("Ошибка действия.");
       });
       await updateDoc(gameStateRef, {
         activeInteraction: null,
         revealedCards: arrayRemove(card.id),
-      }).catch((restoreError) => {
-        console.error("Р В  Р РЋРЎС™Р В  Р вЂ™Р’Вµ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р РЋРІвЂћСћР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В Р Р‹Р Р†Р вЂљ Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚в„– Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р РЋРІР‚В:", restoreError);
+      }).catch(() => {
+        console.error("Ошибка действия.");
       });
-      notify(e.message || "Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ.", 'error'); // Changed from alert
+      notify("Событие игры обновлено.", 'error');
       logEvent({
         id: `confirm_move_for_coins_error_${Date.now()}`,
         timestamp: Date.now(), type: 'error',
-        message: `Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В¶Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В° Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“: ${e.message || "Р В  Р РЋРЎС™Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°"}.`,
+        message: "Событие игры.",
         playerId: user.uid, targetPlayerId: targetPlayerId, cardId: actingCardId,
         details: { error: e }
       });
@@ -1600,21 +1940,21 @@ export function useGameData(
 
     try {
       await runTransaction(db, async (transaction) => {
-        // 1. Р В  Р Р†Р вЂљРІвЂћСћР В  Р РЋРІР‚СћР В  Р вЂ™Р’В·Р В  Р В РІР‚В Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ, Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚Сћ Р В  Р вЂ™Р’В±Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° discard_selection, steal_card, or move_for_coins_selection
+        // Текст восстановлен после сбоя кодировки.
         if (actingCardId) {
-          transaction.update(playerRef, { inventory: arrayUnion(actingCardId) });
+          transaction.update(playerRef, { inventory: addOneCardToInventory(playerData.inventory, actingCardId) });
           transaction.update(gsRef, { revealedCards: arrayRemove(actingCardId) });
         }
-        // 2. Р В  Р Р†Р вЂљРІР‚СњР В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р В РІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ
+        // Текст восстановлен после сбоя кодировки.
         transaction.update(gsRef, { activeInteraction: null });
       });
-    } catch (e) {
-      console.error("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ:", e);
-      notify("Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ.", 'error');
+    } catch {
+      console.error("Ошибка действия.");
+      notify("Событие игры обновлено.", 'error');
       logEvent({
         id: `cancel_interaction_error_${Date.now()}`,
         timestamp: Date.now(), type: 'error',
-        message: `Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ: ${e instanceof Error ? e.message : String(e)}.`,
+        message: "Событие игры.",
         playerId: user.uid, cardId: actingCardId,
       });
     }
@@ -1624,16 +1964,18 @@ export function useGameData(
     if (!user || !playerData) return;
 
     const gameStateRef = doc(db, "gameState", "current");
-    const playerRef = doc(db, "players", user.uid); // Р В  Р вЂ™Р’В¦Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В Р В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ (Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р РЋРІР‚ВР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В )
+    const playerRef = doc(db, "players", user.uid);
     const duelState = gameState.activeDuels[duelId];
 
     if (!duelState || duelState.targetId !== user.uid) {
-      console.error("Р В  Р РЋРЎС™Р В  Р вЂ™Р’ВµР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В Р Р‹Р В Р РЏР В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РІР‚в„–.");
+      console.error("Ошибка действия.");
       return;
     }
 
     const challengerPlayer = getPlayerById(duelState.challengerId);
     const duelCard = allCards[gameState.activeInteraction?.actingCardId || '']; // inv_015
+    const challengerName = challengerPlayer?.login || "Игрок";
+    const targetName = playerData.login || "Игрок";
 
     try {
       await runTransaction(db, async (transaction) => {
@@ -1641,20 +1983,16 @@ export function useGameData(
         const currentDuelState = currentGameState.activeDuels[duelId];
 
         if (!currentDuelState) {
-          throw new Error("Р В  Р Р†Р вЂљРЎСљР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р В РІР‚В  Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљР’В¦ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В Р Р‹Р Р†Р вЂљР’В¦.");
+          throw new Error("Ошибка действия.");
         }
 
         const responseTimestamp = Date.now();
 
         if (response === 'decline') {
           const challengerRef = doc(db, "players", currentDuelState.challengerId);
-          const targetSnap = await transaction.get(playerRef);
-          const targetCoins = targetSnap.data()?.tiltCoins ?? 0;
           const declineFee = 3;
-
-          if (targetCoins < declineFee) {
-            throw new Error("Р В  Р РЋРЎС™Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В. Р В  Р РЋРЎС™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ 3 Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“.");
-          }
+          const targetMessage = "Вы отказались от дуэли и заплатили 3 монеты.";
+          const challengerMessage = `${targetName} отказался от дуэли и отдал вам 3 монеты.`;
 
           const updatedActiveDuels = { ...currentGameState.activeDuels };
           delete updatedActiveDuels[duelId];
@@ -1662,7 +2000,7 @@ export function useGameData(
           transaction.update(playerRef, {
             tiltCoins: increment(-declineFee),
             lastNotification: {
-              message: `Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В ${declineFee} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“.`,
+              message: targetMessage,
               timestamp: responseTimestamp,
               cardId: duelCard?.id,
             },
@@ -1672,7 +2010,7 @@ export function useGameData(
             activeDuels: updatedActiveDuels,
             activeInteraction: null,
             [`notifications.${currentDuelState.challengerId}`]: {
-              message: `${playerData.login} Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р РЋР’В ${declineFee} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“.`,
+              message: challengerMessage,
               timestamp: responseTimestamp,
               cardId: duelCard?.id,
             },
@@ -1680,34 +2018,36 @@ export function useGameData(
           logEvent({
             id: `duel_declined_${duelId}_${Date.now()}`,
             timestamp: Date.now(), type: 'duel',
-            message: `${playerData.login} Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р В РЎвЂњ ${challengerPlayer?.login} Р В  Р РЋРІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р вЂ™Р’В» ${declineFee} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“.`,
+            message: challengerMessage,
             playerId: user.uid, targetPlayerId: challengerPlayer?.id, cardId: duelCard?.id,
             details: { outcome: 'declined', fee: declineFee }
           });
         } else if (response === 'use_protection') {
-          // Р В  Р вЂ™Р’В¦Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў inv_006
+          // Текст восстановлен после сбоя кодировки.
           const protectionCardId = "inv_006";
+          const targetMessage = `Вы сбросили дуэль картой "No, no, no mr. Fish".`;
+          const challengerMessage = `Дуэль сброшена картой "No, no, no mr. Fish", вы возвращаетесь ни с чем.`;
           if (!playerData.inventory?.includes(protectionCardId)) {
-            throw new Error("Р В  Р В РІвЂљВ¬ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў inv_006 Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ.");
+            throw new Error("Ошибка действия.");
           }
 
-          // Р В  Р В РІвЂљВ¬Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В inv_006 Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В· Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р В Р РЏ Р В Р Р‹Р Р†Р вЂљ Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В
-          transaction.update(playerRef, { inventory: arrayRemove(protectionCardId) });
-          // Р В  Р Р†Р вЂљРЎСљР В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В inv_006 Р В  Р В РІР‚В  Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“
+          // Текст восстановлен после сбоя кодировки.
+          transaction.update(playerRef, { inventory: removeOneCardFromInventory(playerData.inventory, protectionCardId) });
+          // Текст восстановлен после сбоя кодировки.
           transaction.update(gameStateRef, { revealedCards: arrayUnion(protectionCardId) });
 
-          // Р В  Р В РІвЂљВ¬Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В· activeDuels
+          // Текст восстановлен после сбоя кодировки.
           const updatedActiveDuels = { ...currentGameState.activeDuels };
           delete updatedActiveDuels[duelId];
           transaction.update(gameStateRef, { activeDuels: updatedActiveDuels });
 
-          // Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р вЂ™Р’Вµ Р В  Р В РІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ
+          // Текст восстановлен после сбоя кодировки.
           transaction.update(gameStateRef, { activeInteraction: null });
 
-          // Р В  Р В РІвЂљВ¬Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР’В¦ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р В РІР‚В 
+          // Текст восстановлен после сбоя кодировки.
           transaction.update(playerRef, {
             lastNotification: {
-              message: `Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В¶Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В, Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В  Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "No, no, no mr. Fish"!`,
+              message: targetMessage,
               timestamp: responseTimestamp,
               cardId: protectionCardId
             }
@@ -1715,24 +2055,25 @@ export function useGameData(
           logEvent({
             id: `duel_avoided_${duelId}_${Date.now()}`,
             timestamp: Date.now(), type: 'duel',
-            message: `${playerData.login} Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В¶Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В Р Р‹Р В РЎвЂњ ${challengerPlayer?.login} Р В Р Р‹Р В РЎвЂњ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР’В°Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РІР‚в„– Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ "No, no, no mr. Fish".`,
+            message: `${targetName} сбросил дуэль картой "No, no, no mr. Fish".`,
             playerId: user.uid, targetPlayerId: challengerPlayer?.id, cardId: protectionCardId,
             details: { outcome: 'avoided' }
           });
 
           transaction.update(gameStateRef, {
             [`notifications.${currentDuelState.challengerId}`]: {
-              message: `${playerData.login} Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В¶Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В, Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В  Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "No, no, no mr. Fish"! Р В  Р Р†Р вЂљРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° "Р В  Р Р†Р вЂљРЎСљР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°" Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°.`,
+              message: challengerMessage,
               timestamp: responseTimestamp,
               cardId: duelCard?.id
             }
           });
         } else { // response === 'accept'
-          // Р В  Р вЂ™Р’В¦Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў, Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋР’В Р В  Р РЋРІР‚Сњ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ
+          const challengerMessage = `${targetName} принял вызов. Ожидаем решения.`;
+          // Текст восстановлен после сбоя кодировки.
           transaction.update(gameStateRef, {
             [`activeDuels.${duelId}.status`]: 'accepted',
             activeInteraction: {
-              playerId: currentDuelState.targetId, // Р В  Р вЂ™Р’В¦Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р В РІР‚В Р В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ
+              playerId: currentDuelState.targetId,
               type: "duel_weapon_selection",
               duelId: duelId,
               cards: [],
@@ -1740,32 +2081,24 @@ export function useGameData(
               actingCardId: duelCard?.id,
             },
             [`notifications.${currentDuelState.challengerId}`]: {
-              message: `${playerData.login} Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’В» Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†РІР‚С™Р’В¬ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В  Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°! Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ.`,
+              message: challengerMessage,
               timestamp: responseTimestamp,
               cardId: duelCard?.id
             },
           });
 
-          // Р В  Р В РІвЂљВ¬Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В  Р СћРІР‚ВР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР’В¦ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р В РІР‚В 
-          transaction.update(playerRef, {
-            lastNotification: {
-              message: `Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В  Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў ${challengerPlayer?.login}! Р В  Р РЋРІР‚С”Р В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ.`,
-              timestamp: responseTimestamp,
-              cardId: duelCard?.id
-            }
-          });
           logEvent({
             id: `duel_accepted_${duelId}_${Date.now()}`,
             timestamp: Date.now(), type: 'duel',
-            message: `${playerData.login} Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’В» Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В  Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў ${challengerPlayer?.login}.`,
+            message: `${targetName} принял вызов на дуэль от ${challengerName}.`,
             playerId: user.uid, targetPlayerId: challengerPlayer?.id, cardId: duelCard?.id,
             details: { outcome: 'accepted' }
           });
         }
       });
-    } catch (e: any) {
-      console.error("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В  Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В:", e);
-      notify(e.message || "Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°.", 'error'); // Changed from alert
+    } catch {
+      console.error("Ошибка действия.");
+      notify("Событие игры обновлено.", 'error');
     }
   };
 
@@ -1782,13 +2115,12 @@ export function useGameData(
         if (!gsSnap.exists() || !pSnap.exists()) return;
 
         const gs = gsSnap.data() as GameState;
-        const player = pSnap.data() as Player;
         const duel = gs.activeDuels?.[duelId];
         const normalizedBet = Math.floor(Number(betAmount));
 
-        if (!duel) throw new Error("Р В РІР‚СњР РЋРЎвЂњР РЋР РЉР В Р’В»Р РЋР Р‰ Р В Р вЂ¦Р В Р’Вµ Р В Р вЂ¦Р В Р’В°Р В РІвЂћвЂ“Р В РўвЂР В Р’ВµР В Р вЂ¦Р В Р’В°.");
-        if (duel.status !== 'betting') throw new Error("Р В РІР‚СњР РЋРЎвЂњР РЋР РЉР В Р’В»Р РЋР Р‰ Р В Р вЂ¦Р В Р’Вµ Р В Р вЂ¦Р В Р’В°Р РЋРІР‚В¦Р В РЎвЂўР В РўвЂР В РЎвЂР РЋРІР‚С™Р РЋР С“Р РЋР РЏ Р В Р вЂ¦Р В Р’В° Р РЋР РЉР РЋРІР‚С™Р В Р’В°Р В РЎвЂ”Р В Р’Вµ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ Р В РЎвЂўР В РЎвЂќ.");
-        if (normalizedBet <= 0) throw new Error("Р В Р Р‹Р РЋРІР‚С™Р В Р’В°Р В Р вЂ Р В РЎвЂќР В Р’В° Р В РўвЂР В РЎвЂўР В Р’В»Р В Р’В¶Р В Р вЂ¦Р В Р’В° Р В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р РЋР Р‰ Р В Р’В±Р В РЎвЂўР В Р’В»Р РЋР Р‰Р РЋРІвЂљВ¬Р В Р’Вµ 0.");
+        if (!duel) throw new Error("Ошибка действия.");
+        if (duel.status !== 'betting') throw new Error("Ошибка действия.");
+        if (normalizedBet <= 0) throw new Error("Ошибка действия.");
 
         transaction.update(playerRef, { tiltCoins: increment(-normalizedBet) });
 
@@ -1806,14 +2138,6 @@ export function useGameData(
             transaction.update(gameStateRef, {
               [`activeDuels.${duelId}.status`]: 'admin_wait',
               activeInteraction: null,
-              [`notifications.${duel.challengerId}`]: {
-                message: `Р В Р Р‹Р РЋРІР‚С™Р В Р’В°Р В Р вЂ Р В РЎвЂќР В РЎвЂ Р РЋР С“Р В РўвЂР В Р’ВµР В Р’В»Р В Р’В°Р В Р вЂ¦Р РЋРІР‚в„–. Р В Р Р‹Р РЋРІР‚в„–Р В РЎвЂ“Р РЋР вЂљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В Р’Вµ Р В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂ-Р В РЎвЂР В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњ Р В Р вЂ Р В Р вЂ¦Р В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР РЏ, Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В РЎВ Р В Р’В°Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦ Р В Р вЂ Р В Р вЂ¦Р В Р’ВµР РЋР С“Р В Р’ВµР РЋРІР‚С™ Р В РЎвЂ”Р В РЎвЂўР В Р’В±Р В Р’ВµР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.`,
-                timestamp: Date.now(),
-              },
-              [`notifications.${duel.targetId}`]: {
-                message: `Р В Р Р‹Р РЋРІР‚С™Р В Р’В°Р В Р вЂ Р В РЎвЂќР В РЎвЂ Р РЋР С“Р В РўвЂР В Р’ВµР В Р’В»Р В Р’В°Р В Р вЂ¦Р РЋРІР‚в„–. Р В Р Р‹Р РЋРІР‚в„–Р В РЎвЂ“Р РЋР вЂљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В Р’Вµ Р В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂ-Р В РЎвЂР В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњ Р В Р вЂ Р В Р вЂ¦Р В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР РЏ, Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В РЎВ Р В Р’В°Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦ Р В Р вЂ Р В Р вЂ¦Р В Р’ВµР РЋР С“Р В Р’ВµР РЋРІР‚С™ Р В РЎвЂ”Р В РЎвЂўР В Р’В±Р В Р’ВµР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.`,
-                timestamp: Date.now(),
-              },
             });
           } else {
             transaction.update(gameStateRef, {
@@ -1837,16 +2161,12 @@ export function useGameData(
               targetPlayerId: duel.challengerId === user.uid ? duel.targetId : duel.challengerId,
               actingCardId: gs.activeInteraction?.actingCardId,
             },
-            [`notifications.${otherPlayerId}`]: {
-              message: `${player.login} Р РЋР С“Р В РўвЂР В Р’ВµР В Р’В»Р В Р’В°Р В Р’В» Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ Р В РЎвЂќР РЋРЎвЂњ Р В Р вЂ  Р В РўвЂР РЋРЎвЂњР РЋР РЉР В Р’В»Р В РЎвЂ. Р В РЎС›Р В Р’ВµР В РЎвЂ”Р В Р’ВµР РЋР вЂљР РЋР Р‰ Р В Р вЂ Р В Р’В°Р РЋРІвЂљВ¬ Р РЋРІР‚В¦Р В РЎвЂўР В РўвЂ!`,
-              timestamp: Date.now(),
-            }
           });
         }
       });
-    } catch (e: any) {
-      console.error("Р В РЎвЂєР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В Р’В° Р В РЎвЂ”Р РЋР вЂљР В РЎвЂ Р РЋР вЂљР В Р’В°Р В Р’В·Р В РЎВР В Р’ВµР РЋРІР‚В°Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В РЎвЂ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ Р В РЎвЂќР В РЎвЂ Р В Р вЂ  Р В РўвЂР РЋРЎвЂњР РЋР РЉР В Р’В»Р В РЎвЂ:", e);
-      notify(e.message || "Р В РЎСџР РЋР вЂљР В РЎвЂўР В РЎвЂР В Р’В·Р В РЎвЂўР РЋРІвЂљВ¬Р В Р’В»Р В Р’В° Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В Р’В° Р В РЎвЂ”Р РЋР вЂљР В РЎвЂ Р РЋР вЂљР В Р’В°Р В Р’В·Р В РЎВР В Р’ВµР РЋРІР‚В°Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В РЎвЂ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ Р В РЎвЂќР В РЎвЂ.", 'error');
+    } catch {
+      console.error("Ошибка действия.");
+      notify("Событие игры обновлено.", 'error');
     }
   };
   const handleStartDuelRoll = async (duelId: string) => {
@@ -1862,9 +2182,9 @@ export function useGameData(
         const gs = gsSnap.data() as GameState;
         const duel = gs.activeDuels?.[duelId];
 
-        if (!duel) throw new Error("Р В  Р Р†Р вЂљРЎСљР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°.");
-        if (duel.status !== 'ready_to_roll') throw new Error("Р В  Р Р†Р вЂљРЎСљР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р В РІР‚В  Р В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В Р РЏР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р РЋРІР‚вЂњР В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚В.");
-        if (duel.challengerId !== user.uid) throw new Error("Р В  Р РЋРЎвЂєР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р РЋРІР‚СњР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р вЂ™Р’В¶Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ.");
+        if (!duel) throw new Error("Ошибка действия.");
+        if (duel.status !== 'ready_to_roll') throw new Error("Ошибка действия.");
+        if (duel.challengerId !== user.uid) throw new Error("Ошибка действия.");
 
         if (duel.weapon === 'dice') {
           const challengerRoll = rollD6();
@@ -1875,22 +2195,22 @@ export function useGameData(
               [duel.challengerId]: challengerRoll,
               [duel.targetId]: targetRoll,
             },
-            activeInteraction: null, // Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В , Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљ Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚СњР В  Р РЋРІР‚СћР В  Р В РІР‚В 
+            activeInteraction: null,
           });
         } else {
           transaction.update(gameStateRef, {
             [`activeDuels.${duelId}.status`]: 'admin_wait',
-            activeInteraction: null, // Р В  Р РЋРІР‚С”Р В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р вЂ™Р’В°Р В  Р СћРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°
+            activeInteraction: null,
           });
         }
       });
-    } catch (e) {
-      console.error("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В:", e);
-      notify("Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В.", 'error');
+    } catch {
+      console.error("Ошибка действия.");
+      notify("Событие игры обновлено.", 'error');
       logEvent({
         id: `duel_roll_start_error_${duelId}_${Date.now()}`,
         timestamp: Date.now(), type: 'error',
-        message: `Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’Вµ Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В: ${e instanceof Error ? e.message : String(e)}.`,
+        message: "Событие игры.",
         playerId: user.uid, details: { duelId: duelId }
       });
     }
@@ -1909,29 +2229,29 @@ export function useGameData(
         const gs = gsSnap.data() as GameState;
         const duel = gs.activeDuels?.[duelId];
 
-        if (!duel) throw new Error("Р В  Р Р†Р вЂљРЎСљР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ° Р В  Р В РІР‚В¦Р В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В  Р Р†РІР‚С›РІР‚вЂњР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°.");
+        if (!duel) throw new Error("Ошибка действия.");
 
-        // Р В  Р РЋРІР‚С”Р В  Р вЂ™Р’В±Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В  Р В РІР‚В  Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚В Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋР’В Р В  Р РЋРІР‚Сњ Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В Р Р‹Р РЋРІР‚Сљ Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ
+        // Текст восстановлен после сбоя кодировки.
         transaction.update(gameStateRef, {
           [`activeDuels.${duelId}.weapon`]: weapon,
-          [`activeDuels.${duelId}.status`]: 'betting', // Р В  Р РЋРЎСџР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В¦Р В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р РЋРІР‚ВР В  Р РЋР’В Р В  Р РЋРІР‚Сњ Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В Р Р‹Р РЋРІР‚Сљ Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ
-          // Р В  Р РЋРЎСџР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’ВµР В  Р РЋР’В Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р В РІР‚В Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р вЂ™Р’Вµ Р В  Р В РІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В·Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р РЋРІР‚вЂњР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В° Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р РЋРІР‚СћР В  Р РЋРІР‚Сњ
+          [`activeDuels.${duelId}.status`]: 'betting',
+          // Текст восстановлен после сбоя кодировки.
           activeInteraction: {
             playerId: duel.challengerId,
-            actingCardId: gs.activeInteraction?.actingCardId, // Р В  Р В Р вЂ№Р В  Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР’В¦Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В Р Р‹Р В Р РЏР В  Р вЂ™Р’ВµР В  Р РЋР’В ID Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В
+            actingCardId: gs.activeInteraction?.actingCardId,
             type: 'duel_betting',
             duelId: duelId,
             targetPlayerId: duel.targetId
           }
         });
       });
-    } catch (e) {
-      console.error("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В:", e);
-      notify("Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В.", 'error');
+    } catch {
+      console.error("Ошибка действия.");
+      notify("Событие игры обновлено.", 'error');
       logEvent({
         id: `duel_weapon_select_error_${duelId}_${Date.now()}`,
         timestamp: Date.now(), type: 'error',
-        message: `Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р вЂ™Р’В±Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В¶Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В: ${e instanceof Error ? e.message : String(e)}.`,
+        message: "Событие игры.",
         playerId: user.uid, details: { duelId: duelId, weapon: weapon }
       });
     }
@@ -1950,7 +2270,7 @@ export function useGameData(
         const gs = gsSnap.data() as GameState;
         const duel = gs.activeDuels?.[duelId];
 
-        if (!duel) throw new Error("Р”СѓСЌР»СЊ РЅРµ РЅР°Р№РґРµРЅР°.");
+        if (!duel) throw new Error("Ошибка действия.");
         if (duel.status === 'finished' || (duel.weapon === 'game' && !manualWinnerId)) return;
 
         let winnerId: string | 'draw' = 'draw';
@@ -1973,8 +2293,8 @@ export function useGameData(
         const challengerBet = duel.bets[duel.challengerId] || 0;
         const targetBet = duel.bets[duel.targetId] || 0;
         const totalPot = challengerBet + targetBet;
-        const challengerLogin = getPlayerById(duel.challengerId)?.login || "РРіСЂРѕРє 1";
-        const targetLogin = getPlayerById(duel.targetId)?.login || "РРіСЂРѕРє 2";
+        const challengerLogin = getPlayerById(duel.challengerId)?.login || "\u0418\u0433\u0440\u043e\u043a 1";
+        const targetLogin = getPlayerById(duel.targetId)?.login || "\u0418\u0433\u0440\u043e\u043a 2";
         const timestamp = Date.now();
 
         if (winnerId !== 'draw') {
@@ -1999,24 +2319,24 @@ export function useGameData(
 
           if (winnerId === 'draw') {
             return duel.weapon === 'dice'
-              ? `Р”СѓСЌР»СЊ: РЅРёС‡СЊСЏ (${myRoll} vs ${oppRoll}). РЎС‚Р°РІРєР° РІРѕР·РІСЂР°С‰РµРЅР°.`
-              : `Р”СѓСЌР»СЊ: РЅРёС‡СЊСЏ. РЎС‚Р°РІРєР° РІРѕР·РІСЂР°С‰РµРЅР°.`;
+              ? `\u0414\u0443\u044d\u043b\u044c: \u043d\u0438\u0447\u044c\u044f (${myRoll} vs ${oppRoll}). \u0421\u0442\u0430\u0432\u043a\u0430 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0435\u043d\u0430.`
+              : `\u0414\u0443\u044d\u043b\u044c: \u043d\u0438\u0447\u044c\u044f. \u0421\u0442\u0430\u0432\u043a\u0430 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0435\u043d\u0430.`;
           }
 
           if (duel.weapon === 'dice') {
             return isMeWinner
-              ? `РџРѕР±РµРґР°! Р’С‹ РІС‹РёРіСЂР°Р»Рё РґСѓСЌР»СЊ (${myRoll} vs ${oppRoll}) Рё РїРѕР»СѓС‡РёР»Рё ${totalPot} рџ¦–.`
-              : `РџРѕСЂР°Р¶РµРЅРёРµ. Р’С‹ РїСЂРѕРёРіСЂР°Р»Рё РґСѓСЌР»СЊ (${myRoll} vs ${oppRoll}) РёРіСЂРѕРєСѓ ${opponentName}.`;
+              ? `\u041f\u043e\u0431\u0435\u0434\u0430! \u0412\u044b \u0432\u044b\u0438\u0433\u0440\u0430\u043b\u0438 \u0434\u0443\u044d\u043b\u044c (${myRoll} vs ${oppRoll}) \u0438 \u043f\u043e\u043b\u0443\u0447\u0438\u043b\u0438 ${totalPot} \u043c\u043e\u043d\u0435\u0442.`
+              : `\u041f\u043e\u0440\u0430\u0436\u0435\u043d\u0438\u0435. \u0412\u044b \u043f\u0440\u043e\u0438\u0433\u0440\u0430\u043b\u0438 \u0434\u0443\u044d\u043b\u044c (${myRoll} vs ${oppRoll}) \u0438\u0433\u0440\u043e\u043a\u0443 ${opponentName}.`;
           }
 
           return isMeWinner
-            ? `РџРѕР±РµРґР°! РђРґРјРёРЅ РїСЂРёР·РЅР°Р» РІР°СЃ РїРѕР±РµРґРёС‚РµР»РµРј РєР°СЃС‚РѕРјРЅРѕР№ РґСѓСЌР»Рё. Р’С‹ РїРѕР»СѓС‡РёР»Рё ${totalPot} рџ¦–.`
-            : `РџРѕСЂР°Р¶РµРЅРёРµ. РђРґРјРёРЅ РїСЂРёР·РЅР°Р» РїРѕР±РµРґРёС‚РµР»РµРј РёРіСЂРѕРєР° ${opponentName}.`;
+            ? `\u041f\u043e\u0431\u0435\u0434\u0430! \u0410\u0434\u043c\u0438\u043d \u043f\u0440\u0438\u0437\u043d\u0430\u043b \u0432\u0430\u0441 \u043f\u043e\u0431\u0435\u0434\u0438\u0442\u0435\u043b\u0435\u043c \u043a\u0430\u0441\u0442\u043e\u043c\u043d\u043e\u0439 \u0434\u0443\u044d\u043b\u0438. \u0412\u044b \u043f\u043e\u043b\u0443\u0447\u0438\u043b\u0438 ${totalPot} \u043c\u043e\u043d\u0435\u0442.`
+            : `\u041f\u043e\u0440\u0430\u0436\u0435\u043d\u0438\u0435. \u0410\u0434\u043c\u0438\u043d \u043f\u0440\u0438\u0437\u043d\u0430\u043b \u043f\u043e\u0431\u0435\u0434\u0438\u0442\u0435\u043b\u0435\u043c \u0438\u0433\u0440\u043e\u043a\u0430 ${opponentName}.`;
         };
 
         const resultMessage = winnerId === 'draw'
-          ? `Р”СѓСЌР»СЊ РјРµР¶РґСѓ ${challengerLogin} Рё ${targetLogin} Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РЅРёС‡СЊРµР№.`
-          : `${getPlayerById(winnerId)?.login || 'РРіСЂРѕРє'} РІС‹РёРіСЂР°Р» РґСѓСЌР»СЊ Сѓ ${winnerId === duel.challengerId ? targetLogin : challengerLogin}.`;
+          ? `\u0414\u0443\u044d\u043b\u044c \u043c\u0435\u0436\u0434\u0443 ${challengerLogin} \u0438 ${targetLogin} \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043b\u0430\u0441\u044c \u043d\u0438\u0447\u044c\u0435\u0439.`
+          : `${getPlayerById(winnerId)?.login || '\u0418\u0433\u0440\u043e\u043a'} \u0432\u044b\u0438\u0433\u0440\u0430\u043b \u0434\u0443\u044d\u043b\u044c \u0443 ${winnerId === duel.challengerId ? targetLogin : challengerLogin}.`;
 
         transaction.update(gameStateRef, {
           [`activeDuels.${duelId}.status`]: 'finished',
@@ -2048,14 +2368,14 @@ export function useGameData(
           },
         });
       });
-    } catch (e) {
-      console.error("РћС€РёР±РєР° РїСЂРё Р·Р°РІРµСЂС€РµРЅРёРё РґСѓСЌР»Рё:", e);
-      notify("РџСЂРѕРёР·РѕС€Р»Р° РѕС€РёР±РєР° РїСЂРё Р·Р°РІРµСЂС€РµРЅРёРё РґСѓСЌР»Рё.", 'error');
+    } catch {
+      console.error("Ошибка действия.");
+      notify("Событие игры обновлено.", 'error');
       logEvent({
         id: `duel_finish_error_${duelId}_${Date.now()}`,
         timestamp: Date.now(),
         type: 'error',
-        message: `РћС€РёР±РєР° РїСЂРё Р·Р°РІРµСЂС€РµРЅРёРё РґСѓСЌР»Рё: ${e instanceof Error ? e.message : String(e)}.`,
+        message: "Событие игры.",
         playerId: user.uid,
         details: { duelId },
       });
@@ -2083,7 +2403,7 @@ export function useGameData(
           logEvent({
             id: `player_move_manual_${targetPlayerId}_${Date.now()}`,
             timestamp: Date.now(), type: 'movement',
-            message: `${getPlayerById(targetPlayerId)?.login} Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ ${position}.`,
+            message: "Событие игры.",
             playerId: targetPlayerId,
             details: { from: prevCell, to: position, isCardMove: isCardMove }
           });
@@ -2101,11 +2421,11 @@ export function useGameData(
             forcedMovePlayerId: null,
             cardMove: null,
           });
-          notify(`${getPlayerById(targetPlayerId)?.login} Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ "${cellType === 'bshop' ? 'B-Shop' : 'Gambling'}".`, 'info');
+          notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `landed_on_special_cell_${targetPlayerId}_${Date.now()}`,
             timestamp: Date.now(), type: 'movement',
-            message: `${getPlayerById(targetPlayerId)?.login} Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ "${cellType === 'bshop' ? 'B-Shop' : 'Gambling'}".`,
+            message: "Событие игры.",
             playerId: targetPlayerId, details: { cellType: cellType, position: position }
           });
           return;
@@ -2120,7 +2440,7 @@ export function useGameData(
           logEvent({
             id: `card_move_completed_${targetPlayerId}_${Date.now()}`,
             timestamp: Date.now(), type: 'movement',
-            message: `${getPlayerById(targetPlayerId)?.login} Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљР’В°Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ.`,
+            message: "Событие игры.",
             playerId: targetPlayerId,
             details: { from: prevCell, to: position, isCardMove: isCardMove }
           });
@@ -2160,40 +2480,59 @@ export function useGameData(
         if (!gsSnap.exists() || !pSnap.exists()) return;
 
         const { turnOrder = [], currentTurnIndex = 0, activeInteraction } = gsSnap.data() as GameState;
-        const player = pSnap.data() as Player;
+        const player = { ...(pSnap.data() as Player), id: user.uid };
+
+        let keepInteractionOpen = false;
 
         if (skipWithCardId) {
-          transaction.update(playerRef, { inventory: arrayRemove(skipWithCardId) });
+          transaction.update(playerRef, { inventory: removeOneCardFromInventory(player.inventory, skipWithCardId) });
           transaction.update(gameStateRef, { revealedCards: arrayUnion(skipWithCardId) });
-          notify(`Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${allCards[skipWithCardId]?.name}" Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р В РІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ.`, 'info', skipWithCardId);
+          notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `interaction_skipped_${skipWithCardId}_${Date.now()}`,
             timestamp: Date.now(), type: 'info',
-            message: `${playerData.login} Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${allCards[skipWithCardId]?.name}" Р В  Р СћРІР‚ВР В  Р вЂ™Р’В»Р В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚вЂќР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р В РІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ.`,
+            message: "Событие игры.",
             playerId: user.uid, cardId: skipWithCardId
           });
         } else if (cardId) {
           const card = allCards[cardId];
+          if (!card) {
+            notify("Карта не найдена. Попробуйте обновить страницу.", 'error');
+            logEvent({
+              id: `interaction_missing_card_${cardId}_${Date.now()}`,
+              timestamp: Date.now(),
+              type: 'error',
+              message: `Не удалось завершить взаимодействие: карта ${cardId} не найдена.`,
+              playerId: user.uid,
+              cardId
+            });
+            return;
+          }
+
           if (card.deck === "inventory") {
             if (cost > 0) {
               transaction.update(playerRef, { tiltCoins: increment(-cost) });
             }
 
-            notify(`Р В  Р Р†Р вЂљРІвЂћСћР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ ${cost > 0 ? 'Р В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В' : 'Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В'} Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${card.name}".`, 'success', card.id);
+            notify("Событие игры обновлено.", 'success');
             logEvent({
               id: `card_acquired_${card.id}_${Date.now()}`,
               timestamp: Date.now(), type: 'card_play',
-              message: `${playerData.login} ${cost > 0 ? `Р В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В  Р РЋРІР‚вЂќР В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${card.name}" Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В° ${cost} Р В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў.` : `Р В  Р РЋРІР‚вЂќР В  Р РЋРІР‚СћР В  Р вЂ™Р’В»Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${card.name}".`}`,
+              message: "Событие игры.",
               playerId: user.uid, cardId: card.id,
               details: { cost: cost, reason: cost > 0 ? 'buy_card' : 'interaction_reward' }
             });
 
             await handleDrawnCardDistribution(player, card, transaction);
           } else {
-            await applyMomentalCardEffect(player, card, transaction); // Р В  Р вЂ™Р’В¦Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’Вµ Р В Р Р‹Р В Р Р‰Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р Р‹Р Р†Р вЂљРЎвЂєР В  Р вЂ™Р’ВµР В  Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°
+            keepInteractionOpen = await applyMomentalCardEffect(player, card, transaction, !!activeInteraction?.fromCardMove);
           }
 
           transaction.update(gameStateRef, { revealedCards: arrayUnion(cardId) });
+        }
+
+        if (keepInteractionOpen) {
+          return;
         }
 
         if (activeInteraction?.fromCardMove) {
@@ -2214,11 +2553,11 @@ export function useGameData(
       });
     } catch (e) {
       console.error(e);
-      notify("Р В  Р РЋРЎСџР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚СћР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р В РІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ.", 'error');
+      notify("Событие игры обновлено.", 'error');
       logEvent({
         id: `finish_interaction_error_${Date.now()}`,
         timestamp: Date.now(), type: 'error',
-        message: `Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р В РІР‚В Р В  Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р В РІР‚В Р В  Р вЂ™Р’В·Р В  Р вЂ™Р’В°Р В  Р РЋРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚СћР В  Р СћРІР‚ВР В  Р вЂ™Р’ВµР В  Р Р†РІР‚С›РІР‚вЂњР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р В РІР‚В Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ: ${e instanceof Error ? e.message : String(e)}.`,
+        message: "Событие игры.",
         playerId: user.uid, cardId: cardId
       });
     }
@@ -2239,7 +2578,7 @@ export function useGameData(
     logEvent({
       id: `dice_roll_${Date.now()}`,
       timestamp: Date.now(), type: 'movement',
-      message: `${playerData.login} Р В  Р вЂ™Р’В±Р В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В±Р В  Р РЋРІР‚ВР В  Р РЋРІР‚Сњ: ${baseRoll + bonus}.`,
+      message: "Событие игры.",
       playerId: user.uid,
       details: { baseRoll: baseRoll, bonus: bonus, totalRoll: baseRoll + bonus }
     });
@@ -2251,11 +2590,22 @@ export function useGameData(
   };
 
   const buildTurnState = () => {
-    const activePlayers = players.filter((player) => player.inGame && player.role !== "admin");
+    const resultEntries = Object.entries(gameState.currentResults ?? {});
+    const hasCurrentResults = resultEntries.length > 0;
+    const getRoundScore = (player: Player) =>
+      hasCurrentResults
+        ? Number(gameState.currentResults?.[player.id] ?? 0)
+        : Number(player.lastTiltoCoins ?? 0);
+
+    const activePlayers = players.filter((player) =>
+      player.inGame &&
+      player.role !== "admin" &&
+      getRoundScore(player) > 0
+    );
     const sortedIds = [...activePlayers]
       .sort((a, b) => {
-        const scoreA = a.tiltCoins ?? 0;
-        const scoreB = b.tiltCoins ?? 0;
+        const scoreA = getRoundScore(a);
+        const scoreB = getRoundScore(b);
         if (scoreB !== scoreA) return scoreB - scoreA;
         return gameState.turnOrder.indexOf(a.id) - gameState.turnOrder.indexOf(b.id);
       })
@@ -2293,20 +2643,29 @@ export function useGameData(
     );
 
     if (hasUnresolvedCustomDuel) {
-      notify("Р В  Р В Р вЂ№Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В  Р В РІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В·Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р В РІР‚В  Р В  Р вЂ™Р’В°Р В  Р СћРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚ВР В  Р В РІР‚В¦-Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В.", 'warning');
+      notify("Событие игры обновлено.", 'warning');
       return;
     }
 
     const payload: Partial<GameState> = { phase: nextPhase, round: nextRound };
 
     if (nextPhase === "turn") {
-      Object.assign(payload, buildTurnState());
+      const turnState = buildTurnState();
+      Object.assign(payload, turnState);
+      if (turnState.turnOrder.length === 0) {
+        notify("Очередь хода пуста: тестовый переход в ход без участников.", 'warning');
+      }
     } else {
       payload.currentRoll = null;
       payload.currentRollPlayerId = null;
       payload.lastBaseRoll = null;
       payload.rollBonus = 0;
       payload.rollConfirmed = false;
+    }
+
+    if (payload.phase !== "turn") {
+      payload.turnOrder = [];
+      payload.currentTurnIndex = 0;
     }
 
     await updateDoc(doc(db, "gameState", "current"), payload);
@@ -2316,66 +2675,73 @@ export function useGameData(
     if (!isAdmin) return;
     try {
       await updateDoc(doc(db, "players", targetId), { tiltCoins: amount });
-      notify(`Р В  Р Р†Р вЂљР’ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В Р Р‹Р В РЎвЂњ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚вЂќР В  Р вЂ™Р’ВµР В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р В РІР‚В¦Р В  Р РЋРІР‚Сћ Р В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦ Р В  Р СћРІР‚ВР В  Р РЋРІР‚Сћ ${amount} Р РЋР вЂљР РЋРЎСџР вЂ™Р’В¦Р Р†Р вЂљРІР‚Сљ`, 'success');
+      notify("Событие игры обновлено.", 'success');
       logEvent({
         id: `admin_coin_update_${targetId}_${Date.now()}`,
         timestamp: Date.now(),
         type: 'coin_change',
-        message: `Р В  Р РЋРІР‚в„ўР В  Р СћРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™ Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В·Р В  Р РЋР’ВР В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В Р Р‹Р В РЎвЂњ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° ${getPlayerById(targetId)?.login} Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° ${amount}.`,
+        message: "Событие игры.",
         playerId: user?.uid || 'admin',
         targetPlayerId: targetId,
         details: { amount, action: 'admin_override' }
       });
-    } catch (e) {
-      console.error("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В° Р В  Р вЂ™Р’В°Р В  Р СћРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р РЋР’В:", e);
-      notify("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СћР В  Р вЂ™Р’В±Р В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р В РІР‚В Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р вЂ™Р’В±Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В Р Р‹Р В РЎвЂњР В  Р вЂ™Р’В°.", 'error');
+    } catch {
+      console.error("Ошибка действия.");
+      notify("Событие игры обновлено.", 'error');
     }
   };
 
   const handleAdminAddCard = async (targetId: string, cardId: string) => {
     if (!isAdmin) return;
     try {
-      await updateDoc(doc(db, "players", targetId), {
-        inventory: arrayUnion(cardId),
+      const targetRef = doc(db, "players", targetId);
+      await runTransaction(db, async (transaction) => {
+        const targetSnap = await transaction.get(targetRef);
+        transaction.update(targetRef, {
+          inventory: addOneCardToInventory((targetSnap.data() as Player | undefined)?.inventory, cardId),
+        });
       });
-      notify(`Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В° Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ`, 'success', cardId);
+      notify("Событие игры обновлено.", 'success');
       logEvent({
         id: `admin_add_card_${Date.now()}`,
         timestamp: Date.now(),
         type: 'card_play',
-        message: `Р В  Р РЋРІР‚в„ўР В  Р СћРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™ Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В» Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${allCards[cardId]?.name || cardId}" Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В Р Р‹Р РЋРІР‚Сљ ${getPlayerById(targetId)?.login}.`,
+        message: "Событие игры.",
         playerId: user?.uid || 'admin',
         targetPlayerId: targetId,
         cardId: cardId
       });
-    } catch (e) {
-      console.error("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’Вµ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р вЂ™Р’В°Р В  Р СћРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р РЋР’В:", e);
-      notify("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р РЋРІР‚В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“", 'error');
+    } catch {
+      console.error("Ошибка действия.");
+      notify("Событие игры обновлено.", 'error');
     }
   };
 
   const handleAdminRemoveCard = async (targetId: string, cardId: string) => {
     if (!isAdmin) return;
     try {
-      await updateDoc(doc(db, "players", targetId), {
-        inventory: arrayRemove(cardId),
+      const targetRef = doc(db, "players", targetId);
+      await runTransaction(db, async (transaction) => {
+        const targetSnap = await transaction.get(targetRef);
+        transaction.update(targetRef, {
+          inventory: removeOneCardFromInventory((targetSnap.data() as Player | undefined)?.inventory, cardId),
+        });
       });
-      notify(`Р В  Р РЋРІвЂћСћР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В° Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р вЂ™Р’В°`, 'info', cardId);
+      notify("Событие игры обновлено.", 'info');
       logEvent({
         id: `admin_rem_card_${Date.now()}`,
         timestamp: Date.now(),
         type: 'info',
-        message: `Р В  Р РЋРІР‚в„ўР В  Р СћРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™ Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В» Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІР‚Сљ "${allCards[cardId]?.name || cardId}" Р В Р Р‹Р РЋРІР‚Сљ Р В  Р РЋРІР‚ВР В  Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚СћР В  Р РЋРІР‚СњР В  Р вЂ™Р’В° ${getPlayerById(targetId)?.login}.`,
+        message: "Событие игры.",
         playerId: user?.uid || 'admin',
         targetPlayerId: targetId,
         cardId: cardId
       });
-    } catch (e) {
-      console.error("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В  Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В  Р РЋРІР‚В Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В  Р РЋРІР‚В Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“ Р В  Р вЂ™Р’В°Р В  Р СћРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р РЋР’В:", e);
-      notify("Р В  Р РЋРІР‚С”Р В Р Р‹Р Р†РІР‚С™Р’В¬Р В  Р РЋРІР‚ВР В  Р вЂ™Р’В±Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В° Р В Р Р‹Р РЋРІР‚СљР В  Р СћРІР‚ВР В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’ВµР В  Р В РІР‚В¦Р В  Р РЋРІР‚ВР В Р Р‹Р В Р РЏ Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљРІвЂћвЂ“", 'error');
+    } catch {
+      console.error("Ошибка действия.");
+      notify("Событие игры обновлено.", 'error');
     }
   };
-
   const handlePrepareTurn = async () => {
     if (!isAdmin) return;
     const hasUnresolvedCustomDuel = Object.values(gameState.activeDuels || {}).some(
@@ -2383,12 +2749,18 @@ export function useGameData(
     );
 
     if (hasUnresolvedCustomDuel) {
-      notify("Р В  Р В Р вЂ№Р В  Р В РІР‚В¦Р В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В  Р вЂ™Р’В°Р В  Р вЂ™Р’В»Р В  Р вЂ™Р’В° Р В  Р В РІР‚В Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В Р Р‹Р В РЎвЂњР В  Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’Вµ Р В Р Р‹Р В РІР‚С™Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В·Р В Р Р‹Р РЋРІР‚СљР В  Р вЂ™Р’В»Р В Р Р‹Р В Р вЂ°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ў Р В  Р РЋРІР‚СњР В  Р вЂ™Р’В°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В  Р РЋРІР‚СћР В  Р РЋР’ВР В  Р В РІР‚В¦Р В  Р РЋРІР‚СћР В  Р Р†РІР‚С›РІР‚вЂњ Р В  Р СћРІР‚ВР В Р Р‹Р РЋРІР‚СљР В Р Р‹Р В Р Р‰Р В  Р вЂ™Р’В»Р В  Р РЋРІР‚В Р В  Р В РІР‚В  Р В  Р вЂ™Р’В°Р В  Р СћРІР‚ВР В  Р РЋР’ВР В  Р РЋРІР‚ВР В  Р В РІР‚В¦-Р В  Р РЋРІР‚вЂќР В  Р вЂ™Р’В°Р В  Р В РІР‚В¦Р В  Р вЂ™Р’ВµР В  Р вЂ™Р’В»Р В  Р РЋРІР‚В.", 'warning');
+      notify("Событие игры обновлено.", 'warning');
+      return;
+    }
+
+    const turnState = buildTurnState();
+    if (turnState.turnOrder.length === 0) {
+      notify("Нет игроков с результатом больше 0. Нельзя начать ход.", 'warning');
       return;
     }
 
     await updateDoc(doc(db, "gameState", "current"), {
-      ...buildTurnState(),
+      ...turnState,
       phase: "turn",
     });
   };
@@ -2446,6 +2818,7 @@ export function useGameData(
       chooseStart,
       updateAvatar,
       handleUseCard,
+      handleRerollWheel,
       grantPrizeCard,
       handleMoveComplete,
       handleFinishInteraction,

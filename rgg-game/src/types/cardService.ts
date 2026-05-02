@@ -9,9 +9,8 @@ type StarterCardSeed = Omit<GameCard, "bgGradientStart" | "bgGradientEnd"> & {
   bgGradientEnd?: string | null;
 };
 
-
 export const uploadStarterCards = async () => {
-  console.log("рџљЂ РќР°С‡РёРЅР°РµРј Р·Р°РіСЂСѓР·РєСѓ РєР°СЂС‚ РІ Firestore...");
+  console.log("Начинаем загрузку карт в Firestore...");
 
   try {
     const batch = writeBatch(db);
@@ -36,9 +35,9 @@ export const uploadStarterCards = async () => {
     });
 
     await batch.commit();
-    console.log("вњ… Р’СЃРµ РєР°СЂС‚С‹ СѓСЃРїРµС€РЅРѕ Р·Р°РіСЂСѓР¶РµРЅС‹ РІ РєРѕР»Р»РµРєС†РёСЋ 'cards'!");
+    console.log("Все карты успешно загружены в Firestore.");
   } catch (error) {
-    console.error("вќЊ РћС€РёР±РєР° РїСЂРё Р·Р°РіСЂСѓР·РєРµ РєР°СЂС‚:", error);
+    console.error("Ошибка при загрузке карт:", error);
     throw error;
   }
 };
