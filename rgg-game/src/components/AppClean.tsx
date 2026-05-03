@@ -6,7 +6,7 @@ import BottomPanel from "./BottomPanel";
 import GameBoard from "./GameBoard";
 import PlayersSidebar from "./PlayersSidebar";
 import ScoresDetailsPage from "./ScoresDetailsPage";
-import { collection, addDoc, deleteField, doc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, deleteField, doc, getDocs, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 //import { v4 as uuidv4 } from 'uuid'; 
 
@@ -88,7 +88,13 @@ const ToastContainer: React.FC<{ toasts: ToastNotification[], removeToast: (id: 
   );
 };
 
-const EventLog: React.FC<{ gameEvents: GameEvent[], allCards: Record<string, GameCardType>, players: Player[] }> = ({ gameEvents, allCards, players }) => {
+const EventLog: React.FC<{
+  gameEvents: GameEvent[];
+  allCards: Record<string, GameCardType>;
+  players: Player[];
+  onClear: () => void;
+  isClearing: boolean;
+}> = ({ gameEvents, allCards, players, onClear, isClearing }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   void players;
   
@@ -97,26 +103,39 @@ const EventLog: React.FC<{ gameEvents: GameEvent[], allCards: Record<string, Gam
     .sort((a, b) => a.timestamp - b.timestamp); // Ensure chronological order
   return (
     <div className={`fixed top-1/2 -translate-y-1/2 left-0 h-1/2 w-80 z-30 transition-transform duration-300 ${isCollapsed ? '-translate-x-full' : 'translate-x-0'}`}>
-      <div className="h-full w-full bg-black/40 backdrop-blur-md border-r border-white/10 p-4 overflow-y-auto">
-        <h3 className="text-white text-lg font-bold mb-4">Лог событий</h3>
-        <div className="flex flex-col gap-2">
-          {uniqueGameEvents.map(event => (
-            <div key={event.id} className="text-xs text-zinc-400">
-              <span className="text-zinc-600 mr-2">[{new Date(event.timestamp).toLocaleTimeString()}]</span>
-              <span className={`
-                ${event.type === 'success' ? 'text-green-400' :
-                  event.type === 'error' ? 'text-red-400' :
-                  event.type === 'warning' ? 'text-yellow-400' : 'text-blue-400'}
-              `}>
-                {fixMojibake(event.message)}
-              </span>
-              {event.cardId && allCards[event.cardId] && (
-                <span className="ml-1 text-purple-300 cursor-help hover:underline">
-                  ({allCards[event.cardId].name})
+      <div className="h-full w-full bg-black/40 backdrop-blur-md border-r border-white/10 overflow-y-auto custom-scrollbar" style={{ direction: 'rtl' }}>
+        <div className="p-4" style={{ direction: 'ltr' }}>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h3 className="text-white text-lg font-bold">Лог событий</h3>
+            <button
+              type="button"
+              onClick={onClear}
+              disabled={isClearing || uniqueGameEvents.length === 0}
+              className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white/60 transition hover:border-red-400/40 hover:bg-red-500/15 hover:text-red-200 disabled:pointer-events-none disabled:opacity-40"
+              title="Очистить лог событий"
+            >
+              {isClearing ? "..." : "Очистить"}
+            </button>
+          </div>
+          <div className="flex flex-col gap-2">
+            {uniqueGameEvents.map(event => (
+              <div key={event.id} className="text-xs text-zinc-400">
+                <span className="text-zinc-600 mr-2">[{new Date(event.timestamp).toLocaleTimeString()}]</span>
+                <span className={`
+                  ${event.type === 'success' ? 'text-green-400' :
+                    event.type === 'error' ? 'text-red-400' :
+                    event.type === 'warning' ? 'text-yellow-400' : 'text-blue-400'}
+                `}>
+                  {fixMojibake(event.message)}
                 </span>
-              )}
-            </div>
-          ))}
+                {event.cardId && allCards[event.cardId] && (
+                  <span className="ml-1 text-purple-300 cursor-help hover:underline">
+                    ({allCards[event.cardId].name})
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
       <button 
@@ -171,6 +190,7 @@ function AppClean() {
     closeAll
   } = useModalStates();
   void localEvents; void setLocalEvents;
+  const [isClearingEventLog, setIsClearingEventLog] = useState(false);
 
   const notify = useCallback((message: string, type: ToastNotification['type'] = 'info', cardId?: string) => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -197,6 +217,29 @@ function AppClean() {
     handlers, getPlayerById
   } = useGameData(notify, logEvent);
 
+  const handleClearEventLog = useCallback(async () => {
+    if (isClearingEventLog) return;
+
+    setIsClearingEventLog(true);
+    try {
+      const snapshot = await getDocs(collection(db, "gameEvents"));
+      const docs = snapshot.docs;
+
+      for (let i = 0; i < docs.length; i += 450) {
+        const batch = writeBatch(db);
+        docs.slice(i, i + 450).forEach((eventDoc) => batch.delete(eventDoc.ref));
+        await batch.commit();
+      }
+
+      notify(docs.length > 0 ? `Лог очищен: удалено ${docs.length} событий.` : "Лог уже пуст.", 'success');
+    } catch (error) {
+      console.error("Failed to clear event log:", error);
+      notify("Не удалось очистить лог событий.", 'error');
+    } finally {
+      setIsClearingEventLog(false);
+    }
+  }, [isClearingEventLog, notify]);
+
   const getCardPrice = (card: GameCardType) => {
     const hasGoldenCard = playerData?.inventory?.includes("inv_021") ?? false;
     const defaultPrices = { common: 3, rare: 7, epic: 15, legendary: 0, default: 0 };
@@ -208,8 +251,10 @@ function AppClean() {
   const [coinNotification, setCoinNotification] = useState<{ amount: number; type: 'gain' | 'loss' } | null>(null);
 
   const [visualRoll, setVisualRoll] = useState<{ value: number; rolling: boolean; playerName: string } | null>(null);
+  const [cardVisualRoll, setCardVisualRoll] = useState<{ value: number; rolling: boolean; playerName: string } | null>(null);
   const [coinsToPay, setCoinsToPay] = useState<number>(1); // New state for coin input
   const lastProcessedRollRef = useRef<string | null>(null);
+  const lastProcessedCardRollRef = useRef<string | null>(null);
   const lastShownCardMoveRef = useRef<string | null>(null);
 
   const [isShuffling, setIsShuffling] = useState(false);
@@ -380,6 +425,36 @@ function AppClean() {
     }
   }, [gameState.currentRoll, gameState.lastBaseRoll, gameState.rollConfirmed, gameState.currentRollPlayerId, players, gameState.round, visualRoll?.rolling]);
 
+  useEffect(() => {
+    const cardRoll = gameState.cardDiceRoll;
+    if (!cardRoll || cardRoll.cardId !== "inv_009") return;
+    if (lastProcessedCardRollRef.current === cardRoll.id) return;
+
+    lastProcessedCardRollRef.current = cardRoll.id;
+    setCardVisualRoll({
+      value: cardRoll.value,
+      rolling: true,
+      playerName: `${cardRoll.playerName} - Сделка с магом`,
+    });
+
+    window.setTimeout(() => {
+      setCardVisualRoll(prev => {
+        if (prev && prev.value === cardRoll.value) return { ...prev, rolling: false };
+        return prev;
+      });
+    }, 1000);
+
+    window.setTimeout(() => {
+      if (cardRoll.playerId === user?.uid) {
+        void handlers.handleResolveCardDiceRoll(cardRoll.id);
+      }
+    }, 1350);
+
+    window.setTimeout(() => {
+      setCardVisualRoll(prev => (prev && prev.value === cardRoll.value) ? null : prev);
+    }, 3600);
+  }, [gameState.cardDiceRoll, handlers, user?.uid]);
+
   // Logic for duel dice visual roll
   useEffect(() => {
     const activeDuel = Object.values(gameState.activeDuels || {})
@@ -447,6 +522,16 @@ function AppClean() {
   const handleCardClick = async (card: GameCardType) => {
     if (isInteractionPending) return;
 
+    if (card.action === 'reflect_debuff') {
+      setGameAlert({
+        title: "Ответная карта",
+        message: "Карта \"А может тебя?\" появляется отдельным выбором, когда на вас играют подходящую направленную карту.",
+        type: 'info',
+        cardId: card.id,
+      });
+      return;
+    }
+
     // Предварительная проверка правил использования (дублируем логику из хука для UI)
     if (!isAdmin) {
       const { phase, currentRoll, showWheel } = gameState;
@@ -454,7 +539,6 @@ function AppClean() {
       const isFish = card.action === 'fish_protection';
       const isWheelCard = card.action === 'spin_wheel';
       const isExtraRoll = card.action === 'extra_roll';
-      const isReflect = card.action === 'reflect_debuff';
       const isMovement = card.action === 'move_steps' || card.action === 'move_target_for_coins' || card.action === 'move_target_and_self';
       const isPromoCode = card.action === 'promo_code_benefit';
 
@@ -465,7 +549,7 @@ function AppClean() {
       
       if (phase === 'turn') {
         // Защиту, Отражение и Промокодик можно всегда. Остальное только в свой ход.
-        if (!isProtection && !isFish && !isReflect && !isPromoCode && currentTurnPlayerId !== user?.uid) {
+        if (!isProtection && !isFish && !isPromoCode && currentTurnPlayerId !== user?.uid) {
           setGameAlert({ title: "Не твой ход", message: "Обычные карты можно использовать только в свою очередь.", type: 'info', cardId: card.id });
           return;
         }
@@ -479,6 +563,11 @@ function AppClean() {
         const isSpecialAction = isProtection || isFish || isExtraRoll || isMovement;
         const isMyRollDone = currentRoll !== null && gameState.currentRollPlayerId === user?.uid;
         
+        if (card.id === 'inv_005' && isMyRollDone) {
+          setGameAlert({ title: "Кубик брошен", message: "Квантовый прыжок можно использовать только до броска кубика.", type: 'warning', cardId: card.id });
+          return;
+        }
+
         if (!isSpecialAction && isMyRollDone) {
           setGameAlert({ title: "Кубик брошен", message: "Обычные карты (не движение и не защита) используются ДО броска.", type: 'warning', cardId: card.id });
           return;
@@ -1259,31 +1348,68 @@ function AppClean() {
 
       {/* ЭКРАН СБРОСА КАРТЫ СОПЕРНИКА (inv_010) */}
       {gameState.activeInteraction?.type === 'discard_selection' && gameState.activeInteraction.playerId === user?.uid && (
-        <div className="fixed inset-0 bg-red-950/95 backdrop-blur-xl z-[10010] flex flex-col items-center justify-start overflow-y-auto py-20 px-10 animate-in fade-in duration-500">
-          <div className="text-center mb-12">
-            <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/30 animate-pulse">
+        <div className="fixed inset-0 bg-red-950/95 backdrop-blur-xl z-[10010] flex h-screen flex-col items-center overflow-hidden px-4 py-5 sm:px-8 sm:py-6 animate-in fade-in duration-500">
+          <style>
+            {`
+              @keyframes rggBlindShuffle {
+                0% { transform: translate(-50%, -50%) rotate(var(--start-rot)) scale(0.92); opacity: 0.55; }
+                18% { transform: translate(calc(-50% + var(--x1)), calc(-50% + var(--y1))) rotate(var(--rot1)) scale(1); opacity: 1; }
+                38% { transform: translate(calc(-50% + var(--x2)), calc(-50% + var(--y2))) rotate(var(--rot2)) scale(0.97); }
+                62% { transform: translate(calc(-50% + var(--x3)), calc(-50% + var(--y3))) rotate(var(--rot3)) scale(1.03); }
+                82% { transform: translate(calc(-50% + var(--x4)), calc(-50% + var(--y4))) rotate(var(--rot4)) scale(0.98); opacity: 1; }
+                100% { transform: translate(-50%, -50%) rotate(var(--end-rot)) scale(0.92); opacity: 0.7; }
+              }
+            `}
+          </style>
+          <div className="relative z-10 text-center mb-4 shrink-0 max-w-5xl">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-3 border border-red-500/30 animate-pulse">
               <span className="text-4xl">✂️</span>
             </div>
-            <h2 className="text-6xl font-black text-red-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(239,68,68,0.5)] min-h-[1.2em]">
+            <h2 className="text-3xl sm:text-4xl font-black text-red-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(239,68,68,0.5)] min-h-[1.2em]">
                {isShuffling ? 'Перемешиваем...' : (gameState.activeInteraction.actingCardId === 'inv_011' ? 'Забираем!' : 'Выкидываем!')}
             </h2>
-            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">
+            <p className="text-white/40 text-xs sm:text-sm font-bold uppercase tracking-[0.25em] sm:tracking-[0.4em] mt-3 max-w-4xl px-2">
                {gameState.activeInteraction.actingCardId === 'inv_011' ? 'Выберите карту, которую хотите ЗАБРАТЬ у игрока ' : 'Выберите карту, которую хотите УДАЛИТЬ у игрока '}
               <span className="text-white">{players.find(p => p.id === gameState.activeInteraction?.targetPlayerId)?.login}</span>
             </p>
           </div>
           
-          <div className="flex-1 flex flex-col items-center justify-center min-h-[400px] w-full">
+          <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden custom-scrollbar px-1 pt-3">
+            <div className="min-h-full flex flex-col items-center justify-start">
             {isShuffling ? (
               /* Анимация тасовки стопки */
-              <div className="relative scale-110 mb-20">
-                {[...Array(5)].map((_, i) => (
+              <div className="relative h-[280px] sm:h-[320px] w-[520px] max-w-[88vw] scale-[0.68] sm:scale-75 mt-2 mb-4 overflow-hidden rounded-[2rem]">
+                {[
+                  ["-190px", "-42px", "150px", "52px", "-90px", "88px", "180px", "-72px", "-19deg", "34deg", "-28deg", "18deg", "-7deg"],
+                  ["170px", "36px", "-160px", "-70px", "120px", "-96px", "-180px", "55px", "13deg", "-31deg", "26deg", "-22deg", "8deg"],
+                  ["-105px", "95px", "205px", "-34px", "-170px", "-58px", "92px", "86px", "22deg", "-14deg", "36deg", "-33deg", "4deg"],
+                  ["118px", "-98px", "-214px", "24px", "152px", "76px", "-70px", "-104px", "-25deg", "20deg", "-17deg", "32deg", "-5deg"],
+                  ["0px", "-128px", "0px", "118px", "220px", "0px", "-220px", "0px", "5deg", "-38deg", "12deg", "-27deg", "2deg"],
+                  ["-230px", "0px", "100px", "-118px", "-35px", "132px", "210px", "28px", "-8deg", "28deg", "-36deg", "21deg", "-9deg"],
+                  ["224px", "0px", "-118px", "116px", "52px", "-132px", "-205px", "-34px", "18deg", "-26deg", "39deg", "-19deg", "6deg"],
+                  ["-58px", "-120px", "188px", "96px", "-210px", "20px", "42px", "-128px", "-33deg", "16deg", "-21deg", "37deg", "-3deg"],
+                  ["74px", "124px", "-190px", "-92px", "210px", "-18px", "-38px", "130px", "29deg", "-18deg", "24deg", "-34deg", "10deg"],
+                ].map(([x1, y1, x2, y2, x3, y3, x4, y4, startRot, rot1, rot2, rot3, endRot], i) => (
                   <div 
                     key={i}
-                    className="absolute inset-0 w-48 h-[300px] bg-zinc-900 border-4 border-red-500/40 rounded-[1.5rem] shadow-2xl animate-pulse"
+                    className="absolute left-1/2 top-[62%] w-40 h-[250px] sm:w-44 sm:h-[275px] bg-zinc-900 border-4 border-red-500/40 rounded-[1.5rem] shadow-2xl"
                     style={{ 
-                      transform: `rotate(${i * 6 - 12}deg) translate(${i * 4}px, ${i * 2}px)`,
-                      zIndex: 50 - i
+                      zIndex: 50 + ((i * 7) % 9),
+                      animation: `rggBlindShuffle 1.35s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 35}ms both`,
+                      ["--x1" as string]: x1,
+                      ["--y1" as string]: y1,
+                      ["--x2" as string]: x2,
+                      ["--y2" as string]: y2,
+                      ["--x3" as string]: x3,
+                      ["--y3" as string]: y3,
+                      ["--x4" as string]: x4,
+                      ["--y4" as string]: y4,
+                      ["--start-rot" as string]: startRot,
+                      ["--rot1" as string]: rot1,
+                      ["--rot2" as string]: rot2,
+                      ["--rot3" as string]: rot3,
+                      ["--rot4" as string]: `${(i % 2 === 0 ? 1 : -1) * (18 + i * 3)}deg`,
+                      ["--end-rot" as string]: endRot,
                     }}
                   >
                     <img src="/cards/card_back.svg" className="w-full h-full object-cover rounded-[1.1rem] opacity-60" alt="Shuffling" />
@@ -1293,11 +1419,12 @@ function AppClean() {
               </div>
             ) : (
               /* Сетка карт после перемешивания */
-              <div className="flex flex-wrap gap-8 justify-center max-w-7xl pb-20 animate-in zoom-in-95 duration-500">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5 sm:gap-7 justify-items-center content-start max-w-7xl w-full pt-2 pb-8 animate-in zoom-in-95 duration-500">
                 {gameState.activeInteraction.cards.map((cardId: string, idx: number) => (
                   <button 
                     key={`${cardId}-${idx}`}
                     type="button"
+                    disabled={isInteractionPending}
                     onClick={() => {
                       if (isInteractionPending) return;
                       if (gameState.activeInteraction?.targetPlayerId) {
@@ -1305,7 +1432,7 @@ function AppClean() {
                         void runInteractionAction(() => handlers.handleSelectOpponentCard(targetPlayerId, cardId));
                       }
                     }}
-                    className="w-48 h-[300px] rounded-[1.5rem] bg-zinc-900 border-4 border-red-500/30 cursor-pointer hover:scale-105 hover:border-red-500 hover:shadow-[0_0_40px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center relative group pointer-events-auto"
+                    className="w-36 h-[225px] sm:w-44 sm:h-[275px] rounded-[1.5rem] bg-zinc-900 border-4 border-red-500/30 cursor-pointer hover:scale-105 hover:border-red-500 hover:shadow-[0_0_40px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center relative group pointer-events-auto disabled:pointer-events-none disabled:opacity-50"
                   >
                     <img src="/cards/card_back.svg" className="w-full h-full object-cover rounded-[1.1rem] opacity-80 group-hover:opacity-100" alt="Back" />
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -1318,6 +1445,7 @@ function AppClean() {
                 ))}
               </div>
             )}
+            </div>
           </div>
 
           <button 
@@ -1408,7 +1536,7 @@ function AppClean() {
       )}
 
       {/* ЭКРАН B-SHOP (МАГАЗИН) */}
-      {gameState.activeInteraction?.type === 'bshop' && gameState.activeInteraction.playerId === user?.uid && (
+      {gameState.activeInteraction?.type === 'bshop' && [user?.uid, playerData.id].includes(gameState.activeInteraction.playerId) && (
         <div className="fixed inset-0 bg-pink-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
           <div className="text-center mb-12">
             <h2 className="text-6xl font-black text-pink-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(236,72,153,0.5)]">B-Shop</h2>
@@ -1507,6 +1635,74 @@ function AppClean() {
         </div>
       )}
 
+      {gameState.activeInteraction?.type === 'tax_response' && gameState.activeInteraction.playerId === user?.uid && (
+        <div className="fixed inset-0 bg-amber-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
+          <div className="text-center mb-8 max-w-2xl">
+            <h2 className="text-4xl sm:text-5xl font-black text-amber-300 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(251,191,36,0.45)]">
+              Платите налоги!
+            </h2>
+            <p className="text-white/70 text-sm font-bold uppercase tracking-[0.2em] mt-4">
+              {(gameState.activeInteraction.taxCollectorName || gameState.activeInteraction.taxOwnerName || getPlayerById(gameState.activeInteraction.taxOwnerId)?.login || 'Игрок')} собирает банк налогов
+            </p>
+            <p className="text-amber-200/80 text-sm font-bold mt-3">
+              В банке сейчас: {gameState.activeInteraction.taxBank ?? 0} монет
+            </p>
+            <p className="text-white/45 text-xs font-medium mt-3">
+              Можно внести 2 монеты в банк, выбрать gambling или перехватить сбор картой "А может тебя?", если она есть в руке.
+            </p>
+          </div>
+
+          <div className="grid gap-4 w-full max-w-md">
+            <button
+              disabled={isInteractionPending}
+              onClick={() => {
+                if (isInteractionPending) return;
+                void runInteractionAction(() => handlers.handleTaxResponse('pay'));
+              }}
+              className="bg-amber-400 text-black px-8 py-4 rounded-2xl font-black uppercase text-sm hover:bg-white transition-all active:scale-95 shadow-[0_5px_0_#b45309] active:shadow-none active:translate-y-1 disabled:opacity-50"
+            >
+              Внести 2 монеты
+            </button>
+
+            <button
+              disabled={isInteractionPending}
+              onClick={() => {
+                if (isInteractionPending) return;
+                void runInteractionAction(() => handlers.handleTaxResponse('gambling'));
+              }}
+              className="bg-red-600 text-white px-8 py-4 rounded-2xl font-black uppercase text-sm hover:bg-red-500 transition-all active:scale-95 shadow-[0_5px_0_#991b1b] active:shadow-none active:translate-y-1 disabled:opacity-50"
+            >
+              Выбрать gambling
+            </button>
+
+            {gameState.activeInteraction.cards.includes("inv_012") && (
+              <button
+                disabled={isInteractionPending}
+                onClick={() => {
+                  if (isInteractionPending) return;
+                  void runInteractionAction(() => handlers.handleTaxResponse('reflect'));
+                }}
+                className="bg-cyan-400 text-black px-8 py-4 rounded-2xl font-black uppercase text-sm hover:bg-white transition-all active:scale-95 shadow-[0_5px_0_#0e7490] active:shadow-none active:translate-y-1 disabled:opacity-50"
+              >
+                Перехватить сбор
+              </button>
+            )}
+
+            {gameState.activeInteraction.cards.includes("inv_019") && (
+              <button
+                disabled={isInteractionPending}
+                onClick={() => {
+                  if (isInteractionPending) return;
+                  void runInteractionAction(() => handlers.handleTaxResponse('promo'));
+                }}
+                className="bg-zinc-800 text-zinc-300 px-8 py-4 rounded-2xl font-black uppercase text-sm hover:bg-zinc-700 transition-all active:scale-95 disabled:opacity-50"
+              >
+                Промокодик
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {gameState.activeInteraction?.type === 'duel_challenge_response' && gameState.activeInteraction.playerId === user?.uid && (
         <div className="fixed inset-0 bg-purple-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
           <div className="text-center mb-12">
@@ -1836,6 +2032,14 @@ function AppClean() {
       )}
 
       {/* Визуализация броска кубиков для дуэли */}
+      {cardVisualRoll && !visualRoll && !duelVisualRoll && (
+        <DiceVisual
+          value={cardVisualRoll.value}
+          isRolling={cardVisualRoll.rolling}
+          playerName={cardVisualRoll.playerName}
+        />
+      )}
+
       {duelVisualRoll && (
         <DuelDiceVisual
           challengerRoll={duelVisualRoll.challenger.value}
@@ -1871,6 +2075,8 @@ function AppClean() {
         gameEvents={gameEvents} 
         allCards={allCards} 
         players={players} 
+        onClear={handleClearEventLog}
+        isClearing={isClearingEventLog}
       />
     </div>
   );

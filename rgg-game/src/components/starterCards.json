@@ -137,7 +137,7 @@
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExaXo4d2tkcG01cmN2OG8zaXB2dmprejZ1cmNxeXEyODdvMWkzOXQ2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/HpuJW6c49wmsCWafzR/giphy.gif",
     "price": 7,
-    "howtowork": "Выберите оппонента и сбросьте одну любую его карту (на ваш выбор).",
+    "howtowork": "Выберите оппонента и сбросьте одну любую его карту (на ваш выбор - вслепую).",
     "number": 10
   },
   {
@@ -151,7 +151,7 @@
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ2Q5eWNvdG8xN3ByNDVyOGVodWJqY3RvNDl0Mm4xZnFxcnh5MjF3eCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/2Tx2smt0cqbCUhmKBQ/giphy.gif",
     "price": 8,
-    "howtowork": "Выберите оппонента и заберите одну любую его карту (на ваш выбор) себе.",
+    "howtowork": "Выберите оппонента и заберите одну любую его карту (на ваш выбор - вслепую) себе.",
     "number": 11
   },
   {
@@ -165,7 +165,7 @@
     "faceCard": "/cards/card_back.svg",
     "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2prOHd1dnhiNnNobzh4aTk5MXJzaTF2NHR3djRuNDZ0Mmw4OGk2ciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/9YPudRhbu5eWwBtFlU/giphy.gif",
     "price": 7,
-    "howtowork": "Используется как ответ на карту другого игрока. Отражает негативный эффект обратно на него. (не работает на no, no mr. Fish, Дуэль)",
+    "howtowork": "Используется как ответ на карту другого игрока. Отражает негативный эффект обратно на него. (не работает на no, no mr. Fish, Дуэль, Коммунизм)",
     "number": 12
   },
   {

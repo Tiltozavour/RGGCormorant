@@ -122,6 +122,19 @@ const removeOneCardFromInventory = (inventory: string[] | undefined, cardId: str
   return nextInventory;
 };
 
+const REFLECT_CARD_ID = "inv_012";
+const REFLECTABLE_CARD_IDS = new Set([
+  "inv_007",
+  "inv_008",
+  "inv_009",
+  "inv_010",
+  "inv_011",
+  "inv_012",
+  "inv_013",
+  "inv_015",
+  "inv_016",
+]);
+
 /**
  * Проверяет, находится ли игрок в пределах одной клетки (соседняя или та же).
  * @param player1Id ID первого игрока.
@@ -176,6 +189,7 @@ export function useGameData(
   const [allCards, setAllCards] = useState<Record<string, GameCard>>({});
   const [syncedEvents, setSyncedEvents] = useState<GameEvent[]>([]);
   const lastAppliedCardMoveRef = useRef<string | null>(null);
+  const lastAppliedTaxPayoutRef = useRef<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -239,6 +253,37 @@ export function useGameData(
       prevCell: cardMove.prevCell ?? null,
     });
   }, [gameState.cardMove, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const payout = gameState.pendingTaxPayout;
+    if (!payout || payout.playerId !== user.uid || payout.amount <= 0) return;
+    if (lastAppliedTaxPayoutRef.current === payout.id) return;
+    lastAppliedTaxPayoutRef.current = payout.id;
+
+    void runTransaction(db, async (transaction) => {
+      const gameStateRef = doc(db, "gameState", "current");
+      const gsSnap = await transaction.get(gameStateRef);
+      if (!gsSnap.exists()) return;
+
+      const currentPayout = (gsSnap.data() as GameState).pendingTaxPayout;
+      if (!currentPayout || currentPayout.id !== payout.id || currentPayout.playerId !== user.uid) return;
+
+      transaction.update(doc(db, "players", user.uid), {
+        tiltCoins: increment(currentPayout.amount),
+        lastNotification: {
+          message: `Вы получили банк карты "Платите налоги!": ${currentPayout.amount} монет.`,
+          timestamp: Date.now(),
+          cardId: currentPayout.cardId || "inv_015",
+        },
+      });
+      transaction.update(gameStateRef, { pendingTaxPayout: null });
+    }).catch((error) => {
+      console.error(error);
+      lastAppliedTaxPayoutRef.current = null;
+      notify("Не удалось получить банк налогов.", 'error', payout.cardId || "inv_015");
+    });
+  }, [gameState.pendingTaxPayout, notify, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -652,6 +697,11 @@ export function useGameData(
       return;
     }
 
+    if (card.action === "reflect_debuff") {
+      notify('Карта "А может тебя?" используется только как ответ на направленную карту.', 'info', card.id);
+      return;
+    }
+
     const targetRef = targetPlayerId ? doc(db, "players", targetPlayerId) : null;
     const targetPlayer = getPlayerById(targetPlayerId);
     const displayCardName = card.id === "inv_016" ? "Катжит не виноват!" : card.name;
@@ -751,9 +801,47 @@ export function useGameData(
     }
 
     try {
-      const targetHasReflect = targetPlayer?.customStatus === "reflect_debuff";
+      const targetHasReflect = false;
       const targetHasFish = targetPlayer?.customStatus === "fish_shield";
       const targetHasPromoCode = targetPlayer?.customStatus === "promo_code_active";
+      const canOfferReflect =
+        !!targetPlayerId &&
+        targetPlayerId !== user.uid &&
+        !!targetPlayer?.inventory?.includes(REFLECT_CARD_ID) &&
+        REFLECTABLE_CARD_IDS.has(card.id);
+
+      if (canOfferReflect) {
+        const timestamp = Date.now();
+
+        logEvent({
+          id: `card_play_${card.id}_${timestamp}`,
+          timestamp,
+          type: 'card_play',
+          message: `${playerData.login} сыграл карту "${displayCardName}" против ${targetPlayer?.login}. ${targetPlayer?.login} может ответить картой "А может тебя?".`,
+          cardId: card.id,
+          playerId: user.uid,
+          targetPlayerId: targetPlayerId ?? undefined
+        });
+
+        await updateDoc(playerRef, { inventory: removeOneCardFromInventory(playerData.inventory, card.id) });
+        await updateDoc(doc(db, "gameState", "current"), {
+          revealedCards: arrayUnion(card.id),
+          activeInteraction: {
+            playerId: targetPlayerId,
+            type: "reflect_response",
+            targetPlayerId: user.uid,
+            cards: [REFLECT_CARD_ID],
+            actingCardId: card.id,
+          },
+          [`notifications.${targetPlayerId}`]: {
+            message: `${playerData.login} сыграл против вас карту "${displayCardName}". Можно отразить эффект картой "А может тебя?".`,
+            timestamp,
+            cardId: card.id,
+          },
+        });
+        notify(`${targetPlayer?.login} может отразить карту "${displayCardName}".`, 'info', card.id);
+        return;
+      }
 
       // Log card usage before removing from inventory
       logEvent({
@@ -797,7 +885,7 @@ export function useGameData(
             id: `coin_gain_${card.id}_${Date.now()}`,
             timestamp: Date.now(),
             type: 'coin_change',
-            message: "\u0421\u043e\u0431\u044b\u0442\u0438\u0435 \u0438\u0433\u0440\u044b.",
+            message: "Событие игры.",
             playerId: user.uid, cardId: card.id, details: { amount: card.value, reason: 'card_effect' }
           });
           break;
@@ -1006,6 +1094,20 @@ export function useGameData(
           }
 
           await updateDoc(playerRef, { position: targetPosition, prevCell: null });
+          await updateDoc(doc(db, "gameState", "current"), {
+            currentRoll: null,
+            currentRollPlayerId: null,
+            lastBaseRoll: null,
+            rollBonus: 0,
+            rollConfirmed: false,
+            forcedMovePlayerId: null,
+            cardMove: null,
+            activeInteraction: {
+              playerId: playerData.id,
+              type: "bshop",
+              cards: getRandomInteractionCards("bshop"),
+            },
+          });
           notify(`Вы телепортировались в B-Shop на клетку ${targetPosition}.`, 'info', card.id);
           logEvent({
             id: `teleport_to_bshop_${card.id}_${Date.now()}`,
@@ -1144,10 +1246,37 @@ export function useGameData(
           const roll = rollD6();
           const timestamp = Date.now();
           const mageCardName = "Сделка с магом";
+          const mageDiceRoll = {
+            id: `${card.id}_${user.uid}_${timestamp}`,
+            playerId: user.uid,
+            playerName: playerData.login,
+            cardId: card.id,
+            value: roll,
+            timestamp,
+          };
+
+          const resolveMageAfterVisualRoll = true;
+          if (resolveMageAfterVisualRoll) {
+            await updateDoc(doc(db, "gameState", "current"), {
+              cardDiceRoll: mageDiceRoll,
+              activeInteraction: null,
+            });
+            notify("Сделка с магом: бросаем кубик...", 'info', card.id);
+            logEvent({
+              id: `mage_deal_roll_${card.id}_${timestamp}`,
+              timestamp,
+              type: 'card_play',
+              message: `${playerData.login} использовал "${mageCardName}" и бросает кубик.`,
+              playerId: user.uid,
+              cardId: card.id,
+            });
+            break;
+          }
 
           if (roll === 1) {
             const message = `Сделка с магом: бросок ${roll}. Монет нет, маг отправляет вас на gambling.`;
             await updateDoc(doc(db, "gameState", "current"), {
+              cardDiceRoll: mageDiceRoll,
               activeInteraction: {
                 playerId: user.uid,
                 type: "gambling",
@@ -1174,6 +1303,7 @@ export function useGameData(
               lastNotification: { message, timestamp, cardId: card.id },
             });
             await updateDoc(doc(db, "gameState", "current"), {
+              cardDiceRoll: mageDiceRoll,
               activeInteraction: {
                 playerId: user.uid,
                 type: "gambling",
@@ -1195,6 +1325,9 @@ export function useGameData(
             await updateDoc(playerRef, {
               tiltCoins: increment(card.value),
               lastNotification: { message, timestamp, cardId: card.id },
+            });
+            await updateDoc(doc(db, "gameState", "current"), {
+              cardDiceRoll: mageDiceRoll,
             });
             notify(message, 'success', card.id);
             logEvent({
@@ -1279,14 +1412,6 @@ export function useGameData(
             });
             notify("Событие игры обновлено.", 'warning');
           }
-          break;
-
-        case "reflect_debuff":
-          await updateDoc(playerRef, {
-            customStatus: "reflect_debuff",
-            statusDuration: 1,
-          });
-          notify("Событие игры обновлено.", 'info');
           break;
 
         case "move_target_for_coins": {
@@ -1449,81 +1574,55 @@ export function useGameData(
           }
           break;
 
-        case "pay_or_move_back":
-          {
-            // Текст восстановлен после сбоя кодировки.
-            const targetIds = targetPlayerId 
-              ? [targetPlayerId] 
-              : players.filter(p => p.id !== user.uid && p.inGame && p.role !== 'admin').map(p => p.id);
+        case "pay_or_move_back": {
+          const roundPlayerIds = gameState.turnOrder.length > 0
+            ? gameState.turnOrder
+            : players.filter(p => p.inGame && p.role !== 'admin').map(p => p.id);
+          const taxTargetIds = roundPlayerIds.filter((id) => id !== user.uid && Boolean(getPlayerById(id)));
+          const firstTaxTargetId = taxTargetIds[0];
 
-            for (const pid of targetIds) {
-              const tRef = doc(db, "players", pid);
-              const tData = getPlayerById(pid);
-              if (!tData) continue;
-
-              const hasFish = tData.customStatus === "fish_shield";
-              const hasReflect = tData.customStatus === "reflect_debuff";
-              const hasPromoCode = tData.customStatus === "promo_code_active";
-              
-              if (hasFish) {
-                await updateDoc(tRef, clearTemporaryStatus);
-                notify("Событие игры обновлено.", 'warning');
-                continue;
-              }
-
-              const actualPRef = hasReflect ? playerRef : tRef;
-              const actualRecipientRef = hasReflect ? tRef : playerRef;
-              const victimData = hasReflect ? playerData : tData;
-
-              if (hasReflect) await updateDoc(tRef, clearTemporaryStatus);
-
-              const currentCoins = victimData.tiltCoins ?? 0;
-              let paymentAmount = card.value;
-              if (hasPromoCode) {
-                paymentAmount = Math.ceil(card.value / 2); // Victim pays half, rounding up
-                await updateDoc(actualPRef, clearTemporaryStatus); // Clear promo code status
-                notify("Событие игры обновлено.", 'success');
-                logEvent({
-                  id: `promo_code_used_taxes_${card.id}_${Date.now()}`,
-                  timestamp: Date.now(), type: 'status_effect',
-                  message: "Событие игры.",
-                  playerId: victimData.id, cardId: card.id,
-                  details: { originalAmount: card.value, finalAmount: paymentAmount }
-                });
-              }
-
-              if (currentCoins >= paymentAmount) { // Use adjusted paymentAmount
-                await runTransaction(db, async (transaction) => {
-                  transaction.update(actualPRef, { tiltCoins: increment(-paymentAmount) });
-                  transaction.update(actualRecipientRef, { tiltCoins: increment(paymentAmount) });
-                });
-                notify("Событие игры обновлено.", 'info');
-              } else {
-                // Текст восстановлен после сбоя кодировки.
-                const gamblingCards = getRandomInteractionCards("gambling");
-                const randomMomentalCardId = pickRandom(gamblingCards);
-                const randomMomentalCard = randomMomentalCardId ? allCards[randomMomentalCardId] : null;
-
-                if (randomMomentalCard) {
-                  await runTransaction(db, async (transaction) => {
-                    await applyMomentalCardEffect(victimData, randomMomentalCard, transaction);
-                  });
-                  notify("Событие игры обновлено.", 'warning');
-                  logEvent({
-                    id: `taxes_gambling_${card.id}_${Date.now()}`,
-                    timestamp: Date.now(), type: 'status_effect',
-                    message: "Событие игры.",
-                    playerId: victimData.id, cardId: card.id,
-                    details: { reason: 'failed_to_pay_taxes', momentalCardId: randomMomentalCard.id }
-                  });
-                } else {
-                  notify("Событие игры обновлено.", 'error');
-                }
-              }
-            }
+          if (!firstTaxTargetId) {
+            notify("Платить налоги некому: в очереди нет других активных игроков.", 'info', card.id);
+            break;
           }
-          break;
 
+          const firstTaxTarget = getPlayerById(firstTaxTargetId);
+          const timestamp = Date.now();
+          await updateDoc(doc(db, "gameState", "current"), {
+            activeInteraction: {
+              playerId: firstTaxTargetId,
+              type: "tax_response",
+              targetPlayerId: user.uid,
+              taxOwnerId: user.uid,
+              taxOwnerName: playerData.login,
+              taxCollectorId: user.uid,
+              taxCollectorName: playerData.login,
+              taxBank: 0,
+              taxQueue: taxTargetIds.slice(1),
+              cards: [
+                ...(firstTaxTarget?.inventory?.includes("inv_012") ? ["inv_012"] : []),
+                ...(firstTaxTarget?.inventory?.includes("inv_019") ? ["inv_019"] : []),
+              ],
+              actingCardId: card.id,
+            },
+            [`notifications.${firstTaxTargetId}`]: {
+              message: `${playerData.login} собирает банк налогов. Заплатите 2 монеты, используйте Промокодик или выберите gambling.`,
+              timestamp,
+              cardId: card.id,
+            },
+          });
+          notify(`Карта "Платите налоги!" запущена. Ожидаем ответ игрока ${firstTaxTarget?.login || "игрок"}.`, 'info', card.id);
+          logEvent({
+            id: `taxes_started_${card.id}_${timestamp}`,
+            timestamp,
+            type: 'card_play',
+            message: `${playerData.login} сыграл "Платите налоги!" для ${taxTargetIds.length} активных игроков.`,
+            playerId: user.uid,
+            cardId: card.id,
+            details: { targetIds: taxTargetIds },
+          });
+          break;
+        }
         case "take_next_card": {
           const nextPlayerId = getNextPlayerId(user.uid);
           if (!nextPlayerId) {
@@ -1605,14 +1704,14 @@ export function useGameData(
                 transaction.update(actualRecipientRef, { tiltCoins: increment(stealAmount) });
               });
               
-              const victimName = targetHasReflect ? "\u0446\u0435\u043b\u044c" : targetPlayer.login;
-              const getterName = targetHasReflect ? targetPlayer.login : "\u0446\u0435\u043b\u044c";
-              notify(`${getterName} \u043f\u043e\u043b\u0443\u0447\u0438\u043b ${stealAmount} \u043c\u043e\u043d\u0435\u0442 \u043e\u0442 ${victimName}.`, 'success');
+              const victimName = targetHasReflect ? "цель" : targetPlayer.login;
+              const getterName = targetHasReflect ? targetPlayer.login : "цель";
+              notify(`${getterName} получил ${stealAmount} монет от ${victimName}.`, 'success');
               
               logEvent({
                 id: `communism_${card.id}_${Date.now()}`,
                 timestamp: Date.now(), type: 'coin_change',
-                message: `${getterName} \u043f\u043e\u043b\u0443\u0447\u0438\u043b ${stealAmount} \u043c\u043e\u043d\u0435\u0442 \u043e\u0442 ${victimName}.`,
+                message: `${getterName} получил ${stealAmount} монет от ${victimName}.`,
                 playerId: user.uid, targetPlayerId: targetPlayerId ?? undefined, cardId: card.id,
                 details: { amount: stealAmount, reflected: targetHasReflect }
               });
@@ -1640,7 +1739,7 @@ export function useGameData(
 
 
         default:
-          console.warn("\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u043a\u0430\u0440\u0442\u044b:", card.action);
+          console.warn("Неизвестное действие карты:", card.action);
           notify("Событие игры обновлено.", 'error');
       }
     } catch (e) {
@@ -1764,9 +1863,8 @@ export function useGameData(
 
     if (!user || !playerData) return;
 
-    console.log("\u0412\u044b\u0431\u043e\u0440 \u043a\u0430\u0440\u0442\u044b \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430:", targetPlayerId, "\u043a\u0430\u0440\u0442\u0430:", cardId);
-    const targetRef = doc(db, "players", targetPlayerId);
-    const cardName = allCards[cardId]?.name || "\u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u043a\u0430\u0440\u0442\u0430";
+    console.log("Выбор карты соперника:", targetPlayerId, "карта:", cardId);
+    const cardName = allCards[cardId]?.name || "неизвестная карта";
     const actingCardId = gameState.activeInteraction?.actingCardId;
 
     try {
@@ -1776,10 +1874,25 @@ export function useGameData(
         if (!gsSnap.exists()) return;
 
         const interaction = (gsSnap.data() as GameState).activeInteraction;
+        if (
+          !interaction ||
+          interaction.type !== "discard_selection" ||
+          interaction.playerId !== user.uid ||
+          interaction.targetPlayerId !== targetPlayerId ||
+          !interaction.cards.includes(cardId)
+        ) {
+          throw new Error("Некорректное или устаревшее взаимодействие выбора карты.");
+        }
+
         const isSteal = interaction?.actingCardId === "inv_011";
         const recipientId = interaction?.recipientId;
+        const targetRef = doc(db, "players", targetPlayerId);
         const targetSnap = await transaction.get(targetRef);
         const targetInventory = (targetSnap.data() as Player | undefined)?.inventory;
+        if (!targetInventory?.includes(cardId)) {
+          throw new Error("Выбранной карты больше нет у цели.");
+        }
+
         let recipientInventory: string[] | undefined;
         if (isSteal && recipientId) {
           const recipientSnap = await transaction.get(doc(db, "players", recipientId));
@@ -1792,8 +1905,8 @@ export function useGameData(
           // Текст восстановлен после сбоя кодировки.
           lastNotification: {
             message: isSteal 
-              ? `\u0418\u0433\u0440\u043e\u043a "${playerData.login}" \u0437\u0430\u0431\u0440\u0430\u043b \u0443 \u0432\u0430\u0441 \u043a\u0430\u0440\u0442\u0443 "${cardName}"`
-              : `\u0418\u0433\u0440\u043e\u043a "${playerData.login}" \u0441\u0431\u0440\u043e\u0441\u0438\u043b \u0432\u0430\u0448\u0443 \u043a\u0430\u0440\u0442\u0443 "${cardName}"`,
+              ? `Игрок "${playerData.login}" забрал у вас карту "${cardName}"`
+              : `Игрок "${playerData.login}" сбросил вашу карту "${cardName}"`,
             timestamp: Date.now(),
             cardId: cardId
           }
@@ -1936,6 +2049,454 @@ export function useGameData(
     }
   };
 
+  const handleReflectResponse = async (useReflect: boolean) => {
+    if (!user || !playerData || !gameState.activeInteraction || gameState.activeInteraction.type !== "reflect_response") return;
+
+    const interaction = gameState.activeInteraction;
+    if (interaction.playerId !== user.uid || !interaction.targetPlayerId || !interaction.actingCardId) return;
+
+    const defenderId = user.uid;
+    const attackerId = interaction.targetPlayerId;
+    const card = allCards[interaction.actingCardId];
+    const attacker = getPlayerById(attackerId);
+    const defender = playerData;
+    const gameStateRef = doc(db, "gameState", "current");
+    const defenderRef = doc(db, "players", defenderId);
+
+    if (!card || !attacker) {
+      await updateDoc(gameStateRef, { activeInteraction: null });
+      return;
+    }
+
+    const openMoveForCoins = async (controllerId: string, targetId: string, reflected: boolean) => {
+      const controller = getPlayerById(controllerId);
+      await updateDoc(gameStateRef, {
+        activeInteraction: {
+          playerId: controllerId,
+          type: "move_for_coins_selection",
+          cards: [],
+          targetPlayerId: targetId,
+          actingCardId: card.id,
+          reflected,
+        },
+      });
+      notify(`${controller?.login || "Игрок"} выбирает, сколько монет потратить на коррупцию.`, 'info', card.id);
+    };
+
+    const openDiscardSelection = async (selectorId: string, victimId: string, recipientId?: string) => {
+      const victim = getPlayerById(victimId);
+      if (!victim?.inventory?.length) {
+        await updateDoc(gameStateRef, { activeInteraction: null });
+        notify("У цели нет карт для выбора.", 'info', card.id);
+        return;
+      }
+
+      await updateDoc(gameStateRef, {
+        activeInteraction: {
+          playerId: selectorId,
+          type: "discard_selection",
+          targetPlayerId: victimId,
+          ...(recipientId ? { recipientId } : {}),
+          cards: shuffle(victim.inventory),
+          actingCardId: card.id,
+        },
+      });
+    };
+
+    const applyJudge = async (targetId: string, targetName: string, reflected: boolean) => {
+      const roll = rollD6();
+      const delta = roll >= 4 ? (card.value || 2) : -(card.value || 2);
+      const amount = Math.abs(delta);
+      const message = `Судья душ: бросок ${roll}. ${targetName} ${delta >= 0 ? `получает ${amount} монет` : `теряет ${amount} монет`}.`;
+
+      await updateDoc(doc(db, "players", targetId), {
+        tiltCoins: increment(delta),
+        lastNotification: { message, timestamp: Date.now(), cardId: card.id },
+      });
+      await updateDoc(gameStateRef, { activeInteraction: null });
+      notify(reflected ? `Карта отражена. ${message}` : message, delta >= 0 ? 'success' : 'warning', card.id);
+    };
+
+    const applyMage = async (target: Player, reflected: boolean) => {
+      const roll = rollD6();
+      const timestamp = Date.now();
+      const mageDiceRoll = {
+        id: `${card.id}_${target.id}_${timestamp}`,
+        playerId: target.id,
+        playerName: target.login,
+        cardId: card.id,
+        value: roll,
+        timestamp,
+      };
+
+      const resolveMageAfterVisualRoll = true;
+      if (resolveMageAfterVisualRoll) {
+        await updateDoc(gameStateRef, {
+          cardDiceRoll: mageDiceRoll,
+          activeInteraction: null,
+        });
+        notify(reflected ? `Карта отражена. ${target.login} бросает кубик для "Сделки с магом".` : `${target.login} бросает кубик для "Сделки с магом".`, 'info', card.id);
+        return;
+      }
+
+      if (roll <= 4) {
+        await updateDoc(doc(db, "players", target.id), {
+          ...(roll > 1 ? { tiltCoins: increment(card.value) } : {}),
+          lastNotification: {
+            message: `Сделка с магом: бросок ${roll}. ${roll > 1 ? `+${card.value} монет и ` : ""}открыт gambling.`,
+            timestamp,
+            cardId: card.id,
+          },
+        });
+        await updateDoc(gameStateRef, {
+          cardDiceRoll: mageDiceRoll,
+          activeInteraction: {
+            playerId: target.id,
+            type: "gambling",
+            cards: getRandomInteractionCards("gambling"),
+          },
+        });
+      } else {
+        await updateDoc(doc(db, "players", target.id), {
+          tiltCoins: increment(card.value),
+          lastNotification: {
+            message: `Сделка с магом: бросок ${roll}. +${card.value} монет.`,
+            timestamp,
+            cardId: card.id,
+          },
+        });
+        await updateDoc(gameStateRef, { activeInteraction: null });
+        await updateDoc(gameStateRef, { cardDiceRoll: mageDiceRoll });
+      }
+
+      notify(reflected ? `Карта отражена. Рыбка теперь у ${target.login}.` : `Рыбка теперь защищает ${target.login}.`, 'info', card.id);
+    };
+
+    const applyKatjit = async (target: Player, thief: Player, forcedFail: boolean) => {
+      const timestamp = Date.now();
+      const roll = forcedFail ? 1 : rollD6();
+
+      if (roll >= 4) {
+        const hasPromoCode = target.customStatus === "promo_code_active";
+        const victimLoss = hasPromoCode ? 2 : card.value;
+        await runTransaction(db, async (transaction) => {
+          transaction.update(doc(db, "players", target.id), {
+            tiltCoins: increment(-victimLoss),
+            lastNotification: {
+              message: `${thief.login} украл у вас ${victimLoss} монет картой "Катжит не виноват!" (бросок ${roll}).`,
+              timestamp,
+              cardId: card.id,
+            },
+            ...(hasPromoCode ? clearTemporaryStatus : {}),
+          });
+          transaction.update(doc(db, "players", thief.id), { tiltCoins: increment(victimLoss) });
+          transaction.update(gameStateRef, { activeInteraction: null });
+        });
+        notify(`Катжит: бросок ${roll}. ${thief.login} украл ${victimLoss} монет у ${target.login}.`, 'success', card.id);
+      } else {
+        await updateDoc(doc(db, "players", thief.id), {
+          tiltCoins: increment(-card.value),
+          lastNotification: {
+            message: `Катжит: бросок ${roll}. Провал, вы теряете ${card.value} монет.`,
+            timestamp,
+            cardId: card.id,
+          },
+        });
+        await updateDoc(gameStateRef, { activeInteraction: null });
+        notify(`Катжит: бросок ${roll}. Провал, ${thief.login} теряет ${card.value} монет.`, 'warning', card.id);
+      }
+    };
+
+    const applyTaxToOne = async (victim: Player, recipient: Player) => {
+      const paymentAmount = card.value || 2;
+      const victimCoins = victim.tiltCoins ?? 0;
+
+      if (victimCoins >= paymentAmount) {
+        await runTransaction(db, async (transaction) => {
+          transaction.update(doc(db, "players", victim.id), { tiltCoins: increment(-paymentAmount) });
+          transaction.update(doc(db, "players", recipient.id), { tiltCoins: increment(paymentAmount) });
+          transaction.update(gameStateRef, { activeInteraction: null });
+        });
+        notify(`${victim.login} заплатил ${paymentAmount} монет игроку ${recipient.login}.`, 'info', card.id);
+      } else {
+        await updateDoc(gameStateRef, {
+          activeInteraction: {
+            playerId: victim.id,
+            type: "gambling",
+            cards: getRandomInteractionCards("gambling"),
+            actingCardId: card.id,
+          },
+        });
+        notify(`${victim.login} не смог заплатить налог и тянет gambling.`, 'warning', card.id);
+      }
+    };
+
+    try {
+      if (useReflect) {
+        if (!defender.inventory?.includes(REFLECT_CARD_ID)) {
+          notify('У вас нет карты "А может тебя?".', 'warning', REFLECT_CARD_ID);
+          return;
+        }
+
+        await updateDoc(defenderRef, { inventory: removeOneCardFromInventory(defender.inventory, REFLECT_CARD_ID) });
+        await updateDoc(gameStateRef, { revealedCards: arrayUnion(REFLECT_CARD_ID) });
+
+        if (card.id === REFLECT_CARD_ID) {
+          await updateDoc(gameStateRef, { activeInteraction: null });
+          notify("Отражение отменило отражение. Карта не сработала.", 'info', REFLECT_CARD_ID);
+          return;
+        }
+      }
+
+      const reflected = useReflect;
+      const target = reflected ? attacker : defender;
+      const controller = reflected ? defender : attacker;
+
+      switch (card.id) {
+        case "inv_007": {
+          const timestamp = Date.now();
+          await updateDoc(gameStateRef, {
+            cardMove: {
+              id: `${card.id}_${timestamp}`,
+              controllerId: controller.id,
+              controllerName: controller.login,
+              targetId: target.id,
+              steps: card.value,
+              cardId: card.id,
+              cardName: card.name,
+            },
+            forcedMovePlayerId: null,
+            currentRoll: null,
+            currentRollPlayerId: null,
+            rollConfirmed: false,
+            activeInteraction: null,
+          });
+          notify(reflected ? `Карта отражена. Теперь ${defender.login} управляет фишкой ${attacker.login}.` : `${attacker.login} управляет фишкой ${defender.login}.`, 'info', card.id);
+          break;
+        }
+        case "inv_008":
+          await applyJudge(target.id, target.login, reflected);
+          break;
+        case "inv_009":
+          await applyMage(target, reflected);
+          break;
+        case "inv_010":
+          await openDiscardSelection(controller.id, target.id);
+          break;
+        case "inv_011":
+          await openDiscardSelection(controller.id, target.id, controller.id);
+          break;
+        case "inv_013":
+          await openMoveForCoins(controller.id, target.id, reflected);
+          break;
+        case "inv_015":
+          if (reflected) {
+            await updateDoc(gameStateRef, { activeInteraction: null });
+            notify("Карта отражена. Вы не платите монеты и не тянете gambling.", 'info', card.id);
+          } else {
+            await applyTaxToOne(defender, attacker);
+          }
+          break;
+        case "inv_016":
+          await applyKatjit(defender, attacker, reflected);
+          break;
+        default:
+          await updateDoc(gameStateRef, { activeInteraction: null });
+          notify("Эту карту нельзя отразить.", 'warning', REFLECT_CARD_ID);
+      }
+    } catch (e) {
+      console.error(e);
+      notify("Не удалось обработать ответную карту.", 'error', REFLECT_CARD_ID);
+    }
+  };
+
+  const handleTaxResponse = async (response: "pay" | "gambling" | "reflect" | "promo") => {
+    if (!user || !playerData || !gameState.activeInteraction || gameState.activeInteraction.type !== "tax_response") return;
+
+    const interaction = gameState.activeInteraction;
+    if (interaction.playerId !== user.uid) return;
+
+    const ownerId = interaction.taxOwnerId || interaction.targetPlayerId;
+    if (!ownerId) return;
+
+    const ownerName = interaction.taxOwnerName || getPlayerById(ownerId)?.login || "игрок";
+    const taxCardId = interaction.actingCardId || "inv_015";
+    const taxCard = allCards[taxCardId];
+    const paymentAmount = taxCard?.value || 2;
+    const promoPaymentAmount = Math.ceil(paymentAmount / 2);
+    const gameStateRef = doc(db, "gameState", "current");
+    const playerRef = doc(db, "players", user.uid);
+
+    const makeNextTaxInteraction = (
+      queue: string[] | undefined,
+      collectorId: string,
+      collectorName: string,
+      bank: number,
+    ) => {
+      const [nextPlayerId, ...restQueue] = queue ?? [];
+      if (!nextPlayerId) return null;
+
+      const nextPlayer = getPlayerById(nextPlayerId);
+      return {
+        playerId: nextPlayerId,
+        type: "tax_response" as const,
+        targetPlayerId: ownerId,
+        taxOwnerId: ownerId,
+        taxOwnerName: ownerName,
+        taxCollectorId: collectorId,
+        taxCollectorName: collectorName,
+        taxBank: bank,
+        taxQueue: restQueue,
+        cards: [
+          ...(nextPlayer?.inventory?.includes("inv_012") ? ["inv_012"] : []),
+          ...(nextPlayer?.inventory?.includes("inv_019") ? ["inv_019"] : []),
+        ],
+        actingCardId: taxCardId,
+      };
+    };
+
+    let finalBank = 0;
+    let finalCollectorName = ownerName;
+    let queueFinished = false;
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        const playerSnap = await transaction.get(playerRef);
+        if (!gsSnap.exists() || !playerSnap.exists()) return;
+
+        const currentInteraction = (gsSnap.data() as GameState).activeInteraction;
+        if (!currentInteraction || currentInteraction.type !== "tax_response" || currentInteraction.playerId !== user.uid) {
+          return;
+        }
+
+        let queue = currentInteraction.taxQueue ?? [];
+        const timestamp = Date.now();
+        let collectorId = currentInteraction.taxCollectorId || ownerId;
+        let collectorName = currentInteraction.taxCollectorName || ownerName;
+        let bank = currentInteraction.taxBank ?? 0;
+        const updates: Record<string, unknown> = {};
+
+        if (response === "pay" || response === "promo") {
+          const currentInventory = (playerSnap.data() as Player).inventory;
+          const usedPromo = response === "promo";
+          if (usedPromo && !currentInventory?.includes("inv_019")) {
+            throw new Error("promo_card_missing");
+          }
+
+          const actualPayment = usedPromo ? promoPaymentAmount : paymentAmount;
+          bank += actualPayment;
+          transaction.update(playerRef, {
+            tiltCoins: increment(-actualPayment),
+            ...(usedPromo ? { inventory: removeOneCardFromInventory(currentInventory, "inv_019") } : {}),
+            lastNotification: {
+              message: usedPromo
+                ? `Вы использовали Промокодик и внесли ${actualPayment} монету в банк карты "Платите налоги!".`
+                : `Вы внесли ${actualPayment} монеты в банк карты "Платите налоги!".`,
+              timestamp,
+              cardId: usedPromo ? "inv_019" : taxCardId,
+            },
+          });
+          if (usedPromo) updates.revealedCards = arrayUnion("inv_019");
+        }
+
+        if (response === "reflect") {
+          const currentInventory = (playerSnap.data() as Player).inventory;
+          if (!currentInventory?.includes("inv_012")) {
+            throw new Error("reflect_card_missing");
+          }
+
+          if (ownerId !== user.uid && !queue.includes(ownerId)) {
+            queue = [...queue, ownerId];
+          }
+
+          collectorId = user.uid;
+          collectorName = playerData.login;
+          transaction.update(playerRef, {
+            inventory: removeOneCardFromInventory(currentInventory, "inv_012"),
+            lastNotification: {
+              message: `Вы перехватили сбор налогов картой "А может тебя?". Сбор продолжается, текущий банк: ${bank} монет.`,
+              timestamp,
+              cardId: "inv_012",
+            },
+          });
+          updates.revealedCards = arrayUnion("inv_012");
+        }
+
+        if (response === "gambling") {
+          updates.activeInteraction = {
+            playerId: user.uid,
+            type: "gambling",
+            cards: getRandomInteractionCards("gambling"),
+            actingCardId: taxCardId,
+            fromTaxCard: true,
+            taxQueue: queue,
+            taxOwnerId: ownerId,
+            taxOwnerName: ownerName,
+            taxCollectorId: collectorId,
+            taxCollectorName: collectorName,
+            taxBank: bank,
+            targetPlayerId: ownerId,
+          };
+          transaction.update(playerRef, {
+            lastNotification: {
+              message: `Вы выбрали gambling вместо взноса ${paymentAmount} монет в банк налогов.`,
+              timestamp,
+              cardId: taxCardId,
+            },
+          });
+        } else {
+          const nextInteraction = makeNextTaxInteraction(queue, collectorId, collectorName, bank);
+          if (nextInteraction) {
+            updates.activeInteraction = nextInteraction;
+            updates[`notifications.${nextInteraction.playerId}`] = {
+              message: `${collectorName} собирает банк налогов. Заплатите ${paymentAmount} монеты, используйте Промокодик или выберите gambling.`,
+              timestamp,
+              cardId: taxCardId,
+            };
+          } else {
+            queueFinished = true;
+            finalBank = bank;
+            finalCollectorName = collectorName;
+            updates.activeInteraction = null;
+            updates.pendingTaxPayout = bank > 0
+              ? {
+                  id: `tax_payout_${collectorId}_${timestamp}`,
+                  playerId: collectorId,
+                  playerName: collectorName,
+                  amount: bank,
+                  cardId: taxCardId,
+                }
+              : null;
+            updates[`notifications.${collectorId}`] = {
+              message: `Сбор налогов завершен. Банк ${bank} монет уходит вам.`,
+              timestamp,
+              cardId: taxCardId,
+            };
+          }
+        }
+
+        transaction.update(gameStateRef, updates);
+      });
+
+      if (response === "pay") {
+        notify(`Вы внесли ${paymentAmount} монеты в банк налогов.`, 'info', taxCardId);
+      } else if (response === "promo") {
+        notify(`Промокодик сработал: в банк внесено ${promoPaymentAmount} монет.`, 'info', "inv_019");
+      } else if (response === "reflect") {
+        notify("Вы перехватили сбор налогов. Очередь продолжается.", 'info', "inv_012");
+      } else if (response === "gambling") {
+        notify("Вы выбрали gambling вместо оплаты налога.", 'warning', taxCardId);
+      }
+
+      if (queueFinished) {
+        notify(`Банк налогов ${finalBank} монет уходит игроку ${finalCollectorName}.`, 'success', taxCardId);
+      }
+    } catch (e) {
+      console.error(e);
+      notify("Не удалось обработать ответ на налог.", 'error', taxCardId);
+    }
+  };
   const handleCancelInteraction = async () => {
     if (!user || !playerData || !gameState.activeInteraction) return;
 
@@ -2298,8 +2859,8 @@ export function useGameData(
         const challengerBet = duel.bets[duel.challengerId] || 0;
         const targetBet = duel.bets[duel.targetId] || 0;
         const totalPot = challengerBet + targetBet;
-        const challengerLogin = getPlayerById(duel.challengerId)?.login || "\u0418\u0433\u0440\u043e\u043a 1";
-        const targetLogin = getPlayerById(duel.targetId)?.login || "\u0418\u0433\u0440\u043e\u043a 2";
+        const challengerLogin = getPlayerById(duel.challengerId)?.login || "Игрок 1";
+        const targetLogin = getPlayerById(duel.targetId)?.login || "Игрок 2";
         const timestamp = Date.now();
 
         if (winnerId !== 'draw') {
@@ -2324,24 +2885,24 @@ export function useGameData(
 
           if (winnerId === 'draw') {
             return duel.weapon === 'dice'
-              ? `\u0414\u0443\u044d\u043b\u044c: \u043d\u0438\u0447\u044c\u044f (${myRoll} vs ${oppRoll}). \u0421\u0442\u0430\u0432\u043a\u0430 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0435\u043d\u0430.`
-              : `\u0414\u0443\u044d\u043b\u044c: \u043d\u0438\u0447\u044c\u044f. \u0421\u0442\u0430\u0432\u043a\u0430 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0435\u043d\u0430.`;
+              ? `Дуэль: ничья (${myRoll} vs ${oppRoll}). Ставка возвращена.`
+              : `Дуэль: ничья. Ставка возвращена.`;
           }
 
           if (duel.weapon === 'dice') {
             return isMeWinner
-              ? `\u041f\u043e\u0431\u0435\u0434\u0430! \u0412\u044b \u0432\u044b\u0438\u0433\u0440\u0430\u043b\u0438 \u0434\u0443\u044d\u043b\u044c (${myRoll} vs ${oppRoll}) \u0438 \u043f\u043e\u043b\u0443\u0447\u0438\u043b\u0438 ${totalPot} \u043c\u043e\u043d\u0435\u0442.`
-              : `\u041f\u043e\u0440\u0430\u0436\u0435\u043d\u0438\u0435. \u0412\u044b \u043f\u0440\u043e\u0438\u0433\u0440\u0430\u043b\u0438 \u0434\u0443\u044d\u043b\u044c (${myRoll} vs ${oppRoll}) \u0438\u0433\u0440\u043e\u043a\u0443 ${opponentName}.`;
+              ? `Победа! Вы выиграли дуэль (${myRoll} vs ${oppRoll}) и получили ${totalPot} монет.`
+              : `Поражение. Вы проиграли дуэль (${myRoll} vs ${oppRoll}) игроку ${opponentName}.`;
           }
 
           return isMeWinner
-            ? `\u041f\u043e\u0431\u0435\u0434\u0430! \u0410\u0434\u043c\u0438\u043d \u043f\u0440\u0438\u0437\u043d\u0430\u043b \u0432\u0430\u0441 \u043f\u043e\u0431\u0435\u0434\u0438\u0442\u0435\u043b\u0435\u043c \u043a\u0430\u0441\u0442\u043e\u043c\u043d\u043e\u0439 \u0434\u0443\u044d\u043b\u0438. \u0412\u044b \u043f\u043e\u043b\u0443\u0447\u0438\u043b\u0438 ${totalPot} \u043c\u043e\u043d\u0435\u0442.`
-            : `\u041f\u043e\u0440\u0430\u0436\u0435\u043d\u0438\u0435. \u0410\u0434\u043c\u0438\u043d \u043f\u0440\u0438\u0437\u043d\u0430\u043b \u043f\u043e\u0431\u0435\u0434\u0438\u0442\u0435\u043b\u0435\u043c \u0438\u0433\u0440\u043e\u043a\u0430 ${opponentName}.`;
+            ? `Победа! Админ признал вас победителем кастомной дуэли. Вы получили ${totalPot} монет.`
+            : `Поражение. Админ признал победителем игрока ${opponentName}.`;
         };
 
         const resultMessage = winnerId === 'draw'
-          ? `\u0414\u0443\u044d\u043b\u044c \u043c\u0435\u0436\u0434\u0443 ${challengerLogin} \u0438 ${targetLogin} \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043b\u0430\u0441\u044c \u043d\u0438\u0447\u044c\u0435\u0439.`
-          : `${getPlayerById(winnerId)?.login || '\u0418\u0433\u0440\u043e\u043a'} \u0432\u044b\u0438\u0433\u0440\u0430\u043b \u0434\u0443\u044d\u043b\u044c \u0443 ${winnerId === duel.challengerId ? targetLogin : challengerLogin}.`;
+          ? `Дуэль между ${challengerLogin} и ${targetLogin} завершилась ничьей.`
+          : `${getPlayerById(winnerId)?.login || 'Игрок'} выиграл дуэль у ${winnerId === duel.challengerId ? targetLogin : challengerLogin}.`;
 
         transaction.update(gameStateRef, {
           [`activeDuels.${duelId}.status`]: 'finished',
@@ -2545,6 +3106,58 @@ export function useGameData(
           return;
         }
 
+        if (activeInteraction?.fromTaxCard) {
+          const [nextPlayerId, ...restQueue] = activeInteraction.taxQueue ?? [];
+          const nextPlayer = nextPlayerId ? getPlayerById(nextPlayerId) : null;
+          const collectorId = activeInteraction.taxCollectorId || activeInteraction.taxOwnerId;
+          const collectorName = activeInteraction.taxCollectorName || activeInteraction.taxOwnerName || "игрок";
+          const bank = activeInteraction.taxBank ?? 0;
+          const timestamp = Date.now();
+          const updates: Record<string, unknown> = {
+            activeInteraction: nextPlayerId
+              ? {
+                  playerId: nextPlayerId,
+                  type: "tax_response",
+                  targetPlayerId: activeInteraction.taxOwnerId,
+                  taxOwnerId: activeInteraction.taxOwnerId,
+                  taxOwnerName: activeInteraction.taxOwnerName,
+                  taxCollectorId: collectorId,
+                  taxCollectorName: collectorName,
+                  taxBank: bank,
+                  taxQueue: restQueue,
+                  cards: [
+                    ...(nextPlayer?.inventory?.includes("inv_012") ? ["inv_012"] : []),
+                    ...(nextPlayer?.inventory?.includes("inv_019") ? ["inv_019"] : []),
+                  ],
+                  actingCardId: activeInteraction.actingCardId,
+                }
+              : null,
+          };
+
+          if (nextPlayerId) {
+            updates[`notifications.${nextPlayerId}`] = {
+              message: `${collectorName} собирает банк налогов. Заплатите 2 монеты, используйте Промокодик или выберите gambling.`,
+              timestamp,
+              cardId: activeInteraction.actingCardId || "inv_015",
+            };
+          } else if (collectorId && bank > 0) {
+            updates.pendingTaxPayout = {
+              id: `tax_payout_${collectorId}_${timestamp}`,
+              playerId: collectorId,
+              playerName: collectorName,
+              amount: bank,
+              cardId: activeInteraction.actingCardId || "inv_015",
+            };
+            updates[`notifications.${collectorId}`] = {
+              message: `Сбор налогов завершен. Банк ${bank} монет уходит вам.`,
+              timestamp,
+              cardId: activeInteraction.actingCardId || "inv_015",
+            };
+          }
+
+          transaction.update(gameStateRef, updates);
+          return;
+        }
         const isLast = currentTurnIndex === turnOrder.length - 1;
         transaction.update(gameStateRef, {
           activeInteraction: null,
@@ -2565,6 +3178,88 @@ export function useGameData(
         message: "Событие игры.",
         playerId: user.uid, cardId: cardId
       });
+    }
+  };
+
+  const handleResolveCardDiceRoll = async (rollId: string) => {
+    if (!user || !playerData) return;
+
+    const gameStateRef = doc(db, "gameState", "current");
+    const card = allCards["inv_009"];
+    if (!card) {
+      notify('Карта "Сделка с магом" не найдена. Попробуйте обновить страницу.', 'error', "inv_009");
+      return;
+    }
+
+    let resolvedMessage: string | null = null;
+    let resolvedType: ToastNotification['type'] = 'info';
+    let resolvedRoll: number | null = null;
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        if (!gsSnap.exists()) return;
+
+        const gs = gsSnap.data() as GameState;
+        const pendingRoll = gs.cardDiceRoll;
+        if (
+          !pendingRoll ||
+          pendingRoll.id !== rollId ||
+          pendingRoll.cardId !== "inv_009" ||
+          pendingRoll.playerId !== user.uid
+        ) {
+          return;
+        }
+
+        resolvedRoll = pendingRoll.value;
+        const playerRef = doc(db, "players", pendingRoll.playerId);
+        const timestamp = Date.now();
+        const shouldOpenGambling = pendingRoll.value <= 4;
+        const shouldGiveCoins = pendingRoll.value > 1;
+        const coinText = shouldGiveCoins ? `+${card.value} монет${shouldOpenGambling ? " и " : ""}` : "монет нет, ";
+        resolvedMessage = `Сделка с магом: бросок ${pendingRoll.value}. ${coinText}${shouldOpenGambling ? "открыт gambling." : "gambling не открывается."}`;
+        resolvedType = pendingRoll.value === 1 ? 'warning' : pendingRoll.value <= 4 ? 'info' : 'success';
+
+        transaction.update(playerRef, {
+          ...(shouldGiveCoins ? { tiltCoins: increment(card.value) } : {}),
+          lastNotification: {
+            message: resolvedMessage,
+            timestamp,
+            cardId: card.id,
+          },
+        });
+
+        transaction.update(gameStateRef, {
+          cardDiceRoll: null,
+          activeInteraction: shouldOpenGambling
+            ? {
+                playerId: pendingRoll.playerId,
+                type: "gambling",
+                cards: getRandomInteractionCards("gambling"),
+              }
+            : null,
+        });
+      });
+
+      if (resolvedMessage && resolvedRoll !== null) {
+        notify(resolvedMessage, resolvedType, card.id);
+        logEvent({
+          id: `mage_deal_result_${card.id}_${rollId}_${Date.now()}`,
+          timestamp: Date.now(),
+          type: resolvedRoll > 1 ? 'coin_change' : 'card_play',
+          message: `${playerData.login} завершил "${card.name}": бросок ${resolvedRoll}.`,
+          playerId: user.uid,
+          cardId: card.id,
+          details: {
+            roll: resolvedRoll,
+            coins: resolvedRoll > 1 ? card.value : 0,
+            gambling: resolvedRoll <= 4,
+          },
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      notify("Не удалось применить результат броска карты.", 'error', card.id);
     }
   };
 
@@ -2828,6 +3523,7 @@ export function useGameData(
       handleMoveComplete,
       handleFinishInteraction,
       handleRoll,
+      handleResolveCardDiceRoll,
       handleConfirmRoll,
       handleStepPhase,
       handlePrepareTurn,
@@ -2835,6 +3531,8 @@ export function useGameData(
       handleSelectOpponentCard,
       handleCancelInteraction,
       handleConfirmMoveForCoins, // Add new handler
+      handleReflectResponse,
+      handleTaxResponse,
       handleDuelChallengeResponse, // Add new handler
       handlePlaceDuelBet,
       handleStartDuelRoll,

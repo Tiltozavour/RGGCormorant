@@ -39,6 +39,8 @@ export interface ActiveInteraction {
     | "gambling"
     | "bshop"
     | "discard_selection"
+    | "reflect_response"
+    | "tax_response"
     | "move_for_coins_selection"
     | "duel_challenge_response"
     | "duel_weapon_selection"
@@ -50,6 +52,14 @@ export interface ActiveInteraction {
   actingCardId?: string;
   duelId?: string;
   fromCardMove?: boolean;
+  fromTaxCard?: boolean;
+  reflected?: boolean;
+  taxQueue?: string[];
+  taxOwnerId?: string;
+  taxOwnerName?: string;
+  taxCollectorId?: string;
+  taxCollectorName?: string;
+  taxBank?: number;
 }
 
 export interface Player {
@@ -107,6 +117,21 @@ export interface GameState {
     cardId?: string;
     cardName?: string;
   } | null;
+  cardDiceRoll?: {
+    id: string;
+    playerId: string;
+    playerName: string;
+    cardId: string;
+    value: number;
+    timestamp: number;
+  } | null;
+  pendingTaxPayout?: {
+    id: string;
+    playerId: string;
+    playerName?: string;
+    amount: number;
+    cardId?: string;
+  } | null;
   rollBonus: number;
   rollConfirmed: boolean;
   gameHistory: GameHistoryEntry[];
@@ -137,6 +162,8 @@ export const defaultGameState: GameState = {
   lastBaseRoll: null,
   forcedMovePlayerId: null,
   cardMove: null,
+  cardDiceRoll: null,
+  pendingTaxPayout: null,
   rollBonus: 0,
   rollConfirmed: false,
   gameHistory: [],
