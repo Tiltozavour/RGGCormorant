@@ -29,6 +29,7 @@ interface GameBoardProps {
     onUse: () => void;
   }[];
   round: number;
+  goldenCardHolderIds?: string[];
   forcedMovePlayerId?: string | null;
   cardMove?: {
     id: string;
@@ -92,6 +93,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   onCloseWheel,
   wheelActionCards,
   round,
+  goldenCardHolderIds,
 }) => {
   // Иници                  ализируем локальную позицию сразу координатами из текущей клетки в БД
   const [piecePos, setPiecePos] = useState(() => {
@@ -703,6 +705,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
                 {otherPlayer.customStatus === 'fish_shield' && <span title="No, no mr. Fish" className="animate-status-appear">🐟</span>}
                 {otherPlayer.customStatus === 'reflect_debuff' && <span title="Отражение" className="animate-status-appear">🔄</span>}
                 {otherPlayer.customStatus === 'promo_code_active' && <span title="Промокодик" className="animate-status-appear">🏷️</span>}
+                {(goldenCardHolderIds ?? []).includes(otherPlayer.id) && <span title="Золотая карта" className="animate-status-appear text-yellow-300">★</span>}
                 {isCurrentTurn && <span className="text-[8px] opacity-70">●</span>}
               </div>
 
@@ -814,6 +817,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
             {activePlayer.customStatus === 'fish_shield' && <span title="No, no mr. Fish" className="animate-status-appear">🐟</span>}
             {activePlayer.customStatus === 'reflect_debuff' && <span title="Отражение" className="animate-status-appear">🔄</span>}
             {activePlayer.customStatus === 'promo_code_active' && <span title="Промокодик" className="animate-status-appear">🏷️</span>}
+            {(goldenCardHolderIds ?? []).includes(activePlayer.id) && <span title="Золотая карта" className="animate-status-appear text-yellow-300">★</span>}
             {activePlayer.id === currentTurnPlayerId && <span className="text-[8px] opacity-70">●</span>}
           </div>
 

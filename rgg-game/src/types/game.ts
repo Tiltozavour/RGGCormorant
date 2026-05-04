@@ -101,6 +101,14 @@ export interface GameState {
   votes: Record<string, string>;
   scores: Record<string, number>;
   currentResults: Record<string, number>;
+  goldenCardHolderIds?: string[];
+  hotCoinGain?: {
+    playerId: string;
+    amount: number;
+    sourceCardId?: string;
+    sourceName?: string;
+    timestamp: number;
+  } | null;
   showWheel: boolean;
   currentRoll: number | null;
   currentRollPlayerId: string | null;
@@ -156,6 +164,8 @@ export const defaultGameState: GameState = {
   votes: {},
   scores: {},
   currentResults: {},
+  goldenCardHolderIds: [],
+  hotCoinGain: null,
   showWheel: false,
   currentRoll: null,
   currentRollPlayerId: null,

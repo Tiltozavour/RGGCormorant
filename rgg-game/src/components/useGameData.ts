@@ -135,6 +135,17 @@ const REFLECTABLE_CARD_IDS = new Set([
   "inv_016",
 ]);
 
+const makeHotCoinGain = (playerId: string, amount: number, sourceCardId?: string, sourceName?: string) =>
+  amount > 0
+    ? {
+        playerId,
+        amount,
+        sourceCardId,
+        sourceName,
+        timestamp: Date.now(),
+      }
+    : null;
+
 /**
  * Проверяет, находится ли игрок в пределах одной клетки (соседняя или та же).
  * @param player1Id ID первого игрока.
@@ -277,7 +288,10 @@ export function useGameData(
           cardId: currentPayout.cardId || "inv_015",
         },
       });
-      transaction.update(gameStateRef, { pendingTaxPayout: null });
+      transaction.update(gameStateRef, {
+        pendingTaxPayout: null,
+        hotCoinGain: makeHotCoinGain(user.uid, currentPayout.amount, currentPayout.cardId || "inv_015", "Платите налоги!"),
+      });
     }).catch((error) => {
       console.error(error);
       lastAppliedTaxPayoutRef.current = null;
@@ -328,7 +342,33 @@ export function useGameData(
     gameState.currentRoll !== null &&
     !gameState.rollConfirmed;
 
-  // Текст восстановлен после сбоя кодировки.
+  const getGoldenCardHolderIds = () => {
+    const candidates = players.filter((player) => player.role !== "admin");
+    if (candidates.length === 0) return [];
+
+    const resultEntries = Object.entries(gameState.currentResults ?? {});
+    const hasCurrentResults = resultEntries.length > 0;
+    const getScore = (player: Player) => hasCurrentResults
+      ? Number(gameState.currentResults?.[player.id] ?? 0)
+      : Number(player.lastTiltoCoins ?? 0);
+
+    const zeroScoreIds = candidates
+      .filter((player) => getScore(player) <= 0)
+      .map((player) => player.id);
+
+    const bottomPositiveScores = Array.from(
+      new Set(candidates.map(getScore).filter((score) => score > 0))
+    )
+      .sort((a, b) => a - b)
+      .slice(0, 3);
+
+    const bottomNonZeroIds = candidates
+      .filter((player) => bottomPositiveScores.includes(getScore(player)))
+      .map((player) => player.id);
+
+    return Array.from(new Set([...zeroScoreIds, ...bottomNonZeroIds]));
+  };
+
   useEffect(() => {
     // Текст восстановлен после сбоя кодировки.
     if (!isAdmin || !gameState.activeDuels) return;
@@ -458,6 +498,11 @@ export function useGameData(
             cardId: momentalCard.id,
           },
         });
+        if (actualValue > 0) {
+          transaction.update(gameStateRef, {
+            hotCoinGain: makeHotCoinGain(player.id, actualValue, momentalCard.id, cardName),
+          });
+        }
         notify(promoCodeUsed ? `${message} Промокодик смягчил эффект.` : message, actualValue > 0 ? 'success' : 'error', momentalCard.id);
         logEvent({
           id: `momental_coin_change_${momentalCard.id}_${Date.now()}`,
@@ -706,6 +751,18 @@ export function useGameData(
     const targetPlayer = getPlayerById(targetPlayerId);
     const displayCardName = card.id === "inv_016" ? "Катжит не виноват!" : card.name;
 
+    if (card.action === "communism") {
+      const hotCoinGain = gameState.hotCoinGain;
+      if (!targetPlayerId || !targetPlayer) {
+        notify("???????? ??????, ??? ????????? ??????? ????? ?????? ????????.", 'warning', card.id);
+        return;
+      }
+      if (!hotCoinGain || hotCoinGain.playerId !== targetPlayerId || hotCoinGain.amount <= 0) {
+        notify(`${targetPlayer.login} ?????? ?? ????? ??????? ????? ??? ????? "?????????".`, 'warning', card.id);
+        return;
+      }
+    }
+
     // Текст восстановлен после сбоя кодировки.
     // Текст восстановлен после сбоя кодировки.
     if (card.id === "inv_016" && card.action === "steal_coins") {
@@ -880,6 +937,11 @@ export function useGameData(
 
         case "add_coins":
           await updateDoc(playerRef, { tiltCoins: increment(card.value) });
+          if (card.value > 0) {
+            await updateDoc(doc(db, "gameState", "current"), {
+              hotCoinGain: makeHotCoinGain(user.uid, card.value, card.id, card.name),
+            });
+          }
           notify("Событие игры обновлено.", 'success');
           logEvent({
             id: `coin_gain_${card.id}_${Date.now()}`,
@@ -1210,12 +1272,24 @@ export function useGameData(
             }
 
             const roll = rollD6();
-            const delta = roll >= 4 ? (card.value || 2) : -(card.value || 2);
+            const baseDelta = roll >= 4 ? (card.value || 2) : -(card.value || 2);
+            const affectedPlayer = (isHostile && targetHasReflect) ? playerData : targetPlayer;
+            const promoCodeReduced = baseDelta < 0 && affectedPlayer?.customStatus === "promo_code_active";
+            const delta = promoCodeReduced ? Math.ceil(baseDelta / 2) : baseDelta;
             const amount = Math.abs(delta);
+            const promoText = promoCodeReduced ? " Промокодик смягчил потерю." : "";
             const resultText = delta >= 0 ? `получает ${amount} монет` : `теряет ${amount} монет`;
             const resultMsg = `Судья душ: бросок ${roll}. ${affectedPlayerName} ${resultText}.`;
             
-            await updateDoc(targetDoc, { tiltCoins: increment(delta) });
+            await updateDoc(targetDoc, {
+              tiltCoins: increment(delta),
+              ...(promoCodeReduced ? clearTemporaryStatus : {}),
+            });
+            if (delta > 0) {
+              await updateDoc(doc(db, "gameState", "current"), {
+                hotCoinGain: makeHotCoinGain(affectedPlayerId, delta, card.id, displayCardName),
+              });
+            }
             if (affectedPlayerId !== user.uid) {
               await updateDoc(doc(db, "gameState", "current"), {
                 [`notifications.${affectedPlayerId}`]: {
@@ -1227,7 +1301,7 @@ export function useGameData(
               });
             }
 
-            notify(resultMsg, delta >= 0 ? 'success' : 'warning', card.id);
+            notify(`${resultMsg}${promoText}`, delta >= 0 ? 'success' : 'warning', card.id);
             logEvent({
               id: `judge_coins_result_${card.id}_${Date.now()}`,
               timestamp: Date.now(),
@@ -1236,7 +1310,7 @@ export function useGameData(
               playerId: user.uid,
               targetPlayerId: affectedPlayerId,
               cardId: card.id,
-              details: { roll, delta, target: affectedPlayerName, reflected: isHostile && targetHasReflect }
+              details: { roll, delta, baseDelta, target: affectedPlayerName, reflected: isHostile && targetHasReflect, promoCodeReduced }
             });
           } else {
             notify("Выберите игрока для карты \"Судья душ\".", 'warning', card.id);
@@ -1277,6 +1351,7 @@ export function useGameData(
             const message = `Сделка с магом: бросок ${roll}. Монет нет, маг отправляет вас на gambling.`;
             await updateDoc(doc(db, "gameState", "current"), {
               cardDiceRoll: mageDiceRoll,
+              hotCoinGain: makeHotCoinGain(user.uid, card.value, card.id, mageCardName),
               activeInteraction: {
                 playerId: user.uid,
                 type: "gambling",
@@ -1328,6 +1403,7 @@ export function useGameData(
             });
             await updateDoc(doc(db, "gameState", "current"), {
               cardDiceRoll: mageDiceRoll,
+              hotCoinGain: makeHotCoinGain(user.uid, card.value, card.id, mageCardName),
             });
             notify(message, 'success', card.id);
             logEvent({
@@ -1353,7 +1429,8 @@ export function useGameData(
             const victimId = targetHasReflect ? user.uid : targetPlayerId;
             const victim = getPlayerById(victimId);
 
-            if (!victim || !victim.inventory || victim.inventory.length === 0) {
+            const selectableInventory = victim?.inventory?.filter((inventoryCardId) => inventoryCardId !== "inv_018") ?? [];
+            if (!victim || selectableInventory.length === 0) {
               notify("Событие игры обновлено.", 'info');
               break;
             }
@@ -1369,7 +1446,7 @@ export function useGameData(
                 type: "discard_selection",
                 targetPlayerId: victimId,
                 // Текст восстановлен после сбоя кодировки.
-                cards: shuffle(victim.inventory),
+                cards: shuffle(selectableInventory),
                 actingCardId: card.id,
               }
             });
@@ -1389,7 +1466,8 @@ export function useGameData(
             const victim = getPlayerById(victimId);
             const recipientId = targetHasReflect ? targetPlayerId : user.uid;
 
-            if (!victim || !victim.inventory || victim.inventory.length === 0) {
+            const selectableInventory = victim?.inventory?.filter((inventoryCardId) => inventoryCardId !== "inv_018") ?? [];
+            if (!victim || selectableInventory.length === 0) {
               alert("Событие игры обновлено.");
               break;
             }
@@ -1406,7 +1484,7 @@ export function useGameData(
                 targetPlayerId: victimId,
                 recipientId: recipientId,
                 // Текст восстановлен после сбоя кодировки.
-                cards: shuffle(victim.inventory),
+                cards: shuffle(selectableInventory),
                 actingCardId: card.id,
               }
             });
@@ -1695,25 +1773,33 @@ export function useGameData(
             // Текст восстановлен после сбоя кодировки.
             // Текст восстановлен после сбоя кодировки.
             // Текст восстановлен после сбоя кодировки.
-            const currentVictimCoins = victimData.tiltCoins ?? 0;
-            const stealAmount = Math.floor(currentVictimCoins / 2);
+            const hotCoinGain = gameState.hotCoinGain;
+            const hotAmount = hotCoinGain?.playerId === victimData.id ? hotCoinGain.amount : 0;
+            const baseStealAmount = Math.ceil(Math.max(0, hotAmount) / 2);
+            const actualVictimHasPromoCode = victimData.customStatus === "promo_code_active";
+            const stealAmount = actualVictimHasPromoCode ? Math.floor(baseStealAmount / 2) : baseStealAmount;
 
-            if (stealAmount > 0) {
+            if (baseStealAmount > 0) {
               await runTransaction(db, async (transaction) => {
-                transaction.update(actualTargetRef, { tiltCoins: increment(-stealAmount) });
+                transaction.update(actualTargetRef, {
+                  tiltCoins: increment(-stealAmount),
+                  ...(actualVictimHasPromoCode ? clearTemporaryStatus : {}),
+                });
                 transaction.update(actualRecipientRef, { tiltCoins: increment(stealAmount) });
+                transaction.update(doc(db, "gameState", "current"), { hotCoinGain: null });
               });
               
               const victimName = targetHasReflect ? "цель" : targetPlayer.login;
               const getterName = targetHasReflect ? targetPlayer.login : "цель";
-              notify(`${getterName} получил ${stealAmount} монет от ${victimName}.`, 'success');
+              const promoText = actualVictimHasPromoCode ? " Промокодик снизил потерю вдвое." : "";
+              notify(`${getterName} получил ${stealAmount} монет от ${victimName}.${promoText}`, 'success', card.id);
               
               logEvent({
                 id: `communism_${card.id}_${Date.now()}`,
                 timestamp: Date.now(), type: 'coin_change',
-                message: `${getterName} получил ${stealAmount} монет от ${victimName}.`,
+                message: `${getterName} получил ${stealAmount} монет от ${victimName}.${promoText}`,
                 playerId: user.uid, targetPlayerId: targetPlayerId ?? undefined, cardId: card.id,
-                details: { amount: stealAmount, reflected: targetHasReflect }
+                details: { amount: stealAmount, baseAmount: baseStealAmount, reflected: targetHasReflect, promoCodeReduced: actualVictimHasPromoCode }
               });
             } else {
               notify("Событие игры обновлено.", 'info');
@@ -2085,7 +2171,8 @@ export function useGameData(
 
     const openDiscardSelection = async (selectorId: string, victimId: string, recipientId?: string) => {
       const victim = getPlayerById(victimId);
-      if (!victim?.inventory?.length) {
+      const selectableInventory = victim?.inventory?.filter((inventoryCardId) => inventoryCardId !== "inv_018") ?? [];
+      if (selectableInventory.length === 0) {
         await updateDoc(gameStateRef, { activeInteraction: null });
         notify("У цели нет карт для выбора.", 'info', card.id);
         return;
@@ -2097,7 +2184,7 @@ export function useGameData(
           type: "discard_selection",
           targetPlayerId: victimId,
           ...(recipientId ? { recipientId } : {}),
-          cards: shuffle(victim.inventory),
+          cards: shuffle(selectableInventory),
           actingCardId: card.id,
         },
       });
@@ -2105,15 +2192,23 @@ export function useGameData(
 
     const applyJudge = async (targetId: string, targetName: string, reflected: boolean) => {
       const roll = rollD6();
-      const delta = roll >= 4 ? (card.value || 2) : -(card.value || 2);
+      const baseDelta = roll >= 4 ? (card.value || 2) : -(card.value || 2);
+      const affectedPlayer = getPlayerById(targetId);
+      const promoCodeReduced = baseDelta < 0 && affectedPlayer?.customStatus === "promo_code_active";
+      const delta = promoCodeReduced ? Math.ceil(baseDelta / 2) : baseDelta;
       const amount = Math.abs(delta);
-      const message = `Судья душ: бросок ${roll}. ${targetName} ${delta >= 0 ? `получает ${amount} монет` : `теряет ${amount} монет`}.`;
+      const promoText = promoCodeReduced ? " Промокодик смягчил потерю." : "";
+      const message = `Судья душ: бросок ${roll}. ${targetName} ${delta >= 0 ? `получает ${amount} монет` : `теряет ${amount} монет`}.${promoText}`;
 
       await updateDoc(doc(db, "players", targetId), {
         tiltCoins: increment(delta),
+        ...(promoCodeReduced ? clearTemporaryStatus : {}),
         lastNotification: { message, timestamp: Date.now(), cardId: card.id },
       });
-      await updateDoc(gameStateRef, { activeInteraction: null });
+      await updateDoc(gameStateRef, {
+        activeInteraction: null,
+        ...(delta > 0 ? { hotCoinGain: makeHotCoinGain(targetId, delta, card.id, card.name) } : {}),
+      });
       notify(reflected ? `Карта отражена. ${message}` : message, delta >= 0 ? 'success' : 'warning', card.id);
     };
 
@@ -3023,6 +3118,7 @@ export function useGameData(
           rollConfirmed: false,
           forcedMovePlayerId: null,
           cardMove: null,
+          hotCoinGain: null,
         });
       });
     },
@@ -3167,6 +3263,8 @@ export function useGameData(
           currentRollPlayerId: null,
           lastBaseRoll: null,
           rollConfirmed: false,
+          hotCoinGain: null,
+          ...(isLast ? { goldenCardHolderIds: [] } : {}),
         });
       });
     } catch (e) {
@@ -3231,6 +3329,7 @@ export function useGameData(
 
         transaction.update(gameStateRef, {
           cardDiceRoll: null,
+          ...(shouldGiveCoins ? { hotCoinGain: makeHotCoinGain(pendingRoll.playerId, card.value, card.id, card.name) } : {}),
           activeInteraction: shouldOpenGambling
             ? {
                 playerId: pendingRoll.playerId,
@@ -3320,6 +3419,7 @@ export function useGameData(
       rollBonus: 0,
       rollConfirmed: false,
       forcedMovePlayerId: null,
+      hotCoinGain: null,
     };
   };
 
@@ -3347,11 +3447,12 @@ export function useGameData(
       return;
     }
 
-    const payload: Partial<GameState> = { phase: nextPhase, round: nextRound };
+    const payload: Partial<GameState> = { phase: nextPhase, round: nextRound, hotCoinGain: null };
 
     if (nextPhase === "turn") {
       const turnState = buildTurnState();
       Object.assign(payload, turnState);
+      payload.goldenCardHolderIds = getGoldenCardHolderIds();
       if (turnState.turnOrder.length === 0) {
         notify("Очередь хода пуста: тестовый переход в ход без участников.", 'warning');
       }
@@ -3366,6 +3467,7 @@ export function useGameData(
     if (payload.phase !== "turn") {
       payload.turnOrder = [];
       payload.currentTurnIndex = 0;
+      payload.goldenCardHolderIds = [];
     }
 
     await updateDoc(doc(db, "gameState", "current"), payload);
@@ -3455,13 +3557,13 @@ export function useGameData(
 
     const turnState = buildTurnState();
     if (turnState.turnOrder.length === 0) {
-      notify("Нет игроков с результатом больше 0. Нельзя начать ход.", 'warning');
-      return;
+      notify("Очередь хода пуста. Админ может вручную добавить игроков с 0 очков.", 'warning');
     }
 
     await updateDoc(doc(db, "gameState", "current"), {
       ...turnState,
       phase: "turn",
+      goldenCardHolderIds: getGoldenCardHolderIds(),
     });
   };
 
@@ -3486,6 +3588,7 @@ export function useGameData(
           redirectNextDrawnToPlayerId: null,
           giveNextDrawnToPlayerId: null,
           lastNotification: deleteField(),
+          hasGoldenCard: deleteField(),
           isFrozen: deleteField(),
           freezeDuration: deleteField(),
         }),

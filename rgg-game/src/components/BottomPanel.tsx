@@ -86,7 +86,9 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
   // Cache the current user's player data and first card for safety and performance
   const myPlayerData = players.find(p => p.id === currentUser?.uid);
-  const firstCardId = myPlayerData?.inventory?.[0];
+  const hasGoldenCard = (gameState.goldenCardHolderIds ?? []).includes(currentUser?.uid ?? "");
+  const displayedInventoryCount = (myPlayerData?.inventory?.length ?? 0) + (hasGoldenCard ? 1 : 0);
+  const firstCardId = hasGoldenCard ? "inv_018" : myPlayerData?.inventory?.[0];
 
   const isMyTurn = currentTurnPlayerId === currentUser?.uid;
   const turnLabel =
@@ -143,6 +145,13 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const handleAddPlayerToTurnQueue = async (playerId: string) => {
+    if (!isAdmin || gameState.turnOrder.includes(playerId)) return;
+    await updateDoc(doc(db, "gameState", "current"), {
+      turnOrder: [...gameState.turnOrder, playerId],
+    });
   };
 
   return (
@@ -246,6 +255,23 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
                 </div>
               ))}
             </div>
+            {players.some((player) => player.role !== "admin" && !gameState.turnOrder.includes(player.id) && (gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0) <= 0) && (
+              <div className="mt-1 flex items-center gap-2 overflow-x-auto">
+                <span className="text-[9px] uppercase tracking-widest text-zinc-500">0 очков:</span>
+                {players
+                  .filter((player) => player.role !== "admin" && !gameState.turnOrder.includes(player.id) && (gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0) <= 0)
+                  .map((player) => (
+                    <button
+                      key={player.id}
+                      type="button"
+                      onClick={() => void handleAddPlayerToTurnQueue(player.id)}
+                      className="rounded-md border border-white/10 bg-zinc-900/70 px-2 py-0.5 text-[10px] text-zinc-300 transition hover:border-yellow-400/50 hover:text-yellow-200"
+                    >
+                      + {player.login}
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -272,7 +298,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
           <div className="flex flex-col gap-1 w-full">
             <span className="text-[10px] font-black uppercase text-purple-400 tracking-widest">Ваш инвентарь:</span>
             <div className="flex-1 flex items-end pb-1 overflow-visible">
-              {myPlayerData?.inventory?.length ? (
+              {displayedInventoryCount > 0 ? (
                 <div
                   onClick={onOpenHand}
                   className="relative group cursor-pointer w-16 h-20 rounded-xl border-2 border-white/20 overflow-hidden transition-all hover:-translate-y-2 hover:scale-110 shadow-2xl"
@@ -282,7 +308,10 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
                   }}
                 >
                   <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center">
-                    <span className="text-white text-lg font-black">{myPlayerData.inventory.length}</span>
+                    <span className="text-white text-lg font-black">{displayedInventoryCount}</span>
+                    {hasGoldenCard && (
+                      <span className="mt-0.5 rounded bg-yellow-400/90 px-1 text-[8px] font-black text-black">★</span>
+                    )}
                   </div>
                 </div>
               ) : (

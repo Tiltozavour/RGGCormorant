@@ -94,7 +94,8 @@ const EventLog: React.FC<{
   players: Player[];
   onClear: () => void;
   isClearing: boolean;
-}> = ({ gameEvents, allCards, players, onClear, isClearing }) => {
+  canClear: boolean;
+}> = ({ gameEvents, allCards, players, onClear, isClearing, canClear }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   void players;
   
@@ -107,15 +108,17 @@ const EventLog: React.FC<{
         <div className="p-4" style={{ direction: 'ltr' }}>
           <div className="mb-4 flex items-center justify-between gap-3">
             <h3 className="text-white text-lg font-bold">Лог событий</h3>
-            <button
-              type="button"
-              onClick={onClear}
-              disabled={isClearing || uniqueGameEvents.length === 0}
-              className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white/60 transition hover:border-red-400/40 hover:bg-red-500/15 hover:text-red-200 disabled:pointer-events-none disabled:opacity-40"
-              title="Очистить лог событий"
-            >
-              {isClearing ? "..." : "Очистить"}
-            </button>
+            {canClear && (
+              <button
+                type="button"
+                onClick={onClear}
+                disabled={isClearing || uniqueGameEvents.length === 0}
+                className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white/60 transition hover:border-red-400/40 hover:bg-red-500/15 hover:text-red-200 disabled:pointer-events-none disabled:opacity-40"
+                title="Очистить лог событий"
+              >
+                {isClearing ? "..." : "Очистить"}
+              </button>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             {uniqueGameEvents.map(event => (
@@ -198,9 +201,10 @@ function AppClean() {
       ...prev,
       { id, message, type, cardId, timestamp: Date.now() },
     ]);
-    window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       setToasts(prev => prev.filter(toast => toast.id !== id));
     }, type === 'error' ? 7000 : 4500);
+     return () => clearTimeout(timer); // Но notify вызывается не в useEffect, тут сложнее.
   }, [setToasts]);
 
   const logEvent = useCallback(async (event: GameEvent) => {
@@ -240,12 +244,19 @@ function AppClean() {
     }
   }, [isClearingEventLog, notify]);
 
-  const getCardPrice = (card: GameCardType) => {
-    const hasGoldenCard = playerData?.inventory?.includes("inv_021") ?? false;
+  const hasGoldenCard = (gameState.goldenCardHolderIds ?? []).includes(playerData?.id ?? "");
+  const getBaseCardPrice = (card: GameCardType) => {
     const defaultPrices = { common: 3, rare: 7, epic: 15, legendary: 0, default: 0 };
-    const basePrice = card.price !== null ? card.price : defaultPrices[card.rarity] || defaultPrices.default;
-    return hasGoldenCard && card.id !== "inv_021" ? Math.max(1, Math.ceil(basePrice / 2)) : basePrice;
+    return card.price !== null ? card.price : defaultPrices[card.rarity] || defaultPrices.default;
   };
+  const getCardPrice = (card: GameCardType) => {
+    const basePrice = getBaseCardPrice(card);
+    return hasGoldenCard && basePrice > 0 ? Math.max(1, Math.ceil(basePrice / 2)) : basePrice;
+  };
+  const displayedHandInventory = [
+    ...(playerData?.inventory ?? []),
+    ...(hasGoldenCard ? ["inv_018"] : []),
+  ];
 
   const [newAvatarUrl, setNewAvatarUrl] = useState("");
   const [coinNotification, setCoinNotification] = useState<{ amount: number; type: 'gain' | 'loss' } | null>(null);
@@ -540,6 +551,7 @@ function AppClean() {
       const isWheelCard = card.action === 'spin_wheel';
       const isExtraRoll = card.action === 'extra_roll';
       const isMovement = card.action === 'move_steps' || card.action === 'move_target_for_coins' || card.action === 'move_target_and_self';
+      const isCommunism = card.action === 'communism';
       const isPromoCode = card.action === 'promo_code_benefit';
 
       if (phase === 'next_game' && !isWheelCard && !(isFish && showWheel)) {
@@ -549,7 +561,7 @@ function AppClean() {
       
       if (phase === 'turn') {
         // Защиту, Отражение и Промокодик можно всегда. Остальное только в свой ход.
-        if (!isProtection && !isFish && !isPromoCode && currentTurnPlayerId !== user?.uid) {
+        if (!isProtection && !isFish && !isCommunism && !isPromoCode && currentTurnPlayerId !== user?.uid) {
           setGameAlert({ title: "Не твой ход", message: "Обычные карты можно использовать только в свою очередь.", type: 'info', cardId: card.id });
           return;
         }
@@ -560,7 +572,7 @@ function AppClean() {
         }
 
         // Обычные карты (не движение, не защита, не переброс) только ДО броска
-        const isSpecialAction = isProtection || isFish || isExtraRoll || isMovement;
+        const isSpecialAction = isProtection || isFish || isExtraRoll || isMovement || isCommunism || isPromoCode;
         const isMyRollDone = currentRoll !== null && gameState.currentRollPlayerId === user?.uid;
         
         if (card.id === 'inv_005' && isMyRollDone) {
@@ -859,6 +871,7 @@ function AppClean() {
                 }];
               })}
             round={gameState.round}
+            goldenCardHolderIds={gameState.goldenCardHolderIds ?? []}
           />
         </div>
         
@@ -941,7 +954,7 @@ function AppClean() {
             <p className="text-white/40 text-[10px] font-bold uppercase tracking-[0.4em] mt-2">Нажмите на фон, чтобы закрыть</p>
           </div>
 
-          {playerData?.inventory && playerData.inventory.length > 0 ? (
+          {displayedHandInventory.length > 0 ? (
             <div
               className="flex gap-8 px-[10vw] pt-64 pb-20 overflow-x-auto overflow-y-visible max-w-full custom-scrollbar items-end select-none"
               onWheel={(e) => {
@@ -952,7 +965,7 @@ function AppClean() {
               }}
               onClick={e => e.stopPropagation()} // Предотвращаем закрытие при клике на саму ленту
             >
-              {getInventoryCardStacks(playerData.inventory, allCards)
+              {getInventoryCardStacks(displayedHandInventory, allCards)
                 .map(({ card, count }, idx, arr) => (
                   <div key={card.id} className="relative">
                     <GameCard
@@ -1541,12 +1554,19 @@ function AppClean() {
           <div className="text-center mb-12">
             <h2 className="text-6xl font-black text-pink-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(236,72,153,0.5)]">B-Shop</h2>
             <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">Ваши коины: {playerData.tiltCoins ?? 0} 🦖</p>
+            {hasGoldenCard && (
+              <p className="mt-3 text-sm font-bold text-yellow-200">
+                Как держателю золотой карты для вас сегодня в B-Shop скидка!
+              </p>
+            )}
           </div>
           
           <div className={`flex gap-8 items-start ${isInteractionPending ? 'pointer-events-none opacity-60' : ''}`}>
             {gameState.activeInteraction.cards.filter((cardId: string) => Boolean(allCards[cardId])).map((cardId: string, idx: number) => {
               const card = allCards[cardId];
+              const basePrice = getBaseCardPrice(card as GameCardType);
               const price = getCardPrice(card as GameCardType);
+              const hasDiscount = hasGoldenCard && basePrice > price;
               const canAfford = (playerData.tiltCoins ?? 0) >= price;
 
               return (
@@ -1566,7 +1586,14 @@ function AppClean() {
                       : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
                     }`}
                   >
-                    {price} 🦖 КУПИТЬ
+                    {hasDiscount ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="text-white/45 line-through">{basePrice}</span>
+                        <span>{price} 🦖 КУПИТЬ</span>
+                      </span>
+                    ) : (
+                      <span>{price} 🦖 КУПИТЬ</span>
+                    )}
                   </button>
                 </div>
               );
@@ -2077,6 +2104,7 @@ function AppClean() {
         players={players} 
         onClear={handleClearEventLog}
         isClearing={isClearingEventLog}
+        canClear={isAdmin}
       />
     </div>
   );

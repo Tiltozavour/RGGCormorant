@@ -133,7 +133,17 @@ function PlayersSidebar({
                           style={{ borderColor: !isTop1 ? (player?.borderColor || "rgba(250,195,25,0.2)") : undefined }}
                         />
                         <div>
-                          <div className={`font-bold ${isTop1 ? "text-yellow-400" : "text-white"}`}>{row.login}</div>
+                          <div className={`flex items-center gap-1.5 font-bold ${isTop1 ? "text-yellow-400" : "text-white"}`}>
+                            <span>{row.login}</span>
+                            {(gameState.goldenCardHolderIds ?? []).includes(row.playerId) && (
+                              <span
+                                className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-yellow-300/60 bg-yellow-400/15 px-1 text-[11px] text-yellow-200 shadow-[0_0_12px_rgba(250,204,21,0.25)]"
+                                title="Золотая карта: скидка 50% в B-Shop"
+                              >
+                                ★
+                              </span>
+                            )}
+                          </div>
                           {isCurrentUser && (
                             <div className="text-[11px] text-yellow-300">
                               это вы
