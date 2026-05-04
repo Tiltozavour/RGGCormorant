@@ -511,6 +511,7 @@ export function useGameData(
           playerId: player.id, targetPlayerId: undefined, cardId: momentalCard.id, details: { amount: actualValue, reason: 'momental_card_effect', cardName, promoCodeUsed }
         });
       } else if (momentalCard.action === "move_steps") {
+        // For move_steps, actualValue is already calculated considering promo code
         const currentPos = player.position || 0;
         const finalPosition = Math.max(0, currentPos + actualValue);
         transaction.update(playerDocRef, {
@@ -526,14 +527,21 @@ export function useGameData(
           playerId: player.id, targetPlayerId: undefined, cardId: momentalCard.id, details: { steps: actualValue, reason: 'momental_card_effect', cardName: momentalCard.name }
         });
       } else if (momentalCard.action === "teleport") {
-        transaction.update(playerDocRef, { position: actualValue, prevCell: null });
-        openSpecialInteractionIfNeeded(actualValue);
-        notify(`${player.login} телепортировался на клетку ${actualValue} по карте "${momentalCard.name}".`, 'info', momentalCard.id);
+        let targetPosition = actualValue; // actualValue is momentalCard.value by default
+
+        if (momentalCard.id === "mom_004") {
+          // For "I don't feel so good", randomly choose between 6 and 15
+          targetPosition = pickRandom([6, 15]) || 6; // Default to 6 if pickRandom returns null (shouldn't happen with [6, 15])
+        }
+
+        transaction.update(playerDocRef, { position: targetPosition, prevCell: null });
+        openSpecialInteractionIfNeeded(targetPosition);
+        notify(`${player.login} телепортировался на клетку ${targetPosition} по карте "${momentalCard.name}".`, 'info', momentalCard.id);
         logEvent({
           id: `momental_teleport_${momentalCard.id}_${Date.now()}`,
           timestamp: Date.now(), type: 'movement',
-          message: `${player.login} телепортировался на клетку ${actualValue} по моментальной карте "${momentalCard.name}".`,
-          playerId: player.id, targetPlayerId: undefined, cardId: momentalCard.id, details: { targetPosition: actualValue, reason: 'momental_card_effect', cardName: momentalCard.name }
+          message: `${player.login} телепортировался на клетку ${targetPosition} по моментальной карте "${momentalCard.name}".`,
+          playerId: player.id, targetPlayerId: undefined, cardId: momentalCard.id, details: { targetPosition: targetPosition, reason: 'momental_card_effect', cardName: momentalCard.name }
         });
       }
       // Добавляем карту в список раскрытых
@@ -963,40 +971,20 @@ export function useGameData(
               const timestamp = Date.now();
 
               if (roll >= 4) {
-                let victimLoss = card.value;
-                let promoCodeMessage = "";
-
-                if (targetHasPromoCode) {
-                  victimLoss = 2;
-                  promoCodeMessage = " Промокодик цели снизил сумму до 2 монет.";
-                  logEvent({
-                    id: `promo_code_used_katjit_${card.id}_${timestamp}`,
-                    timestamp,
-                    type: 'status_effect',
-                    message: `${targetPlayer.login} использовал Промокодик против карты "${displayCardName}".`,
-                    playerId: targetPlayer.id,
-                    cardId: card.id,
-                    details: { originalSteal: card.value, actualSteal: victimLoss }
-                  });
-                }
-
-                const actualVictimLoss = victimLoss;
+                const actualVictimLoss = card.value;
                 await runTransaction(db, async (transaction) => {
                   transaction.update(targetRef, {
                     tiltCoins: increment(-actualVictimLoss),
                     lastNotification: {
-                      message: `${playerData.login} украл у вас ${actualVictimLoss} монет картой "${displayCardName}" (бросок ${roll}).${promoCodeMessage}`,
+                      message: `${playerData.login} украл у вас ${actualVictimLoss} монет картой "${displayCardName}" (бросок ${roll}).`,
                       timestamp,
                       cardId: card.id,
                     },
-                    ...(targetHasPromoCode ? clearTemporaryStatus : {}),
                   });
                   transaction.update(playerRef, { tiltCoins: increment(actualVictimLoss) });
                 });
 
-                const resultMessage = actualVictimLoss > 0
-                  ? `Катжит: бросок ${roll}. Успех! Вы украли ${actualVictimLoss} монет у ${targetPlayer.login}.${promoCodeMessage}`
-                  : `Катжит: бросок ${roll}. Успех, но у ${targetPlayer.login} нет монет, украсть нечего.${promoCodeMessage}`;
+                const resultMessage = `Катжит: бросок ${roll}. Успех! Вы украли ${actualVictimLoss} монет у ${targetPlayer.login}.`;
                 notify(resultMessage, actualVictimLoss > 0 ? 'success' : 'info', card.id);
                 logEvent({
                   id: `katjit_success_${card.id}_${timestamp}`,
@@ -1006,7 +994,7 @@ export function useGameData(
                   playerId: user.uid,
                   targetPlayerId: targetPlayer.id,
                   cardId: card.id,
-                  details: { roll, success: true, amount: actualVictimLoss, promoCodeReduced: targetHasPromoCode }
+                  details: { roll, success: true, amount: actualVictimLoss }
                 });
               } else {
                 await updateDoc(playerRef, { tiltCoins: increment(-card.value) });
@@ -1679,6 +1667,7 @@ export function useGameData(
               taxQueue: taxTargetIds.slice(1),
               cards: [
                 ...(firstTaxTarget?.inventory?.includes("inv_012") ? ["inv_012"] : []),
+                ...(firstTaxTarget?.inventory?.includes("inv_006") ? ["inv_006"] : []),
                 ...(firstTaxTarget?.inventory?.includes("inv_019") ? ["inv_019"] : []),
               ],
               actingCardId: card.id,
@@ -2405,7 +2394,7 @@ export function useGameData(
     }
   };
 
-  const handleTaxResponse = async (response: "pay" | "gambling" | "reflect" | "promo") => {
+  const handleTaxResponse = async (response: "pay" | "gambling" | "reflect" | "promo" | "fish") => {
     if (!user || !playerData || !gameState.activeInteraction || gameState.activeInteraction.type !== "tax_response") return;
 
     const interaction = gameState.activeInteraction;
@@ -2418,7 +2407,7 @@ export function useGameData(
     const taxCardId = interaction.actingCardId || "inv_015";
     const taxCard = allCards[taxCardId];
     const paymentAmount = taxCard?.value || 2;
-    const promoPaymentAmount = Math.ceil(paymentAmount / 2);
+    const promoPaymentAmount = Math.floor(paymentAmount / 2);
     const gameStateRef = doc(db, "gameState", "current");
     const playerRef = doc(db, "players", user.uid);
 
@@ -2444,6 +2433,7 @@ export function useGameData(
         taxQueue: restQueue,
         cards: [
           ...(nextPlayer?.inventory?.includes("inv_012") ? ["inv_012"] : []),
+          ...(nextPlayer?.inventory?.includes("inv_006") ? ["inv_006"] : []),
           ...(nextPlayer?.inventory?.includes("inv_019") ? ["inv_019"] : []),
         ],
         actingCardId: taxCardId,
@@ -2493,6 +2483,22 @@ export function useGameData(
             },
           });
           if (usedPromo) updates.revealedCards = arrayUnion("inv_019");
+        }
+
+        if (response === "fish") {
+          const currentInventory = (playerSnap.data() as Player).inventory;
+          if (!currentInventory?.includes("inv_006")) {
+            throw new Error("fish_card_missing");
+          }
+          transaction.update(playerRef, {
+            inventory: removeOneCardFromInventory(currentInventory, "inv_006"),
+            lastNotification: {
+              message: `Вы отменили налоги картой "No, no, no mr. Fish".`,
+              timestamp,
+              cardId: "inv_006",
+            },
+          });
+          updates.revealedCards = arrayUnion("inv_006");
         }
 
         if (response === "reflect") {
@@ -2578,6 +2584,8 @@ export function useGameData(
         notify(`Вы внесли ${paymentAmount} монеты в банк налогов.`, 'info', taxCardId);
       } else if (response === "promo") {
         notify(`Промокодик сработал: в банк внесено ${promoPaymentAmount} монет.`, 'info', "inv_019");
+      } else if (response === "fish") {
+        notify(`Вы использовали "No, no, no mr. Fish" и освободились от налогов.`, 'info', "inv_006");
       } else if (response === "reflect") {
         notify("Вы перехватили сбор налогов. Очередь продолжается.", 'info', "inv_012");
       } else if (response === "gambling") {
@@ -3011,6 +3019,7 @@ export function useGameData(
             message: getMessage(false),
             timestamp,
           },
+          hotCoinGain: winnerId !== 'draw' ? makeHotCoinGain(winnerId, totalPot, undefined, "Дуэль") : null,
         });
 
         logEvent({
@@ -3223,6 +3232,7 @@ export function useGameData(
                   taxQueue: restQueue,
                   cards: [
                     ...(nextPlayer?.inventory?.includes("inv_012") ? ["inv_012"] : []),
+                    ...(nextPlayer?.inventory?.includes("inv_006") ? ["inv_006"] : []),
                     ...(nextPlayer?.inventory?.includes("inv_019") ? ["inv_019"] : []),
                   ],
                   actingCardId: activeInteraction.actingCardId,

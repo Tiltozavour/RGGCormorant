@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Auth from "./Auth";
 import { syncWheelResult, syncWheelVisibility } from "../services/gameStateService"; 
 import BottomPanel from "./BottomPanel";
@@ -15,6 +15,7 @@ import type { GameCard as GameCardType } from "../types/card";
 import { useGameData } from "./useGameData";
 import { useModalStates } from "../components/useModalStates";
 import GameCard from "./GameCard";
+import { RARITY_CONFIG } from "./gameConstants";
 import DiceVisual from "./DiceVisual";
 import DuelDiceVisual from "./DuelDiceVisual"; // Import the new component
 import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS } from "./gameConstants";
@@ -100,8 +101,11 @@ const EventLog: React.FC<{
   void players;
   
   // Deduplicate events by ID before rendering
-  const uniqueGameEvents = Array.from(new Map(gameEvents.map(event => [event.id, event])).values())
-    .sort((a, b) => a.timestamp - b.timestamp); // Ensure chronological order
+  const uniqueGameEvents = useMemo(() => {
+    return Array.from(new Map(gameEvents.map(event => [event.id, event])).values())
+      .sort((a, b) => b.timestamp - a.timestamp); // Новые сверху
+  }, [gameEvents]);
+
   return (
     <div className={`fixed top-1/2 -translate-y-1/2 left-0 h-1/2 w-80 z-30 transition-transform duration-300 ${isCollapsed ? '-translate-x-full' : 'translate-x-0'}`}>
       <div className="h-full w-full bg-black/40 backdrop-blur-md border-r border-white/10 overflow-y-auto custom-scrollbar" style={{ direction: 'rtl' }}>
@@ -128,14 +132,27 @@ const EventLog: React.FC<{
                   ${event.type === 'success' ? 'text-green-400' :
                     event.type === 'error' ? 'text-red-400' :
                     event.type === 'warning' ? 'text-yellow-400' : 'text-blue-400'}
-                `}>
+                `} style={{ fontFamily: "'Comfortaa', sans-serif" }}>
                   {fixMojibake(event.message)}
                 </span>
-                {event.cardId && allCards[event.cardId] && (
-                  <span className="ml-1 text-purple-300 cursor-help hover:underline">
-                    ({allCards[event.cardId].name})
-                  </span>
-                )}
+                {event.cardId && allCards[event.cardId] && (() => {
+                  const card = allCards[event.cardId];
+                  const config = RARITY_CONFIG[card.rarity as keyof typeof RARITY_CONFIG] || RARITY_CONFIG.default;
+                  return (
+                    <span className="relative group/card inline-block ml-1">
+                      <span 
+                        className="cursor-help font-bold underline decoration-2 underline-offset-2 transition-colors"
+                        style={{ color: config.bgCard }}
+                      >
+                        [{card.name}]
+                      </span>
+                      {/* Превью карты при наведении в логе */}
+                      <div className="fixed left-80 bottom-1/4 scale-[0.45] origin-left opacity-0 group-hover/card:opacity-100 pointer-events-none transition-all duration-200 z-[100] drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]">
+                        <GameCard card={card} index={0} totalCards={1} />
+                      </div>
+                    </span>
+                  );
+                })()}
               </div>
             ))}
           </div>
@@ -520,7 +537,7 @@ function AppClean() {
 
   const protectionCardsInInv = playerData?.inventory
     ?.map((id: string) => allCards[id])
-    .filter((c): c is GameCardType => !!c && c.action === "protection") || [];
+    .filter((c): c is GameCardType => !!c && (c.action === "protection" || c.action === "fish_protection")) || [];
 
   const canTargetSelf = (card: GameCardType) => card.id === "inv_007";
 
@@ -1701,6 +1718,19 @@ function AppClean() {
             >
               Выбрать gambling
             </button>
+
+            {gameState.activeInteraction.cards.includes("inv_006") && (
+              <button
+                disabled={isInteractionPending}
+                onClick={() => {
+                  if (isInteractionPending) return;
+                  void runInteractionAction(() => handlers.handleTaxResponse('fish'));
+                }}
+                className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black uppercase text-sm hover:bg-blue-500 transition-all active:scale-95 shadow-[0_5px_0_#1e40af] active:shadow-none active:translate-y-1 disabled:opacity-50"
+              >
+                Использовать "No, no, no mr. Fish"
+              </button>
+            )}
 
             {gameState.activeInteraction.cards.includes("inv_012") && (
               <button
