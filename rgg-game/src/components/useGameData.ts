@@ -186,6 +186,7 @@ const GAMBLING_RARITY_WEIGHTS: Array<{ rarity: GamblingRarity; weight: number }>
   { rarity: "epic", weight: 20 },
 ];
 
+const GAMBLING_LEGENDARY_CHANCE = 0.05;
 const GAMBLING_MOMENTAL_WEIGHT = 3;
 
 export function useGameData(
@@ -417,11 +418,19 @@ export function useGameData(
         const cardsArray = Object.values(allCards).filter((card): card is GameCard => Boolean(card?.id && card.deck && card.rarity));
         if (cardsArray.length === 0) return [];
         const result: string[] = [];
+        const availableLegendaryCards = cardsArray.filter((card) => card.rarity === "legendary" && !card.isWon);
+        const legendarySlot =
+          type === "gambling" && availableLegendaryCards.length > 0 && Math.random() < GAMBLING_LEGENDARY_CHANCE
+            ? Math.floor(Math.random() * 3)
+            : -1;
 
         for (let i = 0; i < 3; i += 1) {
           if (type === "bshop") {
             const pool = cardsArray.filter((card) => card.deck === "inventory" && typeof card.price === 'number');
             const selected = pickRandom(pool);
+            if (selected) result.push(selected.id);
+          } else if (i === legendarySlot) {
+            const selected = pickRandom(availableLegendaryCards);
             if (selected) result.push(selected.id);
           } else {
             const rarity = pickWeighted(
@@ -1836,6 +1845,11 @@ export function useGameData(
       const cardsArray = Object.values(allCards).filter((card): card is GameCard => Boolean(card?.id && card.deck && card.rarity));
       if (cardsArray.length === 0) return [];
       const result: string[] = [];
+      const availableLegendaryCards = cardsArray.filter((card) => card.rarity === "legendary" && !card.isWon);
+      const legendarySlot =
+        type === "gambling" && availableLegendaryCards.length > 0 && Math.random() < GAMBLING_LEGENDARY_CHANCE
+          ? Math.floor(Math.random() * 3)
+          : -1;
 
       for (let i = 0; i < 3; i += 1) {
         if (type === "bshop") {
@@ -1843,6 +1857,9 @@ export function useGameData(
             (card) => card.deck === "inventory" && typeof card.price === 'number',
           );
           const selected = pickRandom(pool);
+          if (selected) result.push(selected.id);
+        } else if (i === legendarySlot) {
+          const selected = pickRandom(availableLegendaryCards);
           if (selected) result.push(selected.id);
         } else {
           const rarity = pickWeighted(
