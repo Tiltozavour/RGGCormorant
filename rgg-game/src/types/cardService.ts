@@ -27,7 +27,12 @@ export const uploadStarterCards = async () => {
 
       if (card.rarity === "legendary") {
         const prizeRef = doc(db, "prizes", card.id);
-        batch.set(prizeRef, card);
+        batch.set(prizeRef, {
+          ...card,
+          isUnique: true,
+          isWon: card.isWon ?? false,
+          winnerId: card.winnerId ?? null,
+        });
       } else {
         const cardRef = doc(db, "cards", card.id);
         batch.set(cardRef, card);

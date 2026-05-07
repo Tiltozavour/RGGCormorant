@@ -618,12 +618,15 @@ export function useGameData(
         if (!prizeSnap.exists()) return;
 
         const prizeData = prizeSnap.data() as GameCard;
-        if (prizeData.isUnique && prizeData.isWon) return;
+        if (prizeData.isWon) {
+          notify(`Легендарная карта "${prizeData.name}" уже была выдана в этой игре.`, 'warning', prizeData.id);
+          return;
+        }
 
         transaction.update(playerRef, {
           inventory: addOneCardToInventory((playerSnap.data() as Player | undefined)?.inventory, cardId),
         });
-        transaction.update(prizeRef, { isWon: true, winnerId: playerId });
+        transaction.update(prizeRef, { isUnique: true, isWon: true, winnerId: playerId });
       });
     } catch (e) {
       console.error("Ошибка при выдаче легендарной карты:", e);
@@ -868,7 +871,6 @@ export function useGameData(
     try {
       const targetHasReflect = false;
       const targetHasFish = targetPlayer?.customStatus === "fish_shield";
-      const targetHasPromoCode = targetPlayer?.customStatus === "promo_code_active";
       const canOfferReflect =
         !!targetPlayerId &&
         targetPlayerId !== user.uid &&
@@ -1886,10 +1888,19 @@ export function useGameData(
 
       const finalRecipientRef = doc(db, "players", finalRecipientId);
       let recipientInventory = player.inventory;
+      let finalRecipientName = player.login;
       if (finalRecipientId !== player.id) {
         const recipientSnap = await transaction.get(finalRecipientRef);
-        recipientInventory = (recipientSnap.data() as Player | undefined)?.inventory;
+        const recipientData = recipientSnap.data() as Player | undefined;
+        recipientInventory = recipientData?.inventory;
+        finalRecipientName = recipientData?.login || finalRecipientName;
       }
+
+      const isLegendaryPrize = card.rarity === "legendary" || card.action === "prize";
+      const gameStateRef = doc(db, "gameState", "current");
+      const prizeRef = isLegendaryPrize ? doc(db, "prizes", card.id) : null;
+      const prizeSnap = prizeRef ? await transaction.get(prizeRef) : null;
+      const prizeData = prizeSnap?.exists() ? (prizeSnap.data() as GameCard) : null;
 
       if (player.discardNextDrawn) {
         suppressCard = true;
@@ -1911,6 +1922,49 @@ export function useGameData(
       }
 
       if (!suppressCard) {
+        if (isLegendaryPrize) {
+          if (prizeData?.isWon) {
+            notify(`Легендарная карта "${card.name}" уже была получена в этой игре. Повтор не выдается.`, 'info', card.id);
+            logEvent({
+              id: `legendary_duplicate_blocked_${card.id}_${Date.now()}`,
+              timestamp: Date.now(),
+              type: 'info',
+              message: `Легендарная карта "${card.name}" уже была получена ранее и не выдана повторно.`,
+              playerId: finalRecipientId,
+              cardId: card.id,
+              details: { reason: 'legendary_unique' },
+            });
+            return;
+          }
+
+          if (prizeRef) {
+            transaction.set(prizeRef, {
+              ...card,
+              isUnique: true,
+              isWon: true,
+              winnerId: finalRecipientId,
+            }, { merge: true });
+          }
+
+          transaction.update(gameStateRef, {
+            revealedCards: arrayUnion(card.id),
+            [`notifications.${finalRecipientId}`]: {
+              message: "Вы только что вытащили легендарную карту, будьте готовы к последствиям",
+              timestamp: Date.now(),
+              cardId: card.id,
+            },
+          });
+          logEvent({
+            id: `legendary_received_${card.id}_${Date.now()}`,
+            timestamp: Date.now(),
+            type: 'card_play',
+            message: `Игрок "${finalRecipientName}" получил легендарную карту "${card.name}"`,
+            playerId: finalRecipientId,
+            cardId: card.id,
+          });
+          return;
+        }
+
         transaction.update(finalRecipientRef, {
           inventory: addOneCardToInventory(recipientInventory, card.id),
         });
@@ -3507,12 +3561,63 @@ export function useGameData(
     if (!isAdmin) return;
     try {
       const targetRef = doc(db, "players", targetId);
+      let blockedLegendaryName: string | null = null;
+      let awardedLegendaryName: string | null = null;
+      let targetLogin = "Игрок";
       await runTransaction(db, async (transaction) => {
         const targetSnap = await transaction.get(targetRef);
+        const targetData = targetSnap.data() as Player | undefined;
+        targetLogin = targetData?.login || targetLogin;
+        const card = allCards[cardId];
+
+        if (card?.rarity === "legendary" || card?.action === "prize" || cardId.startsWith("leg_")) {
+          const prizeRef = doc(db, "prizes", cardId);
+          const prizeSnap = await transaction.get(prizeRef);
+          const prizeData = prizeSnap.exists() ? (prizeSnap.data() as GameCard) : card;
+
+          if (prizeData?.isWon) {
+            blockedLegendaryName = prizeData.name || cardId;
+            return;
+          }
+
+          transaction.set(prizeRef, {
+            ...(prizeData ?? card ?? { id: cardId }),
+            isUnique: true,
+            isWon: true,
+            winnerId: targetId,
+          }, { merge: true });
+          awardedLegendaryName = prizeData?.name || card?.name || cardId;
+          transaction.update(doc(db, "gameState", "current"), {
+            revealedCards: arrayUnion(cardId),
+            [`notifications.${targetId}`]: {
+              message: "Вы только что вытащили легендарную карту, будьте готовы к последствиям",
+              timestamp: Date.now(),
+              cardId,
+            },
+          });
+          return;
+        }
+
         transaction.update(targetRef, {
           inventory: addOneCardToInventory((targetSnap.data() as Player | undefined)?.inventory, cardId),
         });
       });
+      if (blockedLegendaryName) {
+        notify(`Легендарная карта "${blockedLegendaryName}" уже была выдана в этой игре.`, 'warning', cardId);
+        return;
+      }
+      if (awardedLegendaryName) {
+        notify(`Легендарная карта "${awardedLegendaryName}" активирована.`, 'success', cardId);
+        logEvent({
+          id: `legendary_received_${cardId}_${Date.now()}`,
+          timestamp: Date.now(),
+          type: 'card_play',
+          message: `Игрок "${targetLogin}" получил легендарную карту "${awardedLegendaryName}"`,
+          playerId: targetId,
+          cardId,
+        });
+        return;
+      }
       notify("Событие игры обновлено.", 'success');
       logEvent({
         id: `admin_add_card_${Date.now()}`,

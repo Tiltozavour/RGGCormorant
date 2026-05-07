@@ -20,6 +20,7 @@ const GameCard: React.FC<GameCardProps> = ({
   onUse 
 }) => {
   const config = RARITY_CONFIG[card.rarity] ?? RARITY_CONFIG.default;
+  const isLegendary = card.rarity === 'legendary';
   void totalCards;
   
   // Вычисляем эффективный фоновый цвет для кнопок и наложений
@@ -94,7 +95,7 @@ const GameCard: React.FC<GameCardProps> = ({
     <div 
       onClick={onClick}
       className={`relative w-80 h-[520px] shrink-0 flex flex-col overflow-visible rounded-[2.5rem] border-2 transition-[transform,box-shadow,border-color] duration-500 cursor-pointer group select-none ${config.border} ${config.glow} bg-zinc-950 hover:scale-105 hover:-translate-y-4 hover:shadow-[0_30px_60px_rgba(0,0,0,0.8)]
-        ${card.rarity === 'legendary' ? 'animate-float animate-legendary-glow hover:animate-none' : ''}`}
+        ${isLegendary ? 'animate-float animate-legendary-glow hover:animate-none' : ''}`}
       style={{
         zIndex: isInHand ? index + 10 : 1,
       }}
@@ -116,10 +117,10 @@ const GameCard: React.FC<GameCardProps> = ({
 
       {/* TOP SECTION (60%) */}
       <div 
-        className={`relative h-[60%] w-full flex ${card.rarity === 'legendary' ? 'items-end' : 'items-center'} justify-center overflow-hidden rounded-t-[2.3rem] bg-gradient-to-b ${config.artGradient}`}
+        className={`relative h-[60%] w-full flex ${isLegendary ? 'items-end' : 'items-center'} justify-center overflow-hidden rounded-t-[2.3rem] bg-gradient-to-b ${config.artGradient}`}
       >
         {/* Holographic Overlay for Legendary */}
-        {card.rarity === 'legendary' && (
+        {isLegendary && (
           <div 
             className="absolute inset-0 pointer-events-none z-[15] opacity-[0.4] mix-blend-color-dodge animate-holo"
             style={{
@@ -129,7 +130,7 @@ const GameCard: React.FC<GameCardProps> = ({
         )}
 
         {/* Subtle Dark Overlay for depth */}
-        {card.rarity === 'legendary' && (
+        {isLegendary && (
           <div className="absolute inset-0 overflow-hidden pointer-events-none z-[25]"> 
             <div className="absolute top-0 left-0 w-1/4 h-[200%] bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer-fast" 
                  style={{ top: '-50%' }} />
@@ -142,7 +143,7 @@ const GameCard: React.FC<GameCardProps> = ({
           <img 
             src={card.artCard} 
             alt={card.name} 
-            className={`${card.rarity === 'legendary' ? 'h-full w-full' : 'h-[80%] w-[80%]'} object-contain ${card.rarity === 'legendary' ? 'object-bottom' : ''} drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-20 transition-transform duration-500 group-hover:scale-110`} 
+            className={`${isLegendary ? 'h-full w-full' : 'h-[80%] w-[80%]'} object-contain ${isLegendary ? 'object-bottom' : ''} drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-20 transition-transform duration-500 group-hover:scale-110`} 
           />
         ) : (
           <div className="text-white/10 font-black text-4xl italic tracking-tighter rotate-12 z-0">NO ART</div>
@@ -171,15 +172,17 @@ const GameCard: React.FC<GameCardProps> = ({
         <div className="absolute inset-0 -z-10 opacity-30" style={{ backgroundColor: effectiveBg }} />
 
         <div className="flex min-h-0 flex-1 flex-col justify-start gap-2 px-3">
-         <h3 className="text-[22px] font-black text-white uppercase tracking-normal italic line-clamp-2 leading-tight min-h-[3.25rem] flex items-center justify-center text-center">
+         <h3 className={`${isLegendary ? 'text-[18px] line-clamp-3 leading-snug min-h-[3.75rem]' : 'text-[22px] line-clamp-2 leading-tight min-h-[3.25rem]'} font-black text-white uppercase tracking-normal italic flex items-center justify-center text-center`}>
             {card.name}
           </h3>
-         <p
-            className="text-[14px] leading-snug text-white font-medium italic line-clamp-3 min-h-0 flex items-start justify-center text-center"
-            style={{ fontFamily: "'Comfortaa', sans-serif" }}
-          >
-            {card.description}
-          </p>
+          <div className={`min-h-0 flex-1 ${isLegendary ? 'overflow-y-auto pr-1 custom-scrollbar' : 'overflow-hidden'}`}>
+           <p
+              className={`${isLegendary ? 'text-[12px] leading-snug' : 'text-[14px] leading-snug line-clamp-3'} text-white font-medium italic min-h-0 flex items-start justify-center text-center`}
+              style={{ fontFamily: "'Comfortaa', sans-serif" }}
+            >
+              {card.description}
+            </p>
+          </div>
         </div>
 
         {onUse && (
@@ -189,12 +192,15 @@ const GameCard: React.FC<GameCardProps> = ({
               e.stopPropagation();
               onUse();
             }}
-            className="mt-auto w-full shrink-0 py-3 rounded-2xl font-black uppercase text-xs tracking-[0.18em] text-white transition-all active:scale-95 shadow-[0_10px_20px_rgba(0,0,0,0.4)] hover:brightness-125 border-t border-white/20"
+            className="relative mt-auto w-full shrink-0 py-3 rounded-2xl font-black uppercase text-xs tracking-[0.18em] text-transparent transition-all active:scale-95 shadow-[0_10px_20px_rgba(0,0,0,0.4)] hover:brightness-125 border-t border-white/20"
             style={{ 
               backgroundColor: effectiveBg,
               fontFamily: "'Comfortaa', sans-serif"
             }}
           >
+            <span className="absolute inset-0 flex items-center justify-center text-white">
+              Использовать
+            </span>
             Использовать
           </button>
         )}

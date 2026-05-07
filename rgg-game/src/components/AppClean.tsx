@@ -211,6 +211,7 @@ function AppClean() {
   } = useModalStates();
   void localEvents; void setLocalEvents;
   const [isClearingEventLog, setIsClearingEventLog] = useState(false);
+  const [selectedCardPreviewMode, setSelectedCardPreviewMode] = useState<'use' | 'view'>('use');
 
   const notify = useCallback((message: string, type: ToastNotification['type'] = 'info', cardId?: string) => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -274,6 +275,11 @@ function AppClean() {
     ...(playerData?.inventory ?? []),
     ...(hasGoldenCard ? ["inv_018"] : []),
   ];
+  const canUseSelectedCard = Boolean(
+    selectedCardPreviewMode === 'use' &&
+    selectedCard &&
+    playerData?.inventory?.includes(selectedCard.id)
+  );
 
   const [newAvatarUrl, setNewAvatarUrl] = useState("");
   const [coinNotification, setCoinNotification] = useState<{ amount: number; type: 'gain' | 'loss' } | null>(null);
@@ -929,7 +935,10 @@ function AppClean() {
             onToggleWheel={() => void syncWheelVisibility("current", !gameState.showWheel)}
             isDiceRolling={visualRoll?.rolling ?? false}
             allCards={allCards}
-            onCardClick={(card) => setSelectedCard(card)}
+            onCardClick={(card) => {
+              setSelectedCardPreviewMode('use');
+              setSelectedCard(card);
+            }}
             onOpenHand={() => setIsHandOpen(true)} // Передаем функцию для открытия "руки"
           />
         </div>
@@ -942,11 +951,11 @@ function AppClean() {
             card={selectedCard} 
             index={0} 
             totalCards={1} 
-            onUse={() => {
+            onUse={canUseSelectedCard ? () => {
               if (isInteractionPending) return;
               handleCardClick(selectedCard);
               setSelectedCard(null);
-            }}
+            } : undefined}
           />
         </div>
       )}
@@ -992,6 +1001,7 @@ function AppClean() {
                       isInHand={true}
                       onClick={() => { 
                         if (isInteractionPending) return;
+                        setSelectedCardPreviewMode('use');
                         setSelectedCard(card); 
                         setIsHandOpen(false); 
                       }}
@@ -1066,12 +1076,15 @@ function AppClean() {
                 }
 
                 return (
-                  <div key={card.id} className="relative group">
+                  <div key={card.id} className="relative group pb-12">
                     <GameCard
                       card={card}
                       index={0}
                       totalCards={1}
-                      onClick={() => setSelectedCard(card)}
+                      onClick={() => {
+                        setSelectedCardPreviewMode('view');
+                        setSelectedCard(card);
+                      }}
                     />
                     <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
                       Раскрыто
@@ -1113,7 +1126,8 @@ function AppClean() {
               .filter((card: GameCardType) => card.rarity === 'legendary')
               .sort((a: GameCardType, b: GameCardType) => a.number - b.number)
               .map((card: GameCardType) => {
-                const isRevealed = gameState.revealedCards?.includes(card.id);
+                const winner = players.find((player) => player.id === card.winnerId);
+                const isRevealed = card.isWon || gameState.revealedCards?.includes(card.id);
                 
                 if (!isRevealed) {
                   return (
@@ -1136,16 +1150,24 @@ function AppClean() {
                 }
 
                 return (
-                  <div key={card.id} className="relative group">
+                  <div key={card.id} className="relative group pb-12">
                     <GameCard
                       card={card}
                       index={0}
                       totalCards={1}
-                      onClick={() => setSelectedCard(card)}
+                      onClick={() => {
+                        setSelectedCardPreviewMode('view');
+                        setSelectedCard(card);
+                      }}
                     />
                     <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-3 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
                       Раскрыто
                     </div>
+                    {winner && (
+                      <div className="absolute bottom-0 left-1/2 w-max max-w-[18rem] -translate-x-1/2 rounded-full border border-yellow-300/30 bg-black/70 px-4 py-1 text-center text-[10px] font-black uppercase tracking-wide text-yellow-200 shadow-[0_0_20px_rgba(250,204,21,0.18)]">
+                        Получил легенду: {winner.login}
+                      </div>
+                    )}
                   </div>
                 );
               })}
