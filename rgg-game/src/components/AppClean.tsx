@@ -1,40 +1,31 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Auth from "./Auth";
 import { syncWheelResult, syncWheelVisibility } from "../services/gameStateService"; 
 import BottomPanel from "./BottomPanel";
 import GameBoard from "./GameBoard";
 import PlayersSidebar from "./PlayersSidebar";
 import ScoresDetailsPage from "./ScoresDetailsPage";
-import { collection, addDoc, deleteField, doc, getDocs, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, deleteField, doc, getDocs, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 //import { v4 as uuidv4 } from 'uuid'; 
 
 import type { Player } from "../types/game";
 import type { GameCard as GameCardType } from "../types/card";
 import { useGameData } from "./useGameData";
+import { useEventLogger } from "./useEventLogger";
 import { useModalStates } from "../components/useModalStates";
 import GameCard from "./GameCard";
-import { RARITY_CONFIG } from "./gameConstants";
+import GameAlertOverlay from "./GameAlertOverlay";
 import DiceVisual from "./DiceVisual";
 import DuelDiceVisual from "./DuelDiceVisual"; // Import the new component
 import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS } from "./gameConstants";
-import type { GameEvent, ToastNotification } from "./useModalStates";
-
-// Utility function to fix common mojibake issues (UTF-8 misinterpreted as Latin-1)
-const fixMojibake = (str: string): string => {
-  try {
-    let result = str;
-    for (let i = 0; i < 2; i += 1) {
-      const decoded = decodeURIComponent(escape(result));
-      if (decoded === result || decoded.includes("�")) break;
-      result = decoded;
-    }
-    return result;
-  } catch {
-    return str; // Return original if decoding fails
-  }
-};
+import EventLog from "./EventLog";
+import InteractionPendingOverlay from "./InteractionPendingOverlay";
+import ShopAndGamblingOverlays from "./ShopAndGamblingOverlays";
+import TaxResponseOverlay from "./TaxResponseOverlay";
+import ToastContainer from "./ToastContainer";
+import type { ToastNotification } from "./useModalStates";
 
 const getNotificationKey = (
   source: "player" | "game",
@@ -64,126 +55,6 @@ const getInventoryCardStacks = (
     });
 };
 
-// New conceptual components for notifications
-const ToastContainer: React.FC<{ toasts: ToastNotification[], removeToast: (id: string) => void, allCards: Record<string, GameCardType> }> = ({ toasts, removeToast, allCards }) => {
-  return (
-    <div className="fixed bottom-4 right-4 z-[20000] flex flex-col-reverse items-end space-y-2 pointer-events-none">
-      {toasts.map(toast => (
-        <div
-          key={toast.id}
-          className={`relative p-3 rounded-lg shadow-lg text-white text-sm font-medium animate-in fade-in slide-in-from-right-4 duration-300 pointer-events-auto
-            ${toast.type === 'success' ? 'bg-green-600' :
-              toast.type === 'error' ? 'bg-red-600' :
-              toast.type === 'warning' ? 'bg-yellow-600' : 'bg-blue-600'}`}
-          onClick={() => removeToast(toast.id)}
-        >
-          {fixMojibake(toast.message)}
-          {toast.cardId && allCards[toast.cardId] && (
-            <div className="absolute bottom-full right-0 mb-4 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-[20001] scale-[0.6] origin-bottom-right invisible group-hover:visible drop-shadow-2xl">
-              <GameCard card={allCards[toast.cardId]} index={0} totalCards={1} />
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-};
-
-const EventLog: React.FC<{
-  gameEvents: GameEvent[];
-  allCards: Record<string, GameCardType>;
-  players: Player[];
-  onClear: () => void;
-  isClearing: boolean;
-  canClear: boolean;
-}> = ({ gameEvents, allCards, players, onClear, isClearing, canClear }) => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  void players;
-  
-  // Deduplicate events by ID before rendering
-  const uniqueGameEvents = useMemo(() => {
-    return Array.from(new Map(gameEvents.map(event => [event.id, event])).values())
-      .sort((a, b) => b.timestamp - a.timestamp); // Новые сверху
-  }, [gameEvents]);
-
-  return (
-    <div className={`fixed top-1/2 -translate-y-1/2 left-0 h-1/2 w-80 z-30 transition-transform duration-300 ${isCollapsed ? '-translate-x-full' : 'translate-x-0'}`}>
-      <div className="h-full w-full bg-black/40 backdrop-blur-md border-r border-white/10 overflow-y-auto custom-scrollbar" style={{ direction: 'rtl' }}>
-        <div className="p-4" style={{ direction: 'ltr' }}>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h3 className="text-white text-lg font-bold">Лог событий</h3>
-            {canClear && (
-              <button
-                type="button"
-                onClick={onClear}
-                disabled={isClearing || uniqueGameEvents.length === 0}
-                className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white/60 transition hover:border-red-400/40 hover:bg-red-500/15 hover:text-red-200 disabled:pointer-events-none disabled:opacity-40"
-                title="Очистить лог событий"
-              >
-                {isClearing ? "..." : "Очистить"}
-              </button>
-            )}
-          </div>
-          <div className="flex flex-col gap-2">
-            {uniqueGameEvents.map(event => (
-              <div key={event.id} className="text-xs text-zinc-400">
-                <span className="text-zinc-600 mr-2">[{new Date(event.timestamp).toLocaleTimeString()}]</span>
-                <span className={`
-                  ${event.type === 'success' ? 'text-green-400' :
-                    event.type === 'error' ? 'text-red-400' :
-                    event.type === 'warning' ? 'text-yellow-400' : 'text-blue-400'}
-                `} style={{ fontFamily: "'Comfortaa', sans-serif" }}>
-                  {fixMojibake(event.message)}
-                </span>
-                {event.cardId && allCards[event.cardId] && (() => {
-                  const card = allCards[event.cardId];
-                  const config = RARITY_CONFIG[card.rarity as keyof typeof RARITY_CONFIG] || RARITY_CONFIG.default;
-                  return (
-                    <span className="relative group/card inline-block ml-1">
-                      <span 
-                        className="cursor-help font-bold underline decoration-2 underline-offset-2 transition-colors"
-                        style={{ color: config.bgCard }}
-                      >
-                        [{card.name}]
-                      </span>
-                      {/* Превью карты при наведении в логе */}
-                      <div className="fixed left-80 bottom-1/4 scale-[0.45] origin-left opacity-0 group-hover/card:opacity-100 pointer-events-none transition-all duration-200 z-[100] drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]">
-                        <GameCard card={card} index={0} totalCards={1} />
-                      </div>
-                    </span>
-                  );
-                })()}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <button 
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute left-full top-0 mt-4 h-10 w-8 bg-black/60 backdrop-blur-md border border-l-0 border-white/20 flex items-center justify-center text-white/70 hover:text-white rounded-r-xl shadow-2xl transition-all"
-        title={isCollapsed ? "Развернуть лог" : "Свернуть лог"}
-      >
-        <span className="text-[10px] transition-transform duration-300" style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)' }}>◀</span>
-      </button>
-    </div>
-  );
-};
-
-const removeUndefinedFields = <T,>(value: T): T => {
-  if (Array.isArray(value)) {
-    return value.map(removeUndefinedFields) as T;
-  }
-
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([, entryValue]) => entryValue !== undefined)
-        .map(([key, entryValue]) => [key, removeUndefinedFields(entryValue)])
-    ) as T;
-  }
-
-  return value;
-};
 
 const RARITY_ORDER: Record<string, number> = {
   common: 1,
@@ -225,13 +96,7 @@ function AppClean() {
      return () => clearTimeout(timer); // Но notify вызывается не в useEffect, тут сложнее.
   }, [setToasts]);
 
-  const logEvent = useCallback(async (event: GameEvent) => {
-    try {
-      await addDoc(collection(db, "gameEvents"), removeUndefinedFields(event));
-    } catch (e) {
-      console.error("Firestore log error:", e);
-    }
-  }, []);
+  const logEvent = useEventLogger();
 
   const {
     user, playerData, loading, players, gameState, allCards, gameEvents,
@@ -364,7 +229,7 @@ function AppClean() {
     window.localStorage.setItem(`rgg-shown-notification:${notifKey}`, "1");
     setGameAlert({
       title: "Внимание!",
-      message: fixMojibake(notif.message),
+      message: notif.message,
       type: 'warning',
       cardId: notif.cardId
     });
@@ -387,7 +252,7 @@ function AppClean() {
     window.localStorage.setItem(`rgg-shown-notification:${notifKey}`, "1");
     setGameAlert({
       title: "Внимание!",
-      message: fixMojibake(notif.message),
+      message: notif.message,
       type: 'warning',
       cardId: notif.cardId
     });
@@ -1512,145 +1377,21 @@ function AppClean() {
           </button>
         </div>
       )}
-
-      {/* ЭКРАН ГЕМБЛИНГА (КАЗИНО) */}
-      {gameState.activeInteraction?.type === 'gambling' && gameState.activeInteraction.playerId === user?.uid && (
-        <div className="fixed inset-0 bg-blue-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
-          <div className="text-center mb-12">
-            <h2 className="text-6xl font-black text-blue-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]">Испытай удачу!</h2>
-            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">Выбери одну из трех карт</p>
-          </div>
-          
-          <div className={`flex gap-10 ${isInteractionPending ? 'pointer-events-none' : ''}`}>
-            {gameState.activeInteraction.cards.filter((cardId: string) => Boolean(allCards[cardId])).map((cardId: string, idx: number) => {
-              const card = allCards[cardId];
-              const isRevealed = revealedGamblingCardId === cardId;
-              const isDimmed = Boolean(revealedGamblingCardId && !isRevealed);
-
-              return (
-                <div
-                  key={idx}
-                  onClick={() => {
-                    if (isInteractionPending) return;
-                    void runInteractionAction(async () => {
-                      setRevealedGamblingCardId(cardId);
-                      await new Promise((resolve) => setTimeout(resolve, 1200));
-                      await handlers.handleFinishInteraction(cardId);
-                    });
-                  }}
-                  className={`relative w-64 h-[400px] cursor-pointer transition-all duration-500 [perspective:1200px] ${
-                    isDimmed ? 'opacity-25 scale-95' : 'hover:scale-110'
-                  }`}
-                >
-                  <div
-                    className="relative w-full h-full transition-transform duration-700 [transform-style:preserve-3d]"
-                    style={{ transform: isRevealed ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
-                  >
-                    <div className="absolute inset-0 rounded-[2rem] bg-blue-900/50 border-4 border-blue-400/30 hover:border-blue-400 hover:shadow-[0_0_50px_rgba(59,130,246,0.4)] transition-all flex items-center justify-center group [backface-visibility:hidden]">
-                      <img src="/cards/card_back.svg" className="w-full h-full object-cover rounded-[1.8rem] opacity-80 group-hover:opacity-100" alt="Back" />
-                      <span className="absolute text-blue-200/20 text-8xl font-black italic">?</span>
-                    </div>
-                    <div className="absolute inset-0 flex items-center justify-center [transform:rotateY(180deg)] [backface-visibility:hidden]">
-                      <div className="scale-[0.78] drop-shadow-[0_0_40px_rgba(59,130,246,0.45)]">
-                        <GameCard card={card} index={0} totalCards={1} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {/* Предложение использовать карточку защиты */}
-          {protectionCardsInInv.length > 0 && (
-            <div className="mt-12 flex flex-col items-center gap-4 bg-white/5 p-8 rounded-[2.5rem] border border-white/10 backdrop-blur-md shadow-2xl animate-in slide-in-from-bottom-5 duration-700">
-              <div className="flex flex-col items-center gap-1">
-                <span className="text-[10px] font-black text-blue-300 uppercase tracking-[0.3em]">У вас есть защита</span>
-                <p className="text-white/40 text-[9px] font-medium">Вы можете избежать гемблинга, потратив карту</p>
-              </div>
-              <div className="flex gap-4">
-                {protectionCardsInInv.map((card) => (
-                  <button
-                    key={card.id}
-                    disabled={isInteractionPending}
-                    onClick={() => {
-                      if (isInteractionPending) return;
-                      void runInteractionAction(() => handlers.handleFinishInteraction(undefined, 0, card.id));
-                    }}
-                    className="bg-yellow-500 text-black px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white transition-all active:scale-95 shadow-[0_5px_0_#a16207] active:shadow-none active:translate-y-1"
-                  >
-                    Использовать "{card.name}"
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ЭКРАН B-SHOP (МАГАЗИН) */}
-      {gameState.activeInteraction?.type === 'bshop' && [user?.uid, playerData.id].includes(gameState.activeInteraction.playerId) && (
-        <div className="fixed inset-0 bg-pink-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
-          <div className="text-center mb-12">
-            <h2 className="text-6xl font-black text-pink-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(236,72,153,0.5)]">B-Shop</h2>
-            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">Ваши коины: {playerData.tiltCoins ?? 0} 🦖</p>
-            {hasGoldenCard && (
-              <p className="mt-3 text-sm font-bold text-yellow-200">
-                Как держателю золотой карты для вас сегодня в B-Shop скидка!
-              </p>
-            )}
-          </div>
-          
-          <div className={`flex gap-8 items-start ${isInteractionPending ? 'pointer-events-none opacity-60' : ''}`}>
-            {gameState.activeInteraction.cards.filter((cardId: string) => Boolean(allCards[cardId])).map((cardId: string, idx: number) => {
-              const card = allCards[cardId];
-              const basePrice = getBaseCardPrice(card as GameCardType);
-              const price = getCardPrice(card as GameCardType);
-              const hasDiscount = hasGoldenCard && basePrice > price;
-              const canAfford = (playerData.tiltCoins ?? 0) >= price;
-
-              return (
-                <div key={idx} className="flex flex-col gap-4 items-center">
-                  <div className="scale-90">
-                    <GameCard card={card} index={0} totalCards={1} />
-                  </div>
-                  <button 
-                    disabled={!canAfford || isInteractionPending}
-                    onClick={() => {
-                      if (isInteractionPending) return;
-                      void runInteractionAction(() => handlers.handleFinishInteraction(cardId, price));
-                    }}
-                    className={`w-full py-4 rounded-2xl font-black uppercase text-sm tracking-widest transition-all ${
-                      canAfford 
-                      ? "bg-pink-500 text-white hover:bg-pink-400 shadow-[0_10px_20px_rgba(236,72,153,0.3)]" 
-                      : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
-                    }`}
-                  >
-                    {hasDiscount ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="text-white/45 line-through">{basePrice}</span>
-                        <span>{price} 🦖 КУПИТЬ</span>
-                      </span>
-                    ) : (
-                      <span>{price} 🦖 КУПИТЬ</span>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-
-          <button 
-            disabled={isInteractionPending}
-            onClick={() => {
-              if (isInteractionPending) return;
-              void runInteractionAction(() => handlers.handleFinishInteraction());
-            }}
-            className="mt-12 text-white/30 hover:text-white font-black uppercase text-xs tracking-[0.3em] transition-all"
-          >
-            Ничего не покупать и уйти
-          </button>
-        </div>
-      )}
+      <ShopAndGamblingOverlays
+        gameState={gameState}
+        user={user}
+        playerData={playerData}
+        allCards={allCards}
+        protectionCardsInInv={protectionCardsInInv}
+        revealedGamblingCardId={revealedGamblingCardId}
+        setRevealedGamblingCardId={setRevealedGamblingCardId}
+        hasGoldenCard={hasGoldenCard}
+        getBaseCardPrice={getBaseCardPrice}
+        getCardPrice={getCardPrice}
+        isInteractionPending={isInteractionPending}
+        runInteractionAction={runInteractionAction}
+        handlers={handlers}
+      />
 
       {/* ЭКРАН ОТВЕТА НА ВЫЗОВ НА ДУЭЛЬ */}
       {gameState.activeInteraction?.type === 'move_for_coins_selection' && gameState.activeInteraction.playerId === user?.uid && (
@@ -1700,88 +1441,14 @@ function AppClean() {
           </div>
         </div>
       )}
-
-      {gameState.activeInteraction?.type === 'tax_response' && gameState.activeInteraction.playerId === user?.uid && (
-        <div className="fixed inset-0 bg-amber-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
-          <div className="text-center mb-8 max-w-2xl">
-            <h2 className="text-4xl sm:text-5xl font-black text-amber-300 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(251,191,36,0.45)]">
-              Платите налоги!
-            </h2>
-            <p className="text-white/70 text-sm font-bold uppercase tracking-[0.2em] mt-4">
-              {(gameState.activeInteraction.taxCollectorName || gameState.activeInteraction.taxOwnerName || getPlayerById(gameState.activeInteraction.taxOwnerId)?.login || 'Игрок')} собирает банк налогов
-            </p>
-            <p className="text-amber-200/80 text-sm font-bold mt-3">
-              В банке сейчас: {gameState.activeInteraction.taxBank ?? 0} монет
-            </p>
-            <p className="text-white/45 text-xs font-medium mt-3">
-              Можно внести 2 монеты в банк, выбрать gambling или перехватить сбор картой "А может тебя?", если она есть в руке.
-            </p>
-          </div>
-
-          <div className="grid gap-4 w-full max-w-md">
-            <button
-              disabled={isInteractionPending}
-              onClick={() => {
-                if (isInteractionPending) return;
-                void runInteractionAction(() => handlers.handleTaxResponse('pay'));
-              }}
-              className="bg-amber-400 text-black px-8 py-4 rounded-2xl font-black uppercase text-sm hover:bg-white transition-all active:scale-95 shadow-[0_5px_0_#b45309] active:shadow-none active:translate-y-1 disabled:opacity-50"
-            >
-              Внести 2 монеты
-            </button>
-
-            <button
-              disabled={isInteractionPending}
-              onClick={() => {
-                if (isInteractionPending) return;
-                void runInteractionAction(() => handlers.handleTaxResponse('gambling'));
-              }}
-              className="bg-red-600 text-white px-8 py-4 rounded-2xl font-black uppercase text-sm hover:bg-red-500 transition-all active:scale-95 shadow-[0_5px_0_#991b1b] active:shadow-none active:translate-y-1 disabled:opacity-50"
-            >
-              Выбрать gambling
-            </button>
-
-            {gameState.activeInteraction.cards.includes("inv_006") && (
-              <button
-                disabled={isInteractionPending}
-                onClick={() => {
-                  if (isInteractionPending) return;
-                  void runInteractionAction(() => handlers.handleTaxResponse('fish'));
-                }}
-                className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black uppercase text-sm hover:bg-blue-500 transition-all active:scale-95 shadow-[0_5px_0_#1e40af] active:shadow-none active:translate-y-1 disabled:opacity-50"
-              >
-                Использовать "No, no, no mr. Fish"
-              </button>
-            )}
-
-            {gameState.activeInteraction.cards.includes("inv_012") && (
-              <button
-                disabled={isInteractionPending}
-                onClick={() => {
-                  if (isInteractionPending) return;
-                  void runInteractionAction(() => handlers.handleTaxResponse('reflect'));
-                }}
-                className="bg-cyan-400 text-black px-8 py-4 rounded-2xl font-black uppercase text-sm hover:bg-white transition-all active:scale-95 shadow-[0_5px_0_#0e7490] active:shadow-none active:translate-y-1 disabled:opacity-50"
-              >
-                Перехватить сбор
-              </button>
-            )}
-
-            {gameState.activeInteraction.cards.includes("inv_019") && (
-              <button
-                disabled={isInteractionPending}
-                onClick={() => {
-                  if (isInteractionPending) return;
-                  void runInteractionAction(() => handlers.handleTaxResponse('promo'));
-                }}
-                className="bg-zinc-800 text-zinc-300 px-8 py-4 rounded-2xl font-black uppercase text-sm hover:bg-zinc-700 transition-all active:scale-95 disabled:opacity-50"
-              >
-                Промокодик
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      <TaxResponseOverlay
+        interaction={gameState.activeInteraction}
+        user={user}
+        getPlayerById={getPlayerById}
+        isInteractionPending={isInteractionPending}
+        runInteractionAction={runInteractionAction}
+        onTaxResponse={handlers.handleTaxResponse}
+      />
       {gameState.activeInteraction?.type === 'duel_challenge_response' && gameState.activeInteraction.playerId === user?.uid && (
         <div className="fixed inset-0 bg-purple-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
           <div className="text-center mb-12">
@@ -2060,46 +1727,7 @@ function AppClean() {
         </div>
       )}
 
-      {/* КРАСИВОЕ ИГРОВОЕ УВЕДОМЛЕНИЕ */}
-      {gameAlert && (
-        <div className="fixed inset-0 flex items-center justify-center z-[20000] p-6 animate-in fade-in duration-300">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setGameAlert(null)} />
-          <div className="relative bg-zinc-900 border-2 border-yellow-500/50 p-8 rounded-[2rem] max-w-sm w-full shadow-[0_0_50px_rgba(0,0,0,1)] text-center transform animate-in zoom-in-95 duration-300">
-            <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-yellow-500/20">
-              <span className="text-3xl">🔔</span>
-            </div>
-            <h3 className="text-xl font-black text-yellow-500 uppercase italic tracking-tighter mb-2">
-              {gameAlert.title}
-            </h3>
-            <p className="text-zinc-300 text-sm font-medium leading-relaxed mb-6" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
-              {gameAlert.message}
-            </p>
-
-            {gameAlert.cardId && allCards[gameAlert.cardId] && (
-              <div className="mb-6 relative group inline-block">
-                <div 
-                  className="bg-red-500/10 border border-red-500/30 px-4 py-2 rounded-xl cursor-help transition-all hover:bg-red-500/20"
-                >
-                  <span className="text-red-400 font-bold text-sm tracking-wide uppercase">
-                    {allCards[gameAlert.cardId].name}
-                  </span>
-                </div>
-                {/* Всплывающее превью карты при наведении */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 opacity-0 group-hover:opacity-100 transition-all pointer-events-none z-[20001] scale-[0.6] origin-bottom invisible group-hover:visible drop-shadow-2xl">
-                  <GameCard card={allCards[gameAlert.cardId]} index={0} totalCards={1} />
-                </div>
-              </div>
-            )}
-
-            <button 
-              onClick={() => setGameAlert(null)}
-              className="w-full py-4 bg-yellow-500 text-black rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-white transition-all active:scale-95"
-            >
-              Понятно
-            </button>
-          </div>
-        </div>
-      )}
+      <GameAlertOverlay alert={gameAlert} allCards={allCards} onClose={() => setGameAlert(null)} />
 
       {/* Визуализация броска кубика */}
       {visualRoll && (
@@ -2129,18 +1757,7 @@ function AppClean() {
         />
       )}
 
-      {/* Глобальный индикатор сетевого ожидания для карточных действий */}
-      {isInteractionPending && (
-        <div className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/10 backdrop-blur-[1px] cursor-wait pointer-events-auto">
-          <div className="bg-zinc-900/90 border-2 border-purple-500/50 p-6 rounded-[2rem] flex flex-col items-center gap-4 shadow-[0_0_80px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
-            <div className="flex flex-col items-center text-center">
-              <span className="text-[10px] font-black uppercase tracking-[0.4em] text-purple-400">Магия Cormorant...</span>
-              <span className="text-[8px] font-bold uppercase tracking-widest text-zinc-500 mt-2">Обрабатываем действие</span>
-            </div>
-          </div>
-        </div>
-      )}
+      {isInteractionPending && <InteractionPendingOverlay />}
 
       {/* Всплывающие уведомления (Toasts) */}
       <ToastContainer 

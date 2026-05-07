@@ -121,12 +121,18 @@ Firebase инициализируется в `src/firebase.ts`.
 - `auth` - Firebase Authentication.
 - `db` - Firestore.
 
-Текущий Firebase project:
+Конфигурация Firebase читается из Vite env-переменных:
 
-- `projectId`: `rggcormarant`
-- `authDomain`: `rggcormarant.firebaseapp.com`
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`
+- `VITE_FIREBASE_APP_ID`
 
-Важно: конфигурация Firebase сейчас захардкожена в репозитории. Для публичного frontend-приложения сам Firebase config не является секретом, но правила Firestore/Auth становятся критичными для безопасности.
+Пример заполнения находится в `.env.example`. Локальные значения обычно кладутся в `.env.local`.
+
+Важно: для публичного frontend-приложения сам Firebase config не является секретом, но правила Firestore/Auth становятся критичными для безопасности.
 
 ## 7. Основные коллекции Firestore
 

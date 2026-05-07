@@ -10,15 +10,52 @@ import {
   updateDoc,
   writeBatch,
 } from "firebase/firestore";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import starterCards from "../src/components/starterCards.json" with { type: "json" };
 
+function loadEnvFile(fileName) {
+  const envPath = resolve(process.cwd(), fileName);
+  if (!existsSync(envPath)) return;
+
+  const lines = readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex === -1) continue;
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    let value = trimmed.slice(separatorIndex + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    process.env[key] ??= value;
+  }
+}
+
+loadEnvFile(".env");
+loadEnvFile(".env.local");
+
+function requireEnv(key) {
+  const value = process.env[key];
+  if (!value) throw new Error(`Missing Firebase env variable: ${key}`);
+  return value;
+}
+
 const firebaseConfig = {
-  apiKey: "AIzaSyAooKu3en7NMs-Hhlsl_Np432NVYOgIE8E",
-  authDomain: "rggcormarant.firebaseapp.com",
-  projectId: "rggcormarant",
-  storageBucket: "rggcormarant.firebasestorage.app",
-  messagingSenderId: "542738594296",
-  appId: "1:542738594296:web:327d4527fcb5ce6096be0d",
+  apiKey: requireEnv("VITE_FIREBASE_API_KEY"),
+  authDomain: requireEnv("VITE_FIREBASE_AUTH_DOMAIN"),
+  projectId: requireEnv("VITE_FIREBASE_PROJECT_ID"),
+  storageBucket: requireEnv("VITE_FIREBASE_STORAGE_BUCKET"),
+  messagingSenderId: requireEnv("VITE_FIREBASE_MESSAGING_SENDER_ID"),
+  appId: requireEnv("VITE_FIREBASE_APP_ID"),
 };
 
 const app = initializeApp(firebaseConfig);

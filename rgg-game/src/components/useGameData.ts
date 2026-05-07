@@ -1,23 +1,17 @@
 /* eslint-disable react-hooks/purity, @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useCallback, useRef } from "react";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import type { User } from "firebase/auth";
+import { useEffect, useCallback, useRef } from "react";
+import { signOut } from "firebase/auth";
 import {
   collection,
-  deleteField,
   doc,
   getDocs,
   getDoc,
-  onSnapshot,
   updateDoc,
   setDoc,
   arrayUnion,
   increment,
   arrayRemove,
   runTransaction,
-  query,
-  orderBy,
-  limit,
 } from "firebase/firestore";
 import { auth, db } from "../firebase"; // Assuming db is imported
 import { resetStarterCards } from "../types/cardService";
@@ -26,40 +20,21 @@ import type { CardRarity, GameCard, DuelWeapon } from "../types/card";
 import { defaultGameState } from "../types/game";
 import type { DuelState, GameState, Player } from "../types/game";
 import { PHASE_ORDER } from "./gameConstants";
+import { useFirestoreSubscriptions } from "./useFirestoreSubscriptions";
+import { getResetPlayerPatch } from "./adminHandlers";
+import {
+  addOneCardToInventory,
+  isPlayerNearby,
+  makeHotCoinGain,
+  pickRandom,
+  pickWeighted,
+  removeOneCardFromInventory,
+  shuffle,
+} from "./cardHandlers";
+import { getFinishedDuelCleanupUpdates } from "./duelHandlers";
+import { buildTurnState, getGoldenCardHolderIds, rollD6 } from "./turnHandlers";
 
-const rollD6 = () => Math.floor(Math.random() * 6) + 1;
 import type { GameEvent, ToastNotification } from "./useModalStates"; // Import new types
-
-const pickRandom = <T,>(items: T[]): T | null => {
-  if (items.length === 0) return null;
-  return items[Math.floor(Math.random() * items.length)] ?? null;
-};
-
-const pickWeighted = <T,>(items: T[], getWeight: (item: T) => number): T | null => {
-  const weightedItems = items
-    .map((item) => ({ item, weight: Math.max(0, getWeight(item)) }))
-    .filter(({ weight }) => weight > 0);
-
-  const totalWeight = weightedItems.reduce((sum, { weight }) => sum + weight, 0);
-  if (totalWeight <= 0) return null;
-
-  let roll = Math.random() * totalWeight;
-  for (const { item, weight } of weightedItems) {
-    roll -= weight;
-    if (roll <= 0) return item;
-  }
-
-  return weightedItems[weightedItems.length - 1]?.item ?? null;
-};
-
-const shuffle = <T,>(array: T[]): T[] => {
-  const result = [...array];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j]!, result[i]!];
-  }
-  return result;
-};
 
 type WheelCardStackEntry = {
   cardId: "inv_017" | "inv_006";
@@ -110,18 +85,6 @@ const clearTemporaryStatus = {
   statusDuration: 0,
 };
 
-const addOneCardToInventory = (inventory: string[] | undefined, cardId: string) => [
-  ...(inventory ?? []),
-  cardId,
-];
-
-const removeOneCardFromInventory = (inventory: string[] | undefined, cardId: string) => {
-  const nextInventory = [...(inventory ?? [])];
-  const cardIndex = nextInventory.indexOf(cardId);
-  if (cardIndex >= 0) nextInventory.splice(cardIndex, 1);
-  return nextInventory;
-};
-
 const REFLECT_CARD_ID = "inv_012";
 const REFLECTABLE_CARD_IDS = new Set([
   "inv_007",
@@ -135,17 +98,6 @@ const REFLECTABLE_CARD_IDS = new Set([
   "inv_016",
 ]);
 
-const makeHotCoinGain = (playerId: string, amount: number, sourceCardId?: string, sourceName?: string) =>
-  amount > 0
-    ? {
-        playerId,
-        amount,
-        sourceCardId,
-        sourceName,
-        timestamp: Date.now(),
-      }
-    : null;
-
 /**
  * Проверяет, находится ли игрок в пределах одной клетки (соседняя или та же).
  * @param player1Id ID первого игрока.
@@ -154,30 +106,6 @@ const makeHotCoinGain = (playerId: string, amount: number, sourceCardId?: string
  * @param map Текущая карта игрового поля.
  * @returns true, если игроки находятся рядом, иначе false.
  */
-const isPlayerNearby = (
-  player1Id: string,
-  player2Id: string,
-  allPlayers: Player[],
-  map: typeof gameMap
-): boolean => {
-  const player1 = allPlayers.find(p => p.id === player1Id);
-  const player2 = allPlayers.find(p => p.id === player2Id);
-
-  if (!player1 || !player2 || player1.position === undefined || player2.position === undefined) {
-    return false;
-  }
-
-  const pos1 = player1.position;
-  const pos2 = player2.position;
-
-  const cell1 = map.find(c => c.id === pos1);
-  const cell2 = map.find(c => c.id === pos2);
-
-  if (!cell1 || !cell2) return false;
-
-  return pos1 === pos2 || cell1.next.includes(pos2) || cell2.next.includes(pos1);
-};
-
 type GamblingRarity = Exclude<CardRarity, "legendary">;
 
 const GAMBLING_RARITY_WEIGHTS: Array<{ rarity: GamblingRarity; weight: number }> = [
@@ -193,78 +121,16 @@ export function useGameData(
   notify: (message: string, type?: ToastNotification['type'], cardId?: string) => void,
   logEvent: (event: GameEvent) => void
 ) {
-  const [user, setUser] = useState<User | null>(null);
-  const [playerData, setPlayerData] = useState<Player | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [gameState, setGameState] = useState<GameState>(defaultGameState);
-  const [allCards, setAllCards] = useState<Record<string, GameCard>>({});
-  const [syncedEvents, setSyncedEvents] = useState<GameEvent[]>([]);
-  const lastAppliedCardMoveRef = useRef<string | null>(null);
+  const {
+    user,
+    playerData,
+    loading,
+    players,
+    gameState,
+    allCards,
+    gameEvents,
+  } = useFirestoreSubscriptions(notify);
   const lastAppliedTaxPayoutRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (!u) setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    return onSnapshot(doc(db, "players", user.uid), (snap) => {
-      if (snap.exists()) {
-        setPlayerData({ id: snap.id, ...(snap.data() as Omit<Player, "id">) });
-      }
-      setLoading(false);
-    });
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, "gameEvents"), orderBy("timestamp", "desc"), limit(100));
-    return onSnapshot(q, (snap) => {
-      setSyncedEvents(snap.docs.map(d => ({ id: d.id, ...d.data() } as GameEvent)));
-    });
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    return onSnapshot(collection(db, "players"), (snap) => {
-      setPlayers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Player, "id">) })));
-    });
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    return onSnapshot(doc(db, "gameState", "current"), (snap) => {
-      if (snap.exists()) {
-        setGameState({ ...defaultGameState, ...snap.data() } as GameState);
-      }
-    });
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    const cardMove = gameState.cardMove;
-    if (
-      !cardMove ||
-      cardMove.targetId !== user.uid ||
-      typeof cardMove.position !== "number"
-    ) {
-      return;
-    }
-
-    const key = `${cardMove.id}:${cardMove.position}:${cardMove.prevCell ?? "null"}`;
-    if (lastAppliedCardMoveRef.current === key) return;
-    lastAppliedCardMoveRef.current = key;
-
-    void updateDoc(doc(db, "players", user.uid), {
-      position: cardMove.position,
-      prevCell: cardMove.prevCell ?? null,
-    });
-  }, [gameState.cardMove, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -300,30 +166,6 @@ export function useGameData(
     });
   }, [gameState.pendingTaxPayout, notify, user]);
 
-  useEffect(() => {
-    if (!user) return;
-    const unsubCards = onSnapshot(collection(db, "cards"), (snap) => {
-      const cards: Record<string, GameCard> = {};
-      snap.docs.forEach((d) => {
-        cards[d.id] = { id: d.id, ...d.data() } as GameCard;
-      });
-      setAllCards((prev) => ({ ...prev, ...cards }));
-    });
-
-    const unsubPrizes = onSnapshot(collection(db, "prizes"), (snap) => {
-      const prizes: Record<string, GameCard> = {};
-      snap.docs.forEach((d) => {
-        prizes[d.id] = { id: d.id, ...d.data() } as GameCard;
-      });
-      setAllCards((prev) => ({ ...prev, ...prizes }));
-    });
-
-    return () => {
-      unsubCards();
-      unsubPrizes();
-    };
-  }, [user]);
-
   const isAdmin = playerData?.role === "admin";
   const currentTurnPlayerId = gameState.turnOrder[gameState.currentTurnIndex] ?? null;
   const isTurnPhase = gameState.phase === "turn";
@@ -343,52 +185,16 @@ export function useGameData(
     gameState.currentRoll !== null &&
     !gameState.rollConfirmed;
 
-  const getGoldenCardHolderIds = () => {
-    const candidates = players.filter((player) => player.role !== "admin");
-    if (candidates.length === 0) return [];
-
-    const resultEntries = Object.entries(gameState.currentResults ?? {});
-    const hasCurrentResults = resultEntries.length > 0;
-    const getScore = (player: Player) => hasCurrentResults
-      ? Number(gameState.currentResults?.[player.id] ?? 0)
-      : Number(player.lastTiltoCoins ?? 0);
-
-    const zeroScoreIds = candidates
-      .filter((player) => getScore(player) <= 0)
-      .map((player) => player.id);
-
-    const bottomPositiveScores = Array.from(
-      new Set(candidates.map(getScore).filter((score) => score > 0))
-    )
-      .sort((a, b) => a - b)
-      .slice(0, 3);
-
-    const bottomNonZeroIds = candidates
-      .filter((player) => bottomPositiveScores.includes(getScore(player)))
-      .map((player) => player.id);
-
-    return Array.from(new Set([...zeroScoreIds, ...bottomNonZeroIds]));
-  };
-
   useEffect(() => {
     // Текст восстановлен после сбоя кодировки.
     if (!isAdmin || !gameState.activeDuels) return;
 
-    const finishedDuelIds = Object.keys(gameState.activeDuels).filter(
-      (id) => gameState.activeDuels[id].status === "finished"
-    );
-
-    if (finishedDuelIds.length === 0) return;
+    const updates = getFinishedDuelCleanupUpdates(gameState.activeDuels);
+    if (Object.keys(updates).length === 0) return;
 
     // Текст восстановлен после сбоя кодировки.
     const timer = setTimeout(async () => {
       const gsRef = doc(db, "gameState", "current");
-      const updates: Record<string, any> = {};
-      
-      finishedDuelIds.forEach((id) => {
-        updates[`activeDuels.${id}`] = deleteField();
-      });
-
       await updateDoc(gsRef, updates);
     }, 15000);
 
@@ -774,11 +580,11 @@ export function useGameData(
     if (card.action === "communism") {
       const hotCoinGain = gameState.hotCoinGain;
       if (!targetPlayerId || !targetPlayer) {
-        notify("???????? ??????, ??? ????????? ??????? ????? ?????? ????????.", 'warning', card.id);
+        notify("Выберите игрока, который только что получил монеты.", 'warning', card.id);
         return;
       }
       if (!hotCoinGain || hotCoinGain.playerId !== targetPlayerId || hotCoinGain.amount <= 0) {
-        notify(`${targetPlayer.login} ?????? ?? ????? ??????? ????? ??? ????? "?????????".`, 'warning', card.id);
+        notify(`${targetPlayer.login} сейчас не может быть целью для карты "Коммунизм".`, 'warning', card.id);
         return;
       }
     }
@@ -3469,41 +3275,6 @@ export function useGameData(
     await updateDoc(doc(db, "gameState", "current"), { rollConfirmed: true });
   };
 
-  const buildTurnState = () => {
-    const resultEntries = Object.entries(gameState.currentResults ?? {});
-    const hasCurrentResults = resultEntries.length > 0;
-    const getRoundScore = (player: Player) =>
-      hasCurrentResults
-        ? Number(gameState.currentResults?.[player.id] ?? 0)
-        : Number(player.lastTiltoCoins ?? 0);
-
-    const activePlayers = players.filter((player) =>
-      player.inGame &&
-      player.role !== "admin" &&
-      getRoundScore(player) > 0
-    );
-    const sortedIds = [...activePlayers]
-      .sort((a, b) => {
-        const scoreA = getRoundScore(a);
-        const scoreB = getRoundScore(b);
-        if (scoreB !== scoreA) return scoreB - scoreA;
-        return gameState.turnOrder.indexOf(a.id) - gameState.turnOrder.indexOf(b.id);
-      })
-      .map((player) => player.id);
-
-    return {
-      turnOrder: sortedIds,
-      currentTurnIndex: 0,
-      currentRoll: null,
-      currentRollPlayerId: null,
-      lastBaseRoll: null,
-      rollBonus: 0,
-      rollConfirmed: false,
-      forcedMovePlayerId: null,
-      hotCoinGain: null,
-    };
-  };
-
   const handleStepPhase = async (direction: -1 | 1) => {
     if (!isAdmin) return;
     const currentIndex = PHASE_ORDER.indexOf(gameState.phase);
@@ -3531,9 +3302,9 @@ export function useGameData(
     const payload: Partial<GameState> = { phase: nextPhase, round: nextRound, hotCoinGain: null };
 
     if (nextPhase === "turn") {
-      const turnState = buildTurnState();
+      const turnState = buildTurnState(players, gameState);
       Object.assign(payload, turnState);
-      payload.goldenCardHolderIds = getGoldenCardHolderIds();
+      payload.goldenCardHolderIds = getGoldenCardHolderIds(players, gameState);
       if (turnState.turnOrder.length === 0) {
         notify("Очередь хода пуста: тестовый переход в ход без участников.", 'warning');
       }
@@ -3687,7 +3458,7 @@ export function useGameData(
       return;
     }
 
-    const turnState = buildTurnState();
+    const turnState = buildTurnState(players, gameState);
     if (turnState.turnOrder.length === 0) {
       notify("Очередь хода пуста. Админ может вручную добавить игроков с 0 очков.", 'warning');
     }
@@ -3695,7 +3466,7 @@ export function useGameData(
     await updateDoc(doc(db, "gameState", "current"), {
       ...turnState,
       phase: "turn",
-      goldenCardHolderIds: getGoldenCardHolderIds(),
+      goldenCardHolderIds: getGoldenCardHolderIds(players, gameState),
     });
   };
 
@@ -3705,25 +3476,7 @@ export function useGameData(
     const playersSnap = await getDocs(collection(db, "players"));
     await Promise.all(
       playersSnap.docs.map((playerDoc) =>
-        updateDoc(playerDoc.ref, {
-          position: 0,
-          prevCell: null,
-          inGame: false,
-          inventory: [],
-          tiltCoins: 0,
-          lastTiltoCoins: 0,
-          bonusPoints: 0,
-          hasProtection: false,
-          customStatus: null,
-          statusDuration: 0,
-          discardNextDrawn: false,
-          redirectNextDrawnToPlayerId: null,
-          giveNextDrawnToPlayerId: null,
-          lastNotification: deleteField(),
-          hasGoldenCard: deleteField(),
-          isFrozen: deleteField(),
-          freezeDuration: deleteField(),
-        }),
+        updateDoc(playerDoc.ref, getResetPlayerPatch()),
       ),
     );
 
@@ -3738,7 +3491,7 @@ export function useGameData(
     players,
     gameState,
     allCards,
-    gameEvents: syncedEvents,
+    gameEvents,
     isAdmin,
     currentTurnPlayerId,
     canRoll,

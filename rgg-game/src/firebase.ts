@@ -2,13 +2,23 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
+const requireEnv = (key: keyof ImportMetaEnv) => {
+  const value = import.meta.env[key];
+
+  if (!value) {
+    throw new Error(`Missing Firebase env variable: ${key}`);
+  }
+
+  return value;
+};
+
 const firebaseConfig = {
-  apiKey: "AIzaSyAooKu3en7NMs-Hhlsl_Np432NVYOgIE8E",
-  authDomain: "rggcormarant.firebaseapp.com",
-  projectId: "rggcormarant",
-  storageBucket: "rggcormarant.firebasestorage.app",
-  messagingSenderId: "542738594296",
-  appId: "1:542738594296:web:327d4527fcb5ce6096be0d"
+  apiKey: requireEnv("VITE_FIREBASE_API_KEY"),
+  authDomain: requireEnv("VITE_FIREBASE_AUTH_DOMAIN"),
+  projectId: requireEnv("VITE_FIREBASE_PROJECT_ID"),
+  storageBucket: requireEnv("VITE_FIREBASE_STORAGE_BUCKET"),
+  messagingSenderId: requireEnv("VITE_FIREBASE_MESSAGING_SENDER_ID"),
+  appId: requireEnv("VITE_FIREBASE_APP_ID"),
 };
 
 const app = initializeApp(firebaseConfig);

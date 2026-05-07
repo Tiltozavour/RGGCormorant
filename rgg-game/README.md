@@ -1,73 +1,76 @@
-# React + TypeScript + Vite
+# RGG Game / Cormorant Society
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Браузерное React-приложение для синхронной party-игры с Firebase Auth, Firestore, игровой картой, карточками, дуэлями и колесом выбора мини-игры.
 
-Currently, two official plugins are available:
+Подробная документация проекта лежит в [PROJECT_DOCUMENTATION.md](./PROJECT_DOCUMENTATION.md).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Стек
 
-## React Compiler
+- React 19
+- TypeScript
+- Vite
+- Tailwind CSS
+- Firebase Auth
+- Cloud Firestore
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Установка
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Настройка Firebase
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Скопируйте пример env-файла:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cp .env.example .env.local
 ```
+
+На Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+Заполните `.env.local` значениями из Firebase Console:
+
+```env
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_STORAGE_BUCKET=...
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+```
+
+Клиентский код читает эти переменные через `import.meta.env`. Скрипт `scripts/resetFirebaseState.mjs` использует те же переменные и умеет читать `.env` и `.env.local`.
+
+## Запуск
+
+```bash
+npm run dev
+```
+
+## Проверки
+
+```bash
+npm run lint
+npm run build
+```
+
+## Preview production-сборки
+
+```bash
+npm run preview
+```
+
+## Сброс состояния Firebase
+
+Осторожно: команда меняет данные в Firestore.
+
+```bash
+node scripts/resetFirebaseState.mjs
+```
+
+Скрипт сбрасывает `gameState/current`, игроков, коллекции `cards` и `prizes`, затем заново загружает карты из `src/components/starterCards.json`.
