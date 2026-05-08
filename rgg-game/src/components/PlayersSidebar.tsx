@@ -1,8 +1,12 @@
+import { useState } from "react";
 import type { DuelState, GameState, Player, GameHistoryEntry } from "../types/game";
 import {
   buildPlayerScoreRows,
 } from "./scoreUtils";
 import type { GameCard } from "../types/card";
+import AdminDialog from "./AdminDialog";
+import { ru } from "../i18n/ru";
+import { FALLBACK_AVATAR } from "./gameConstants";
 
 interface PlayersSidebarProps {
   isOpen: boolean;
@@ -21,9 +25,6 @@ interface PlayersSidebarProps {
   onOpenCollection: () => void;
 }
 
-const FALLBACK_AVATAR =
-  "https://i.pinimg.com/736x/6f/8d/ce/6f8dcedfc7102d5e88e0af7b88634fc2.jpg";
-
 function PlayersSidebar({
   isOpen,
   players,
@@ -41,6 +42,8 @@ function PlayersSidebar({
   onOpenCollection,
 }: PlayersSidebarProps) {
   void onOpenCollection;
+  const [cardDialogPlayerId, setCardDialogPlayerId] = useState<string | null>(null);
+  const [coinDialog, setCoinDialog] = useState<{ playerId: string; login: string; value: string } | null>(null);
   const rows = buildPlayerScoreRows(players, totalScores, gameHistory);
   const latestGameName = gameHistory.length > 0 ? gameHistory[gameHistory.length - 1].gameName : null;
 
@@ -166,10 +169,7 @@ function PlayersSidebar({
                                 </div>
                               ))}
                               <button 
-                                onClick={() => {
-                                  const cid = prompt("Введите ID карты (например, inv_001):");
-                                  if (cid) void onAddCard(row.playerId, cid);
-                                }}
+                                onClick={() => setCardDialogPlayerId(row.playerId)}
                                 className="px-1.5 py-0.5 bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 rounded text-[9px] hover:bg-yellow-500/20 transition-colors"
                               >
                                 + Карта
@@ -207,13 +207,11 @@ function PlayersSidebar({
                               -
                             </button>
                             <button
-                              onClick={() => {
-                                const val = prompt(`Установить количество монет для ${row.login}:`, String(player?.tiltCoins ?? 0));
-                                if (val !== null) {
-                                  const num = parseInt(val, 10);
-                                  if (!isNaN(num)) void onUpdateCoins(row.playerId, num);
-                                }
-                              }}
+                              onClick={() => setCoinDialog({
+                                playerId: row.playerId,
+                                login: row.login,
+                                value: String(player?.tiltCoins ?? 0),
+                              })}
                               className="w-6 h-6 bg-yellow-500/20 hover:bg-yellow-500/40 border border-yellow-500/30 rounded flex items-center justify-center text-[10px] text-yellow-300 transition-colors"
                             >
                               ✎
@@ -309,6 +307,39 @@ function PlayersSidebar({
           Подробнее
         </button>
       </aside>
+      <AdminDialog
+        isOpen={Boolean(cardDialogPlayerId)}
+        variant="input"
+        title={ru.adminDialog.addCardTitle}
+        inputLabel={ru.adminDialog.addCardLabel}
+        inputPlaceholder={ru.adminDialog.addCardPlaceholder}
+        confirmLabel={ru.adminDialog.addCardConfirm}
+        cancelLabel={ru.bottomPanel.cancel}
+        onClose={() => setCardDialogPlayerId(null)}
+        onConfirm={(value) => {
+          const cardId = value?.trim();
+          const playerId = cardDialogPlayerId;
+          setCardDialogPlayerId(null);
+          if (playerId && cardId) void onAddCard(playerId, cardId);
+        }}
+      />
+      <AdminDialog
+        isOpen={Boolean(coinDialog)}
+        variant="input"
+        inputType="number"
+        title={ru.adminDialog.setCoinsTitle(coinDialog?.login ?? "")}
+        inputLabel={ru.adminDialog.setCoinsLabel}
+        initialValue={coinDialog?.value ?? "0"}
+        confirmLabel={ru.adminDialog.setCoinsConfirm}
+        cancelLabel={ru.bottomPanel.cancel}
+        onClose={() => setCoinDialog(null)}
+        onConfirm={(value) => {
+          const playerId = coinDialog?.playerId;
+          const amount = Number.parseInt(value ?? "", 10);
+          setCoinDialog(null);
+          if (playerId && !Number.isNaN(amount)) void onUpdateCoins(playerId, amount);
+        }}
+      />
     </>
   );
 }

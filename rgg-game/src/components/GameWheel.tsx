@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { doc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import "./GameWheel.css";
 
@@ -177,24 +177,20 @@ export const GameWheel: React.FC<Props> = ({
   const handleConfirmResult = async (game: Item) => {
     setRemovedGameId(game.id); // Отмечаем игру как удаленную для локальной анимации
 
-    // 1. Убираем игру из списка в Firebase (делаем неактивной)
-    await updateDoc(doc(db, "wheel", game.id), {
+    const batch = writeBatch(db);
+    batch.update(doc(db, "wheel", game.id), {
       active: false
     });
-
-    // 2. Очищаем состояние колеса в БД для синхронизации закрытия
-    // Это также сбросит winnerIndex, что закроет модальное окно у всех
-    await updateDoc(doc(db, "game_settings", "wheel"), {
+    batch.update(doc(db, "game_settings", "wheel"), {
       isSpinning: false,
       winnerIndex: null,
       targetRotation: rotation % 360 // Сохраняем текущий угол для следующего старта
     });
-
-    // 3. Обновляем фазу и текущую игру в gameState/current
-    await updateDoc(doc(db, "gameState", "current"), {
+    batch.update(doc(db, "gameState", "current"), {
       phase: "waiting_game",
       currentGame: game.name
     });
+    await batch.commit();
 
     // Задерживаем вызов onResult, чтобы анимация исчезновения строки успела проиграться
     setTimeout(() => onResult(game.name), 600); // Длительность анимации 0.5s + небольшой запас

@@ -1,7 +1,7 @@
 import type { GamePhase } from "../types/game";
 
 export const FALLBACK_AVATAR =
-  "https://i.pinimg.com/736x/6f/8d/ce/6f8dcedfc7102d5e88e0af7b88634fc2.jpg";
+  "/avatars/fallback.jpg";
 
 export const PHASE_ORDER: GamePhase[] = [
   "waiting_game",

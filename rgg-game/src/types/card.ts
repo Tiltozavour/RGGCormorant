@@ -1,5 +1,6 @@
 export type CardDeck = 'inventory' | 'momental';
 export type CardRarity = 'common' | 'rare' | 'epic' | 'legendary';
+export type { DuelState, DuelStatus, DuelWeapon } from './duel';
 
 export type CardAction =
   | 'discard_next_drawn'
@@ -28,23 +29,6 @@ export type CardAction =
   | 'passive_benefit'   // Пассивный бонус
   | 'fish_protection'   // Защита от игроков и отмена колеса
   | 'communism';        // Разделить монеты с другим игроком
-
-export type DuelWeapon = 'dice' | 'game';
-
-export interface DuelState {
-  id: string;
-  challengerId: string;
-  targetId: string;
-  status: 'pending' | 'accepted' | 'betting' | 'ready' | 'rolling' | 'admin_wait' | 'finished';
-  weapon: DuelWeapon | null;
-  bets: {
-    [playerId: string]: number;
-  };
-  isReady: {
-    [playerId: string]: boolean;
-  };
-  winnerId?: string | 'draw';
-}
 
 export interface GameCard {
   id: string;          // Уникальный ID (например, inv_001)

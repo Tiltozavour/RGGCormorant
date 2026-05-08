@@ -4,6 +4,7 @@ import type { Player } from "../types/game";
 import { RARITY_CONFIG } from "./gameConstants";
 import GameCard from "./GameCard";
 import type { GameEvent } from "./useModalStates";
+import { ru } from "../i18n/ru";
 
 interface EventLogProps {
   gameEvents: GameEvent[];
@@ -28,16 +29,16 @@ function EventLog({ gameEvents, allCards, players, onClear, isClearing, canClear
       <div className="h-full w-full bg-black/40 backdrop-blur-md border-r border-white/10 overflow-y-auto custom-scrollbar" style={{ direction: 'rtl' }}>
         <div className="p-4" style={{ direction: 'ltr' }}>
           <div className="mb-4 flex items-center justify-between gap-3">
-            <h3 className="text-white text-lg font-bold">Лог событий</h3>
+            <h3 className="text-white text-lg font-bold">{ru.eventLog.title}</h3>
             {canClear && (
               <button
                 type="button"
                 onClick={onClear}
                 disabled={isClearing || uniqueGameEvents.length === 0}
                 className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white/60 transition hover:border-red-400/40 hover:bg-red-500/15 hover:text-red-200 disabled:pointer-events-none disabled:opacity-40"
-                title="Очистить лог событий"
+                title={ru.eventLog.clearTitle}
               >
-                {isClearing ? "..." : "Очистить"}
+                {isClearing ? "..." : ru.eventLog.clearButton}
               </button>
             )}
           </div>
@@ -77,7 +78,7 @@ function EventLog({ gameEvents, allCards, players, onClear, isClearing, canClear
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
         className="absolute left-full top-0 mt-4 h-10 w-8 bg-black/60 backdrop-blur-md border border-l-0 border-white/20 flex items-center justify-center text-white/70 hover:text-white rounded-r-xl shadow-2xl transition-all"
-        title={isCollapsed ? "Развернуть лог" : "Свернуть лог"}
+        title={isCollapsed ? ru.eventLog.expandTitle : ru.eventLog.collapseTitle}
       >
         <span className="text-[10px] transition-transform duration-300" style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)' }}>◀</span>
       </button>

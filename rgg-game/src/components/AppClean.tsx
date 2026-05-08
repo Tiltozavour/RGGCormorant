@@ -26,6 +26,7 @@ import ShopAndGamblingOverlays from "./ShopAndGamblingOverlays";
 import TaxResponseOverlay from "./TaxResponseOverlay";
 import ToastContainer from "./ToastContainer";
 import type { ToastNotification } from "./useModalStates";
+import { ru } from "../i18n/ru";
 
 const getNotificationKey = (
   source: "player" | "game",
@@ -118,10 +119,10 @@ function AppClean() {
         await batch.commit();
       }
 
-      notify(docs.length > 0 ? `Лог очищен: удалено ${docs.length} событий.` : "Лог уже пуст.", 'success');
+      notify(docs.length > 0 ? ru.app.eventLogCleared(docs.length) : ru.app.eventLogAlreadyEmpty, 'success');
     } catch (error) {
       console.error("Failed to clear event log:", error);
-      notify("Не удалось очистить лог событий.", 'error');
+      notify(ru.app.eventLogClearError, 'error');
     } finally {
       setIsClearingEventLog(false);
     }
@@ -193,7 +194,7 @@ function AppClean() {
       return true;
     } catch (error) {
       console.error(error);
-      notify("Не удалось выполнить действие карты.", "error");
+      notify(ru.app.cardActionError, "error");
       return false;
     } finally {
       interactionPendingRef.current = false;
@@ -228,7 +229,7 @@ function AppClean() {
     shownNotificationKeysRef.current.add(notifKey);
     window.localStorage.setItem(`rgg-shown-notification:${notifKey}`, "1");
     setGameAlert({
-      title: "Внимание!",
+      title: ru.app.attention,
       message: notif.message,
       type: 'warning',
       cardId: notif.cardId
@@ -251,7 +252,7 @@ function AppClean() {
     shownNotificationKeysRef.current.add(notifKey);
     window.localStorage.setItem(`rgg-shown-notification:${notifKey}`, "1");
     setGameAlert({
-      title: "Внимание!",
+      title: ru.app.attention,
       message: notif.message,
       type: 'warning',
       cardId: notif.cardId
@@ -265,8 +266,11 @@ function AppClean() {
 
     lastShownCardMoveRef.current = cardMove.id;
     setGameAlert({
-      title: "Вашей фишкой управляют",
-      message: `Вашей фишкой управляет игрок "${cardMove.controllerName ?? "игрок"}" из-за карты "${cardMove.cardName ?? "карта"}".`,
+      title: ru.app.controlledPieceTitle,
+      message: ru.app.controlledPieceMessage(
+        cardMove.controllerName ?? ru.app.fallbackController,
+        cardMove.cardName ?? ru.app.fallbackCard,
+      ),
       type: 'warning',
       cardId: cardMove.cardId,
     });
@@ -549,12 +553,12 @@ function AppClean() {
   }, [gameState.activeInteraction, isHandOpen, isCollectionOpen, isLegendsOpen]);
 
   if (loading) {
-    return <div className="h-screen flex items-center justify-center bg-black text-white">Проверка доступа...</div>;
+    return <div className="h-screen flex items-center justify-center bg-black text-white">{ru.common.loadingAccess}</div>;
   }
 
   if (!user) return <Auth onLogin={() => {}} />;
 
-  if (!playerData) return <div className="h-screen flex items-center justify-center bg-black text-white">Загрузка профиля...</div>;
+  if (!playerData) return <div className="h-screen flex items-center justify-center bg-black text-white">{ru.common.loadingProfile}</div>;
 
   if (isScoresDetailsOpen) {
     return (

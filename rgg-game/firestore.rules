@@ -1,0 +1,264 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/players/$(request.auth.uid)).data.role == "admin";
+    }
+
+    function game() {
+      return get(/databases/$(database)/documents/gameState/current).data;
+    }
+
+    function activeInteraction() {
+      return game().activeInteraction;
+    }
+
+    function changedOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    function smallCoinChange() {
+      return resource.data.tiltCoins is int &&
+        request.resource.data.tiltCoins is int &&
+        request.resource.data.tiltCoins - resource.data.tiltCoins <= 6 &&
+        resource.data.tiltCoins - request.resource.data.tiltCoins <= 6;
+    }
+
+    function playerDocumentKeys() {
+      return [
+        "id",
+        "login",
+        "avatar",
+        "tiltCoins",
+        "lastTiltoCoins",
+        "bonusPoints",
+        "position",
+        "prevCell",
+        "inGame",
+        "inventory",
+        "role",
+        "hasProtection",
+        "customStatus",
+        "statusDuration",
+        "discardNextDrawn",
+        "redirectNextDrawnToPlayerId",
+        "giveNextDrawnToPlayerId",
+        "borderColor",
+        "lastNotification",
+        "createdAt",
+        "isFrozen",
+        "freezeDuration"
+      ];
+    }
+
+    function selfMutablePlayerKeys() {
+      return [
+        "login",
+        "avatar",
+        "borderColor",
+        "lastNotification",
+        "tiltCoins",
+        "lastTiltoCoins",
+        "bonusPoints",
+        "position",
+        "prevCell",
+        "inGame",
+        "inventory",
+        "hasProtection",
+        "customStatus",
+        "statusDuration",
+        "discardNextDrawn",
+        "redirectNextDrawnToPlayerId",
+        "giveNextDrawnToPlayerId"
+      ];
+    }
+
+    function validPlayerCreate(userId) {
+      return request.resource.data.keys().hasOnly(playerDocumentKeys()) &&
+        request.resource.data.id == userId &&
+        (!("role" in request.resource.data) || request.resource.data.role == "player");
+    }
+
+    function isSelfPlayerUpdate() {
+      return changedOnly(selfMutablePlayerKeys());
+    }
+
+    function gameStateClientMutableKeys() {
+      return [
+        "votes",
+        "showWheel",
+        "currentRoll",
+        "currentRollPlayerId",
+        "lastBaseRoll",
+        "forcedMovePlayerId",
+        "cardMove",
+        "cardDiceRoll",
+        "pendingTaxPayout",
+        "rollBonus",
+        "rollConfirmed",
+        "revealedCards",
+        "activeInteraction",
+        "activeDuels",
+        "notifications",
+        "hotCoinGain",
+        "lastWheelResult",
+        "nextGame"
+      ];
+    }
+
+    function isClientGameStateUpdate(gameId) {
+      return gameId == "current" &&
+        changedOnly(gameStateClientMutableKeys());
+    }
+
+    function isKatjitTargetUpdate(userId) {
+      return signedIn() &&
+        request.auth.uid != userId &&
+        "lastNotification" in request.resource.data &&
+        request.resource.data.lastNotification.cardId == "inv_016" &&
+        (
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(["tiltCoins", "lastNotification"]) &&
+            request.resource.data.tiltCoins == resource.data.tiltCoins - 5
+          ) ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(["tiltCoins", "lastNotification", "customStatus", "statusDuration"]) &&
+            resource.data.customStatus == "promo_code_active" &&
+            request.resource.data.customStatus == null &&
+            request.resource.data.statusDuration == 0 &&
+            request.resource.data.tiltCoins == resource.data.tiltCoins - 2
+          )
+        );
+    }
+
+    match /wheel/{gameId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /game_settings/{settingId} {
+      allow read: if signedIn();
+
+      allow create, update: if signedIn() &&
+        settingId == "wheel" &&
+        request.resource.data.keys().hasOnly([
+          "isSpinning",
+          "targetRotation",
+          "winnerIndex",
+          "previousWinnerIndex",
+          "previousTargetRotation",
+          "wheelCardStack",
+          "lastSpinSource",
+          "rerollBy",
+          "updatedAt"
+        ]);
+
+      allow delete: if isAdmin();
+    }
+
+    match /invites/{inviteId} {
+      allow read: if true;
+      allow update: if signedIn();
+      allow create, delete: if isAdmin();
+    }
+
+    match /players/{userId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == userId && validPlayerCreate(userId);
+
+      allow update: if signedIn() && (
+        isAdmin() ||
+        (request.auth.uid == userId && isSelfPlayerUpdate()) ||
+        isKatjitTargetUpdate(userId) ||
+
+        (
+          game().forcedMovePlayerId == userId &&
+          game().currentRollPlayerId == request.auth.uid &&
+          changedOnly(["position", "prevCell"])
+        ) ||
+
+        (
+          game().cardMove != null &&
+          game().cardMove.targetId == userId &&
+          game().cardMove.controllerId == request.auth.uid &&
+          changedOnly(["position", "prevCell"])
+        ) ||
+
+        (
+          activeInteraction() != null &&
+          activeInteraction().type == "discard_selection" &&
+          activeInteraction().playerId == request.auth.uid &&
+          activeInteraction().targetPlayerId == userId &&
+          changedOnly(["inventory", "lastNotification"])
+        ) ||
+
+        (
+          changedOnly(["customStatus", "statusDuration"]) &&
+          resource.data.customStatus != null
+        ) ||
+
+        (
+          changedOnly(["tiltCoins"]) &&
+          smallCoinChange()
+        ) ||
+
+        (
+          changedOnly(["tiltCoins", "customStatus", "statusDuration"]) &&
+          smallCoinChange()
+        ) ||
+
+        (
+          changedOnly(["tiltCoins"]) &&
+          game().activeDuels != null
+        )
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    match /gameState/{gameId} {
+      allow read: if signedIn();
+      allow create: if isAdmin() && gameId == "current";
+      allow update: if isAdmin() || (signedIn() && isClientGameStateUpdate(gameId));
+      allow delete: if isAdmin();
+    }
+
+    match /gameEvents/{eventId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /cards/{cardId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /prizes/{prizeId} {
+      allow read: if signedIn();
+
+      allow create, update: if isAdmin() || (
+        signedIn() &&
+        request.resource.data.rarity == "legendary" &&
+        request.resource.data.action == "prize" &&
+        request.resource.data.winnerId == request.auth.uid &&
+        request.resource.data.isUnique == true &&
+        request.resource.data.isWon == true &&
+        (
+          !exists(/databases/$(database)/documents/prizes/$(prizeId)) ||
+          resource.data.isWon != true
+        )
+      );
+
+      allow delete: if isAdmin();
+    }
+  }
+}

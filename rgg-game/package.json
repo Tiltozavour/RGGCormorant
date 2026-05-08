@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "assets:check-external": "node scripts/checkExternalAssets.mjs",
+    "seed:cards": "node scripts/seedCards.mjs",
+    "seed:cards:reset": "node scripts/seedCards.mjs --reset",
+    "reset:dev": "node scripts/resetDevState.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",

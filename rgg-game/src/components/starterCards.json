@@ -8,7 +8,7 @@
     "action": "add_coins",
     "value": 5,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExd3VuaHprOHV0bXplNnB6ajEyYWRzdzg5cmg1cHltMW1sdGhxcXd3dyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/W0Kvpo8ePp2mfZPPdR/giphy.gif",
+    "artCard": "/cards/faces/inv_001.gif",
     "price": null,
     "howtowork": "Мгновенно добавляет 5 тильтокоинов к вашему балансу.",
     "number": 1
@@ -22,7 +22,7 @@
     "action": "move_steps",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExODQzb203czV4cTIyZDJvbWFiNjB1d2RoMjd3ZGs1N3hwcG43MngzaiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/xUA7aPr3RbpXW5nK2Q/giphy.gif",
+    "artCard": "/cards/faces/inv_002.gif",
     "price": 2,
     "howtowork": "Перемещает вас вперед на 1 клетку.",
     "number": 2
@@ -36,7 +36,7 @@
     "action": "extra_roll",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExemM4dXN1Mzllc2p0ejA5MWhpcHg4cGJuMXF6NzU3bTBzbG5meG9naiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/Q0ClerRhjRDSCj3xVM/giphy.gif",
+    "artCard": "/cards/faces/inv_003.gif",
     "price": 7,
     "howtowork": "Позволяет перебросить кубик ещё раз в свой ход, если вы не удовлетворены результатом. Можно использовать до броска, можно после, но только до начала движения.",
     "number": 3
@@ -50,7 +50,7 @@
     "action": "protection",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExYnMzd3VyaGpvbncxbm9lYndoMmV2dnJ4anBmd3BwZHFpNzMzbjFsZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/OP4C9oeeSVIrwgFNAk/giphy.gif",
+    "artCard": "/cards/faces/inv_004.gif",
     "price": 4,
     "howtowork": "Можно активировать заранее, можно когда попадете на клетку 'Gambling'. Отменяет негативный эффект от клетки 'Gambling' один раз.",
     "number": 4
@@ -64,7 +64,7 @@
     "action": "teleport_to_type",
     "value": 0,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWJmamx0cjd3YjRjdzgza3hiYzdxYzlxNWRzbHNldDhlY2dwdWl3ZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/vaCfH4WZ6kE4Jel6K5/giphy.gif",
+    "artCard": "/cards/faces/inv_005.gif",
     "price": 8,
     "howtowork": "Мгновенно перемещает вас на ближайшую клетку 'B-Shop' по ходу движения. Использовать ДО броска кубика. Ход завершается моментально",
     "number": 5
@@ -78,7 +78,7 @@
     "action": "fish_protection",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media.tenor.com/PjMX1QTBinMAAAAi/tkthao219-quby.gif",
+    "artCard": "/cards/faces/inv_006.gif",
     "price": 4,
     "howtowork": "Универсальная защита. Отменяет действие любой карты, направленной на вас (включая налоги), а также нейтрализует любые эффекты моментальных карт (денежные штрафы, перемещения назад/вперед, телепортация) или клетки 'Gambling'.",
     "number": 6
@@ -92,7 +92,7 @@
     "action": "move_steps",
     "value": 2,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExYnhrYmhuaXNtYzRkbXJoMm1xYzZiMHVuOXRieTc1YTYya3ZvZDAxMyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/bjE9JbNSckM0w/giphy.gif",
+    "artCard": "/cards/faces/inv_007.gif",
     "price": 3,
     "howtowork": "Позволяет переместить себя или любого другого игрока на 2 клетки вперёд.",
     "requiresTarget": true,
@@ -121,7 +121,7 @@
     "action": "deal_with_mage",
     "value": 5,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ2w2NTZoZDZzcmJocXZzaGdydDQ5M256eTF5MDcxa2t2amlreG5yaiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/yvHNYhxPUCA01rzNal/giphy.gif",
+    "artCard": "/cards/faces/inv_009.gif",
     "price": null,
     "howtowork": "Бросьте кубик: 1 — эффект гемблинг-клетки; 2-4 — +5 монеты и эффект гемблинг-клетки; 5-6 — просто +5 монеты.",
     "number": 9
@@ -135,7 +135,7 @@
     "action": "discard_card",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExaXo4d2tkcG01cmN2OG8zaXB2dmprejZ1cmNxeXEyODdvMWkzOXQ2OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/HpuJW6c49wmsCWafzR/giphy.gif",
+    "artCard": "/cards/faces/inv_010.gif",
     "price": 7,
     "howtowork": "Выберите оппонента и сбросьте одну любую его карту (на ваш выбор - вслепую).",
     "number": 10
@@ -149,7 +149,7 @@
     "action": "steal_card",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ2Q5eWNvdG8xN3ByNDVyOGVodWJqY3RvNDl0Mm4xZnFxcnh5MjF3eCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/2Tx2smt0cqbCUhmKBQ/giphy.gif",
+    "artCard": "/cards/faces/inv_011.gif",
     "price": 8,
     "howtowork": "Выберите оппонента и заберите одну любую его карту (на ваш выбор - вслепую) себе.",
     "number": 11
@@ -163,7 +163,7 @@
     "action": "reflect_debuff",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2prOHd1dnhiNnNobzh4aTk5MXJzaTF2NHR3djRuNDZ0Mmw4OGk2ciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/9YPudRhbu5eWwBtFlU/giphy.gif",
+    "artCard": "/cards/faces/inv_012.gif",
     "price": 7,
     "howtowork": "Используется как ответ на карту другого игрока. Отражает эффект обратно на него. Если вас пытаются подвинуть картой 'Только вперед!', вы перехватываете управление и сами двигаете агрессора. Также может отменить чужое 'Отражение', если его применили против вас. (не работает на Mr. Fish, Дуэль, Коммунизм)",
     "number": 12
@@ -177,7 +177,7 @@
     "action": "move_target_for_coins",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExcDlxb3lsN2x4b3l5dXhqZWhtajF6aWQ5c2p6OHI3ZHpvMnQ5dTk4ZiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/8TB8IP4jxksBRqmYO4/giphy.gif",
+    "artCard": "/cards/faces/inv_013.gif",
     "price": null,
     "howtowork": "Выберите игрока. Каждая отданная вами монета (до 6) передвигает его на 1 клетку вперед. Если цель имеет 'Отражение', эффект вернется к вам, и вы будете двигаться за свои монеты.",
     "requiresTarget": true,
@@ -192,7 +192,7 @@
     "action": "duel",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExNXdzempqZmpodDgzdnd4YnVzenk2NXFqbzRrY2Z0anA2ZDQ1NjJxcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/AyXTW9qVrYYTIZhJ8V/giphy.gif",
+    "artCard": "/cards/faces/inv_014.gif",
     "price": 5,
     "howtowork": "Выберите оппонента и ставку. Оба бросают кубик, победитель забирает всё.",
     "requiresTarget": true,
@@ -221,7 +221,7 @@
     "action": "steal_coins",
     "value": 5,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExaG0ybGtvY2VmaHdxNm9nazN4OHBwdjFybWhoM2h3NTNmMmk0cmV4NSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/aQuMoDDzHv4AivLPNn/giphy.gif",
+    "artCard": "/cards/faces/inv_016.gif",
     "price": 3,
     "howtowork": "Работает, если вы рядом с целью. Бросьте кубик: 4+ — успешно крадете 5 монет у цели, 1-3 — вас заметили, с ваш штраф - теряете 5 монет.",
     "number": 16
@@ -235,7 +235,7 @@
     "action": "spin_wheel",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExcmVtajZuaXVoOWtjbDE0b2czNndzdGk2dmZjZzhkejg4NW5xdTN5bSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/ztisqLhP99tVSHG136/giphy.gif",
+    "artCard": "/cards/faces/inv_017.gif",
     "price": 5,
     "howtowork": "Дает право на один повторный запуск колеса выбора игры.",
     "number": 17
@@ -291,7 +291,7 @@
     "action": "add_coins",
     "value": -4,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExMnpnYXRpbTQxcmVkNGphOXJtMzBzNjNoa3R0bXpjN3lhMWJhM2d4NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/NEmydmd0cXFdj4ZH9m/giphy.gif",
+    "artCard": "/cards/faces/mom_001.gif",
     "price": null,
     "howtowork": "Мгновенно: вы теряете 4 монет при попадании на эту клетку.",
     "number": 21
@@ -319,7 +319,7 @@
     "action": "add_coins",
     "value": 8,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExdWlleWFlY3U0cHVybTlpejdpZHBoZHQ0NGd3eHR2bThudnR0MWw5bCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/TJxjveDQwxFgSb1n55/giphy.gif",
+    "artCard": "/cards/faces/mom_003.gif",
     "price": null,
     "howtowork": "Мгновенно: получите 8 монет.",
     "number": 23
@@ -347,7 +347,7 @@
     "action": "add_coins",
     "value": -2,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcWx3d2Jsamd0eW1nazJuemt2eXJrdWR1cTNqZ3RuYWl4eWVmZGF4YiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/iAIwyKeZlKBgIpH4TZ/giphy.gif",
+    "artCard": "/cards/faces/mom_005.gif",
     "price": null,
     "howtowork": "Хорошо, что она была по скидке. Мгновенно: вы теряете 2 монеты.",
     "number": 25
@@ -361,7 +361,7 @@
     "action": "move_steps",
     "value": -1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExNjl5cTczMGp6ajI0NjRma3J2bnJka3l4aHh2enp0b2xya3V5aWU2dyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/ZxekGULV81ITNh6Dd8/giphy.gif",
+    "artCard": "/cards/faces/mom_006.gif",
     "price": null,
     "howtowork": "Мгновенно: вы перемещаетесь на 1 клетку назад.",
     "number": 26
@@ -375,7 +375,7 @@
     "action": "move_steps",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExdzB1cWg0Zm5nNjEzcTd5b3RqdmdlaDE0cXpvZG5xMmU1cW01OHpnYyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/VeTIkcoBeync63rDWy/giphy.gif",
+    "artCard": "/cards/faces/mom_007.gif",
     "price": null,
     "howtowork": "Мгновенно: вы перемещаетесь на 1 клетку вперед.",
     "number": 27

@@ -2,6 +2,7 @@ import type { User } from "firebase/auth";
 import type { GameCard as GameCardType } from "../types/card";
 import type { GameState, Player } from "../types/game";
 import GameCard from "./GameCard";
+import { ru } from "../i18n/ru";
 
 interface ShopAndGamblingOverlaysProps {
   gameState: GameState;
@@ -43,8 +44,8 @@ function ShopAndGamblingOverlays({
       {interaction?.type === 'gambling' && interaction.playerId === user?.uid && (
         <div className="fixed inset-0 bg-blue-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
           <div className="text-center mb-12">
-            <h2 className="text-6xl font-black text-blue-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]">Испытай удачу!</h2>
-            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">Выбери одну из трех карт</p>
+            <h2 className="text-6xl font-black text-blue-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]">{ru.gambling.title}</h2>
+            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">{ru.gambling.subtitle}</p>
           </div>
 
           <div className={`flex gap-10 ${isInteractionPending ? 'pointer-events-none' : ''}`}>
@@ -90,8 +91,8 @@ function ShopAndGamblingOverlays({
           {protectionCardsInInv.length > 0 && (
             <div className="mt-12 flex flex-col items-center gap-4 bg-white/5 p-8 rounded-[2.5rem] border border-white/10 backdrop-blur-md shadow-2xl animate-in slide-in-from-bottom-5 duration-700">
               <div className="flex flex-col items-center gap-1">
-                <span className="text-[10px] font-black text-blue-300 uppercase tracking-[0.3em]">У вас есть защита</span>
-                <p className="text-white/40 text-[9px] font-medium">Вы можете избежать гемблинга, потратив карту</p>
+                <span className="text-[10px] font-black text-blue-300 uppercase tracking-[0.3em]">{ru.gambling.protectionTitle}</span>
+                <p className="text-white/40 text-[9px] font-medium">{ru.gambling.protectionSubtitle}</p>
               </div>
               <div className="flex gap-4">
                 {protectionCardsInInv.map((card) => (
@@ -104,7 +105,7 @@ function ShopAndGamblingOverlays({
                     }}
                     className="bg-yellow-500 text-black px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white transition-all active:scale-95 shadow-[0_5px_0_#a16207] active:shadow-none active:translate-y-1"
                   >
-                    Использовать "{card.name}"
+                    {ru.gambling.useCard(card.name)}
                   </button>
                 ))}
               </div>
@@ -117,10 +118,10 @@ function ShopAndGamblingOverlays({
         <div className="fixed inset-0 bg-pink-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
           <div className="text-center mb-12">
             <h2 className="text-6xl font-black text-pink-400 uppercase italic tracking-tighter drop-shadow-[0_0_30px_rgba(236,72,153,0.5)]">B-Shop</h2>
-            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">Ваши коины: {playerData.tiltCoins ?? 0} 🦖</p>
+            <p className="text-white/40 text-sm font-bold uppercase tracking-[0.5em] mt-4">{ru.bshop.coins(playerData.tiltCoins ?? 0)}</p>
             {hasGoldenCard && (
               <p className="mt-3 text-sm font-bold text-yellow-200">
-                Как держателю золотой карты для вас сегодня в B-Shop скидка!
+                {ru.bshop.goldenDiscount}
               </p>
             )}
           </div>
@@ -153,10 +154,10 @@ function ShopAndGamblingOverlays({
                     {hasDiscount ? (
                       <span className="flex items-center justify-center gap-2">
                         <span className="text-white/45 line-through">{basePrice}</span>
-                        <span>{price} 🦖 КУПИТЬ</span>
+                        <span>{ru.bshop.buy(price)}</span>
                       </span>
                     ) : (
-                      <span>{price} 🦖 КУПИТЬ</span>
+                      <span>{ru.bshop.buy(price)}</span>
                     )}
                   </button>
                 </div>
@@ -172,7 +173,7 @@ function ShopAndGamblingOverlays({
             }}
             className="mt-12 text-white/30 hover:text-white font-black uppercase text-xs tracking-[0.3em] transition-all"
           >
-            Ничего не покупать и уйти
+            {ru.bshop.leave}
           </button>
         </div>
       )}

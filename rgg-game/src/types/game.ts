@@ -1,3 +1,6 @@
+import type { DuelState } from "./duel";
+export type { DuelState, DuelStatus, DuelWeapon } from "./duel";
+
 export type GamePhase =
   | "waiting_game"
   | "playing"
@@ -17,20 +20,6 @@ export interface GameHistoryEntry {
   gameName: string;
   scores: Record<string, number | GameScoreParts>;
   createdAt?: unknown;
-}
-
-export type DuelWeapon = "dice" | "game";
-
-export interface DuelState {
-  id: string;
-  challengerId: string;
-  targetId: string;
-  status: "pending" | "accepted" | "betting" | "ready_to_roll" | "rolling" | "admin_wait" | "finished";
-  weapon: DuelWeapon | null;
-  bets: Record<string, number>;
-  isReady: Record<string, boolean>;
-  rolls?: Record<string, number>;
-  winnerId?: string | "draw";
 }
 
 export interface ActiveInteraction {

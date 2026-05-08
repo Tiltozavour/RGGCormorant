@@ -1,6 +1,7 @@
 import type { GameCard as GameCardType } from "../types/card";
 import GameCard from "./GameCard";
 import type { GameAlert } from "./useModalStates";
+import { ru } from "../i18n/ru";
 
 interface GameAlertOverlayProps {
   alert: GameAlert | null;
@@ -42,7 +43,7 @@ function GameAlertOverlay({ alert, allCards, onClose }: GameAlertOverlayProps) {
           onClick={onClose}
           className="w-full py-4 bg-yellow-500 text-black rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-white transition-all active:scale-95"
         >
-          Понятно
+          {ru.common.understood}
         </button>
       </div>
     </div>

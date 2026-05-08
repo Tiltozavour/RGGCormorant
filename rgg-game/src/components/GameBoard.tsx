@@ -5,6 +5,7 @@ import { gameMap } from "./gameMap";
 import type { Player } from "../types/game";
 import { GameWheel } from "./GameWheel";
 import { fetchAvailableGames } from "./gameList";
+import { FALLBACK_AVATAR } from "./gameConstants";
 import "./GameWheel.css";
 
 interface GameBoardProps {
@@ -53,9 +54,6 @@ interface MapCell {
 }
 
 const map = gameMap as MapCell[];
-
-const FALLBACK_AVATAR =
-  "https://i.pinimg.com/736x/6f/8d/ce/6f8dcedfc7102d5e88e0af7b88634fc2.jpg";
 
 const syncMovePosition = async (
   targetId: string,
