@@ -28,20 +28,23 @@ const GameCard: React.FC<GameCardProps> = ({
   const legendaryArtBackground = isLegendary
     ? {
         backgroundImage: `
-          radial-gradient(circle at 18% 12%, rgba(255, 247, 194, 0.72) 0%, transparent 30%),
-          radial-gradient(circle at 82% 18%, rgba(45, 212, 191, 0.28) 0%, transparent 34%),
-          linear-gradient(145deg, #f7d774 0%, #a96f20 35%, #2f2113 62%, #063f35 100%)
+          radial-gradient(circle at 18% 14%, rgba(250, 204, 21, 0.32) 0%, transparent 18%),
+          radial-gradient(circle at 74% 18%, rgba(147, 197, 253, 0.28) 0%, transparent 32%),
+          radial-gradient(circle at 34% 72%, rgba(168, 85, 247, 0.34) 0%, transparent 38%),
+          radial-gradient(circle at 82% 82%, rgba(34, 211, 238, 0.16) 0%, transparent 30%),
+          linear-gradient(145deg, #020617 0%, #111827 28%, #312e81 58%, #0f172a 100%)
         `,
       }
     : undefined;
   const legendaryBodyBackground = isLegendary
     ? {
         backgroundImage: `
-          radial-gradient(circle at 50% 0%, rgba(247, 215, 116, 0.28) 0%, transparent 42%),
-          radial-gradient(circle at 92% 100%, rgba(20, 184, 166, 0.14) 0%, transparent 34%),
-          linear-gradient(180deg, rgba(47, 33, 19, 0.96) 0%, rgba(22, 20, 17, 0.98) 52%, rgba(6, 43, 37, 0.96) 100%)
+          radial-gradient(circle at 50% 0%, rgba(250, 204, 21, 0.16) 0%, transparent 36%),
+          radial-gradient(circle at 12% 90%, rgba(168, 85, 247, 0.18) 0%, transparent 34%),
+          radial-gradient(circle at 88% 84%, rgba(14, 165, 233, 0.14) 0%, transparent 34%),
+          linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(2, 6, 23, 0.99) 54%, rgba(24, 24, 27, 0.98) 100%)
         `,
-        backgroundBlendMode: "screen, screen, normal",
+        backgroundBlendMode: "screen, screen, screen, normal",
       }
     : {
         backgroundImage: card.faceCard ? `url("${card.faceCard}")` : 'none',
@@ -146,9 +149,24 @@ const GameCard: React.FC<GameCardProps> = ({
         {/* Holographic Overlay for Legendary */}
         {isLegendary && (
           <div 
-            className="absolute inset-0 pointer-events-none z-[15] opacity-[0.34] mix-blend-screen animate-holo"
+            className="absolute inset-0 pointer-events-none z-[15] opacity-[0.38] mix-blend-screen animate-holo"
             style={{
-              backgroundImage: `linear-gradient(115deg, rgba(255, 249, 196, 0.0) 0%, rgba(255, 241, 161, 0.75) 18%, rgba(184, 134, 47, 0.35) 36%, rgba(20, 184, 166, 0.32) 54%, rgba(15, 118, 110, 0.18) 68%, rgba(255, 238, 170, 0.62) 84%, rgba(255, 249, 196, 0.0) 100%)`
+              backgroundImage: `linear-gradient(115deg, rgba(255, 249, 196, 0.0) 0%, rgba(250, 204, 21, 0.36) 18%, rgba(96, 165, 250, 0.28) 38%, rgba(168, 85, 247, 0.28) 58%, rgba(34, 211, 238, 0.18) 76%, rgba(255, 249, 196, 0.0) 100%)`
+            }}
+          />
+        )}
+
+        {isLegendary && (
+          <div
+            className="absolute inset-0 pointer-events-none z-[16] opacity-55"
+            style={{
+              backgroundImage: `
+                radial-gradient(circle at 22% 24%, rgba(255,255,255,0.65) 0 1px, transparent 1.5px),
+                radial-gradient(circle at 68% 34%, rgba(255,255,255,0.55) 0 1px, transparent 1.5px),
+                radial-gradient(circle at 84% 62%, rgba(255,255,255,0.5) 0 1px, transparent 1.5px),
+                radial-gradient(circle at 36% 82%, rgba(255,255,255,0.45) 0 1px, transparent 1.5px),
+                radial-gradient(circle at 52% 16%, rgba(250,204,21,0.65) 0 1px, transparent 1.5px)
+              `,
             }}
           />
         )}
@@ -156,7 +174,7 @@ const GameCard: React.FC<GameCardProps> = ({
         {/* Subtle Dark Overlay for depth */}
         {isLegendary && (
           <div className="absolute inset-0 overflow-hidden pointer-events-none z-[25]"> 
-            <div className="absolute top-0 left-0 w-1/4 h-[200%] bg-gradient-to-r from-transparent via-amber-100/45 to-transparent animate-shimmer-fast" 
+            <div className="absolute top-0 left-0 w-1/4 h-[200%] bg-gradient-to-r from-transparent via-sky-100/32 to-transparent animate-shimmer-fast" 
                  style={{ top: '-50%' }} />
           </div>
         )}
@@ -185,7 +203,7 @@ const GameCard: React.FC<GameCardProps> = ({
 
       {/* BOTTOM SECTION (40%) */}
       <div 
-        className={`${isLegendary ? 'border-t border-amber-200/20 bg-stone-950/95' : 'border-t border-white/5 bg-zinc-900/80'} relative h-[40%] w-full overflow-hidden p-5 flex flex-col items-center gap-3 text-center z-40 backdrop-blur-xl rounded-b-[2.3rem]`}
+        className={`${isLegendary ? 'border-t border-sky-200/20 bg-slate-950/95' : 'border-t border-white/5 bg-zinc-900/80'} relative h-[40%] w-full overflow-hidden p-5 flex flex-col items-center gap-3 text-center z-40 backdrop-blur-xl rounded-b-[2.3rem]`}
         style={legendaryBodyBackground}
       >
         {/* Tint overlay based on bgCard */}
@@ -195,7 +213,7 @@ const GameCard: React.FC<GameCardProps> = ({
         />
 
         {isLegendary && (
-          <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-amber-100/70 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-sky-100/60 to-transparent" />
         )}
 
         <div className="flex min-h-0 flex-1 flex-col justify-start gap-2 px-3">
