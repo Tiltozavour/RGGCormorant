@@ -1,4 +1,5 @@
 import type { GameHistoryEntry, GameScoreParts, Player } from "../types/game";
+import { isGameParticipant } from "./playerFilters";
 
 export interface PlayerScoreRow {
   playerId: string;
@@ -56,7 +57,7 @@ export function buildPlayerScoreRows(
   const latestGame = gameHistory.at(-1) ?? null;
 
   return [...players]
-    .filter((player) => player.role !== "admin")
+    .filter(isGameParticipant)
     .map((player) => {
       const latestScore = normalizeScoreParts(latestGame?.scores[player.id]);
 

@@ -6,6 +6,7 @@ import { arrayUnion, doc, updateDoc, increment, writeBatch } from "firebase/fire
 import { db } from "../firebase";
 import { uploadStarterCards } from "../types/cardService";
 import { PHASE_LABELS } from "./gameConstants";
+import { isGameParticipant } from "./playerFilters";
 import { ru } from "../i18n/ru";
 import AdminDialog from "./AdminDialog";
 
@@ -123,7 +124,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     if (!isAdmin) return;
     try {
       const allCardIds = Object.keys(allCards);
-      const targetPlayers = players.filter((p) => p.role !== "admin");
+      const targetPlayers = players.filter(isGameParticipant);
       const updates = targetPlayers.map((p) =>
         updateDoc(doc(db, "players", p.id), { inventory: allCardIds })
       );
@@ -142,7 +143,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     try {
       const roundResults = Object.fromEntries(
         players
-          .filter((player) => player.role !== "admin")
+          .filter(isGameParticipant)
           .map((player) => [player.id, tempScores[player.id] ?? 0])
       );
       const batch = writeBatch(db);
@@ -273,11 +274,11 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
                 </div>
               ))}
             </div>
-            {players.some((player) => player.role !== "admin" && !gameState.turnOrder.includes(player.id) && (gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0) <= 0) && (
+            {players.some((player) => isGameParticipant(player) && !gameState.turnOrder.includes(player.id) && (gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0) <= 0) && (
               <div className="mt-1 flex items-center gap-2 overflow-x-auto">
                 <span className="text-[9px] uppercase tracking-widest text-zinc-500">{ru.bottomPanel.zeroPoints}</span>
                 {players
-                  .filter((player) => player.role !== "admin" && !gameState.turnOrder.includes(player.id) && (gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0) <= 0)
+                  .filter((player) => isGameParticipant(player) && !gameState.turnOrder.includes(player.id) && (gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0) <= 0)
                   .map((player) => (
                     <button
                       key={player.id}
@@ -296,7 +297,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         {/* Ввод результатов Админом */}
         {isAdmin && isFillingResults && (
           <div className="flex gap-4 items-center overflow-x-auto w-full">
-            {players.filter(p => p.role !== "admin").map(p => (
+            {players.filter(isGameParticipant).map(p => (
               <div key={p.id} className="flex flex-col items-center gap-1">
                 <span className="text-[10px] text-zinc-500">{p.login}</span>
                 <input
@@ -380,7 +381,7 @@ const PlayerVotingView: React.FC<{ currentUser: User | null, players: Player[], 
 
   return (
     <div className="flex gap-2 overflow-x-auto">
-      {players.filter(p => p.role !== "admin" && (p.lastTiltoCoins ?? 0) > 0).map(p => (
+      {players.filter((p) => isGameParticipant(p) && (p.lastTiltoCoins ?? 0) > 0).map(p => (
         <button
           key={p.id}
           onClick={() => updateDoc(doc(db, "gameState", "current"), { [`votes.${myId}`]: p.id })}
@@ -416,7 +417,7 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
       }));
       const historyScores = Object.fromEntries(
         players
-          .filter((player) => player.role !== "admin")
+          .filter(isGameParticipant)
           .map((player) => {
             const gameScore = gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0;
             const votingScore = bonusByPlayer[player.id] ?? 0;
@@ -445,7 +446,7 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
     } else {
       const historyScores = Object.fromEntries(
         players
-          .filter((player) => player.role !== "admin")
+          .filter(isGameParticipant)
           .map((player) => {
             const gameScore = gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0;
 

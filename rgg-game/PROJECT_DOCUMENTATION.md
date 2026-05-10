@@ -88,6 +88,7 @@ npm run preview
 - `npm run build` - `tsc -b`, затем production build Vite.
 - `npm run lint` - ESLint.
 - `npm run preview` - preview production build.
+- `npm run assets:check-external` - проверка, что карточные/аватарные ассеты не ссылаются на внешний CDN.
 - `npm run seed:cards` - upsert стартовых `cards` и `prizes`.
 - `npm run seed:cards:reset` - очистить `cards`/`prizes`, затем seed. Требует dev-предохранители.
 - `npm run reset:dev` - полный dev reset состояния Firestore. Требует dev-предохранители.
@@ -266,6 +267,8 @@ public/
 
 Документ игрока. ID равен Firebase Auth `user.uid`.
 
+Важно: зарегистрированный пользователь не считается участником текущей партии, пока не выберет стартовую клетку. При регистрации создается `inGame: false`; после выбора клетки 6 или 15 `chooseStart` выставляет `inGame: true`. Игровые механики, результаты, голосование, очередь ходов и таблицы должны учитывать только участников партии: `inGame === true && role !== "admin"`.
+
 Основные поля:
 
 - `id`
@@ -333,6 +336,8 @@ public/
 - `isUnique`
 - `isWon`
 - `winnerId`
+
+Визуально легендарные карты используют отдельную тему в `GameCard.tsx`: космический фон, мягкие nebula-блики, звездный слой, отдельный нижний фон и `card_face_light.svg` как текстурный слой. Общие цвета редкостей задаются в `gameConstants.ts`.
 
 ### `gameEvents`
 
@@ -405,6 +410,8 @@ Invite-коды для регистрации:
 1. Игрок вводит логин и пароль.
 2. Логин превращается в псевдо-email.
 3. Firebase Auth выполняет sign in.
+
+Если Firebase Auth-сессия осталась в браузере, но документ `players/{uid}` был удален из Firestore, `useFirestoreSubscriptions` не оставляет приложение на вечной загрузке профиля. Пользователь получает уведомление, клиент выполняет `signOut(auth)` и возвращает экран входа/регистрации. Это важно после ручной чистки тестовых пользователей в Firestore.
 
 ## 12. Игровые Фазы
 
@@ -715,7 +722,6 @@ UI админских prompt/confirm заменен на `AdminDialog`.
 - `public/cards`
 - `public/avatars`
 - `public/video/bg.mp4`
-- `public/video/bg_low.mp4`
 
 Карточные GIF хранятся локально:
 
@@ -728,6 +734,8 @@ UI админских prompt/confirm заменен на `AdminDialog`.
 ```bash
 npm run assets:check-external
 ```
+
+Видео `public/video/bg.mp4` используется на экранах авторизации и основного приложения. GitHub не принимает обычные git-файлы больше `100 MB`, поэтому при замене фонового видео нужно держать размер ниже лимита или заранее переводить видео в Git LFS. Старые тяжелые версии файла в истории тоже блокируют push, даже если текущий файл уже сжат.
 
 ## 24. Как Добавить Карту
 
@@ -820,6 +828,8 @@ npm run seed:cards:reset
 13. Browser `alert`, `confirm`, `prompt` заменены на собственные модалки/notify.
 14. Внешние GIF карточек и fallback-аватар сохранены локально в `public/cards` и `public/avatars`.
 15. Добавлена проверка `npm run assets:check-external`.
+16. Обработан сценарий удаленного `players/{uid}`: приложение выходит из старой Auth-сессии вместо вечной загрузки профиля.
+17. Обновлена визуальная тема легендарных карт: космический стиль, отдельная нижняя часть и `card_face_light.svg` как текстурный слой.
 
 ## 28. Остаточный Техдолг
 
@@ -864,7 +874,7 @@ firebase deploy --only firestore:rules
 
 ### Низкий Приоритет
 
-1. Улучшить loading/error states для Firestore.
+1. Дальше улучшать loading/error states для Firestore за пределами сценария удаленного профиля.
 2. Проверить адаптивность на мобильных экранах.
 3. Добавить accessibility-аудит.
 4. Добавить dev tooling для быстрого создания тестовой партии.

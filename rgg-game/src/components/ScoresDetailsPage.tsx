@@ -1,4 +1,5 @@
 import type { GameHistoryEntry, Player } from "../types/game";
+import { isGameParticipant } from "./playerFilters";
 import { buildPlayerScoreRows, normalizeScoreParts } from "./scoreUtils";
 
 interface ScoresDetailsPageProps {
@@ -15,10 +16,13 @@ function ScoresDetailsPage({
   onBack,
 }: ScoresDetailsPageProps) {
   const scoreboardRows = buildPlayerScoreRows(players, totalScores, gameHistory);
-  const activePlayers = players.filter((player) => player.role !== "admin");
+  const activePlayers = players.filter(isGameParticipant);
 
   const sortedScoreboardRows = [...scoreboardRows]
-    .filter((row) => players.find((p) => p.id === row.playerId)?.role !== "admin")
+    .filter((row) => {
+      const player = players.find((p) => p.id === row.playerId);
+      return Boolean(player && isGameParticipant(player));
+    })
     .sort((a, b) => {
       const scoreA = players.find((p) => p.id === a.playerId)?.tiltCoins ?? 0;
       const scoreB = players.find((p) => p.id === b.playerId)?.tiltCoins ?? 0;

@@ -1,9 +1,10 @@
 import type { GameState, Player } from "../types/game";
+import { isGameParticipant } from "./playerFilters";
 
 export const rollD6 = () => Math.floor(Math.random() * 6) + 1;
 
 export const getGoldenCardHolderIds = (players: Player[], gameState: GameState) => {
-  const candidates = players.filter((player) => player.role !== "admin");
+  const candidates = players.filter(isGameParticipant);
   if (candidates.length === 0) return [];
 
   const resultEntries = Object.entries(gameState.currentResults ?? {});
@@ -38,8 +39,7 @@ export const buildTurnState = (players: Player[], gameState: GameState) => {
       : Number(player.lastTiltoCoins ?? 0);
 
   const activePlayers = players.filter((player) =>
-    player.inGame &&
-    player.role !== "admin" &&
+    isGameParticipant(player) &&
     getRoundScore(player) > 0
   );
   const sortedIds = [...activePlayers]

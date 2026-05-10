@@ -5,6 +5,7 @@ import {
 } from "./scoreUtils";
 import type { GameCard } from "../types/card";
 import AdminDialog from "./AdminDialog";
+import { isGameParticipant } from "./playerFilters";
 import { ru } from "../i18n/ru";
 import { FALLBACK_AVATAR } from "./gameConstants";
 
@@ -49,7 +50,7 @@ function PlayersSidebar({
 
   // Находим ID текущего лидера (игнорируя админа) для визуального выделения
   const topPlayerId = [...players]
-    .filter(p => p.role !== "admin")
+    .filter(isGameParticipant)
     .sort((a, b) => (b.tiltCoins ?? 0) - (a.tiltCoins ?? 0))[0]?.id;
 
   const activeDuels = Object.values(gameState.activeDuels || {}).filter(
