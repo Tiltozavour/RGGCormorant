@@ -380,24 +380,25 @@
     "howtowork": "Мгновенно: вы перемещаетесь на 1 клетку вперед.",
     "number": 27
   },
-  {
+
+     {
     "id": "leg_001",
-    "name": "Амадэхи",
-    "description": "Белый олень у моего порога всего лишь сулит перемены. Но готовы ли мы к ним?",
+    "name": "Итан Хоуп",
+    "description": "Иногда я думаю.",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/amadehi.gif",
+    "artCard": "/cards/legend/hope.gif",
     "price": null,
-    "howtowork": "Tiltozavour",
+    "howtowork": "Romantique",
     "number": 28
-  },
+  }, 
   {
     "id": "leg_002",
     "name": "Уильям Бейкер",
-    "description": "Ненавижу ирландцев",
+    "description": "Я ненавижу три вещи: ложь, гороховый суп и ирландцев.",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
@@ -435,5 +436,34 @@
     "price": null,
     "howtowork": "Icecream",
     "number": 31
+  },
+  {
+    "id": "leg_005",
+    "name": "Амадэхи",
+    "description": "Белый олень у моего порога всего лишь сулит перемены. Но готовы ли мы к ним?",
+    "deck": "inventory",
+    "rarity": "legendary",
+    "action": "prize",
+    "value": 0,
+    "faceCard": "/cards/card_face_light.svg",
+    "artCard": "/cards/legend/amadehi.gif",
+    "price": null,
+    "howtowork": "Tiltozavour",
+    "number": 32
+  },
+   {
+    "id": "leg_006",
+    "name": "Грегори Бейкер",
+    "description": "Мы будем королями мира! Я наконец то выйду на пенсию!",
+    "deck": "inventory",
+    "rarity": "legendary",
+    "action": "prize",
+    "value": 0,
+    "faceCard": "/cards/card_face_light.svg",
+    "artCard": "/cards/legend/beikerG.gif",
+    "price": null,
+    "howtowork": "RedWolf",
+    "number": 32
   }
+
 ]

@@ -25,6 +25,29 @@ const GameCard: React.FC<GameCardProps> = ({
   
   // Вычисляем эффективный фоновый цвет для кнопок и наложений
   const effectiveBg = (isHexColor(card.bgCard) ? card.bgCard : config.bgCard) ?? config.bgCard;
+  const legendaryArtBackground = isLegendary
+    ? {
+        backgroundImage: `
+          radial-gradient(circle at 18% 12%, rgba(255, 247, 194, 0.72) 0%, transparent 30%),
+          radial-gradient(circle at 82% 18%, rgba(45, 212, 191, 0.28) 0%, transparent 34%),
+          linear-gradient(145deg, #f7d774 0%, #a96f20 35%, #2f2113 62%, #063f35 100%)
+        `,
+      }
+    : undefined;
+  const legendaryBodyBackground = isLegendary
+    ? {
+        backgroundImage: `
+          radial-gradient(circle at 50% 0%, rgba(247, 215, 116, 0.28) 0%, transparent 42%),
+          radial-gradient(circle at 92% 100%, rgba(20, 184, 166, 0.14) 0%, transparent 34%),
+          linear-gradient(180deg, rgba(47, 33, 19, 0.96) 0%, rgba(22, 20, 17, 0.98) 52%, rgba(6, 43, 37, 0.96) 100%)
+        `,
+        backgroundBlendMode: "screen, screen, normal",
+      }
+    : {
+        backgroundImage: card.faceCard ? `url("${card.faceCard}")` : 'none',
+        backgroundSize: 'cover',
+        backgroundBlendMode: 'overlay',
+      };
 
   return (
     <>
@@ -118,13 +141,14 @@ const GameCard: React.FC<GameCardProps> = ({
       {/* TOP SECTION (60%) */}
       <div 
         className={`relative h-[60%] w-full flex ${isLegendary ? 'items-end' : 'items-center'} justify-center overflow-hidden rounded-t-[2.3rem] bg-gradient-to-b ${config.artGradient}`}
+        style={legendaryArtBackground}
       >
         {/* Holographic Overlay for Legendary */}
         {isLegendary && (
           <div 
-            className="absolute inset-0 pointer-events-none z-[15] opacity-[0.4] mix-blend-color-dodge animate-holo"
+            className="absolute inset-0 pointer-events-none z-[15] opacity-[0.34] mix-blend-screen animate-holo"
             style={{
-              backgroundImage: `linear-gradient(110deg, #ff0000 0%, #ff7f00 15%, #ffff00 30%, #00ff00 45%, #00ffff 60%, #0000ff 75%, #8b00ff 90%, #ff0000 100%)`
+              backgroundImage: `linear-gradient(115deg, rgba(255, 249, 196, 0.0) 0%, rgba(255, 241, 161, 0.75) 18%, rgba(184, 134, 47, 0.35) 36%, rgba(20, 184, 166, 0.32) 54%, rgba(15, 118, 110, 0.18) 68%, rgba(255, 238, 170, 0.62) 84%, rgba(255, 249, 196, 0.0) 100%)`
             }}
           />
         )}
@@ -132,7 +156,7 @@ const GameCard: React.FC<GameCardProps> = ({
         {/* Subtle Dark Overlay for depth */}
         {isLegendary && (
           <div className="absolute inset-0 overflow-hidden pointer-events-none z-[25]"> 
-            <div className="absolute top-0 left-0 w-1/4 h-[200%] bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer-fast" 
+            <div className="absolute top-0 left-0 w-1/4 h-[200%] bg-gradient-to-r from-transparent via-amber-100/45 to-transparent animate-shimmer-fast" 
                  style={{ top: '-50%' }} />
           </div>
         )}
@@ -161,23 +185,26 @@ const GameCard: React.FC<GameCardProps> = ({
 
       {/* BOTTOM SECTION (40%) */}
       <div 
-        className="relative h-[40%] w-full overflow-hidden p-5 flex flex-col items-center gap-3 text-center border-t border-white/5 z-40 bg-zinc-900/80 backdrop-blur-xl rounded-b-[2.3rem]"
-        style={{ 
-          backgroundImage: card.faceCard ? `url("${card.faceCard}")` : 'none',
-          backgroundSize: 'cover',
-          backgroundBlendMode: 'overlay'
-        }}
+        className={`${isLegendary ? 'border-t border-amber-200/20 bg-stone-950/95' : 'border-t border-white/5 bg-zinc-900/80'} relative h-[40%] w-full overflow-hidden p-5 flex flex-col items-center gap-3 text-center z-40 backdrop-blur-xl rounded-b-[2.3rem]`}
+        style={legendaryBodyBackground}
       >
         {/* Tint overlay based on bgCard */}
-        <div className="absolute inset-0 -z-10 opacity-30" style={{ backgroundColor: effectiveBg }} />
+        <div
+          className={`${isLegendary ? 'opacity-20' : 'opacity-30'} absolute inset-0 -z-10`}
+          style={{ backgroundColor: effectiveBg }}
+        />
+
+        {isLegendary && (
+          <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-amber-100/70 to-transparent" />
+        )}
 
         <div className="flex min-h-0 flex-1 flex-col justify-start gap-2 px-3">
-         <h3 className={`${isLegendary ? 'text-[18px] line-clamp-3 leading-snug min-h-[3.75rem]' : 'text-[22px] line-clamp-2 leading-tight min-h-[3.25rem]'} font-black text-white uppercase tracking-normal italic flex items-center justify-center text-center`}>
+         <h3 className={`${isLegendary ? 'text-[24px] line-clamp-3 leading-tight min-h-[3.5rem]' : 'text-[22px] line-clamp-2 leading-tight min-h-[3.25rem]'} font-black text-white uppercase tracking-normal italic flex items-center justify-center text-center`}>
             {card.name}
           </h3>
           <div className={`min-h-0 flex-1 ${isLegendary ? 'overflow-y-auto pr-1 custom-scrollbar' : 'overflow-hidden'}`}>
            <p
-              className={`${isLegendary ? 'text-[12px] leading-snug' : 'text-[14px] leading-snug line-clamp-3'} text-white font-medium italic min-h-0 flex items-start justify-center text-center`}
+              className={`${isLegendary ? 'text-[15px] leading-snug' : 'text-[14px] leading-snug line-clamp-3'} text-white font-medium italic min-h-0 flex items-start justify-center text-center`}
               style={{ fontFamily: "'Comfortaa', sans-serif" }}
             >
               {card.description}

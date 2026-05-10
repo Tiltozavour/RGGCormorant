@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import type { User } from "firebase/auth";
 import {
   collection,
@@ -32,20 +32,45 @@ export function useFirestoreSubscriptions(
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      if (!u) setLoading(false);
+      setPlayerData(null);
+
+      if (u) {
+        setLoading(true);
+        return;
+      }
+
+      setLoading(false);
+      setPlayers([]);
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
     if (!user) return;
-    return onSnapshot(doc(db, "players", user.uid), (snap) => {
-      if (snap.exists()) {
-        setPlayerData({ id: snap.id, ...(snap.data() as Omit<Player, "id">) });
-      }
-      setLoading(false);
-    });
-  }, [user]);
+    return onSnapshot(
+      doc(db, "players", user.uid),
+      (snap) => {
+        if (snap.exists()) {
+          setPlayerData({ id: snap.id, ...(snap.data() as Omit<Player, "id">) });
+          setLoading(false);
+          return;
+        }
+
+        setPlayerData(null);
+        setLoading(false);
+        notify("Профиль игрока не найден. Возможно, он был удален из Firestore. Войдите или зарегистрируйтесь заново.", "error");
+        void signOut(auth).catch((error) => {
+          console.error("Failed to sign out after missing player profile:", error);
+        });
+      },
+      (error) => {
+        console.error("Failed to subscribe to player profile:", error);
+        setPlayerData(null);
+        setLoading(false);
+        notify("Не удалось загрузить профиль игрока. Проверьте Firestore rules и подключение.", "error");
+      },
+    );
+  }, [notify, user]);
 
   useEffect(() => {
     if (!user) return;
