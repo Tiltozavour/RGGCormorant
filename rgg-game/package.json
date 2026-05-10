@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "homepage": "https://tiltozavour.github.io/RGGCarmotant",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -11,7 +12,9 @@
     "assets:check-external": "node scripts/checkExternalAssets.mjs",
     "seed:cards": "node scripts/seedCards.mjs",
     "seed:cards:reset": "node scripts/seedCards.mjs --reset",
-    "reset:dev": "node scripts/resetDevState.mjs"
+    "reset:dev": "node scripts/resetDevState.mjs",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",
@@ -29,6 +32,7 @@
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "gh-pages": "^6.3.0",
     "globals": "^17.4.0",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.2",
@@ -36,4 +40,5 @@
     "typescript-eslint": "^8.57.0",
     "vite": "^8.0.1"
   }
+  
 }
