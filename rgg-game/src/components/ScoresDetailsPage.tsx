@@ -15,14 +15,13 @@ function ScoresDetailsPage({
   onBack,
 }: ScoresDetailsPageProps) {
   const scoreboardRows = buildPlayerScoreRows(players, totalScores, gameHistory);
+  const activePlayers = players.filter((player) => player.role !== "admin");
 
-  // Сортируем игроков по итоговому счету (tiltCoins) от большего к меньшему.
-  // Также исключаем администраторов из таблицы рейтинга.
   const sortedScoreboardRows = [...scoreboardRows]
-    .filter(row => players.find(p => p.id === row.playerId)?.role !== "admin")
+    .filter((row) => players.find((p) => p.id === row.playerId)?.role !== "admin")
     .sort((a, b) => {
-      const scoreA = players.find(p => p.id === a.playerId)?.tiltCoins ?? 0;
-      const scoreB = players.find(p => p.id === b.playerId)?.tiltCoins ?? 0;
+      const scoreA = players.find((p) => p.id === a.playerId)?.tiltCoins ?? 0;
+      const scoreB = players.find((p) => p.id === b.playerId)?.tiltCoins ?? 0;
       return scoreB - scoreA;
     });
 
@@ -67,7 +66,7 @@ function ScoresDetailsPage({
 
               <tbody>
                 {sortedScoreboardRows.map((row, index) => {
-                  const player = players.find(p => p.id === row.playerId);
+                  const player = players.find((p) => p.id === row.playerId);
                   const rank = index + 1;
                   const isTop1 = rank === 1;
                   const isTop2 = rank === 2;
@@ -86,8 +85,8 @@ function ScoresDetailsPage({
                             {isTop1 ? "🥇" : isTop2 ? "🥈" : isTop3 ? "🥉" : <span className="text-xs text-zinc-500">{rank}.</span>}
                           </span>
                           <span className={`font-bold transition-all duration-300 ${
-                            isTop1 
-                              ? "text-yellow-400 group-hover:drop-shadow-[0_0_12px_rgba(250,195,25,0.8)] group-hover:scale-105" 
+                            isTop1
+                              ? "text-yellow-400 group-hover:drop-shadow-[0_0_12px_rgba(250,195,25,0.8)] group-hover:scale-105"
                               : isTop2 ? "text-zinc-200" : isTop3 ? "text-amber-600" : "text-zinc-300"
                           }`}>
                             {row.login}
@@ -120,61 +119,91 @@ function ScoresDetailsPage({
             </div>
           )}
 
-          {[...gameHistory].reverse().map((game) => (
-            <div
-              key={game.id}
-              className="rounded-2xl border border-yellow-500/15 bg-black/40 p-4 backdrop-blur-md"
-            >
-              <h2 className="mb-4 text-lg text-yellow-200">{game.gameName}</h2>
+          {[...gameHistory].reverse().map((game) => {
+            const gameRows = activePlayers
+              .map((player) => {
+                const parts = normalizeScoreParts(game.scores[player.id]);
+                const score = parts.game ?? parts.total;
+                const bonus = parts.voting ?? Math.max(0, parts.total - score);
 
-              <div className="overflow-auto rounded-xl border border-yellow-500/10">
-                <table className="w-full min-w-[620px] text-sm">
-                  <thead className="bg-yellow-500/10 text-yellow-100">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-medium">
-                        Игрок
-                      </th>
-                      <th className="px-4 py-3 text-left font-medium">
-                        За игру
-                      </th>
-                      <th className="px-4 py-3 text-left font-medium">
-                        За голосование
-                      </th>
-                      <th className="px-4 py-3 text-left font-medium">
-                        Всего за игру
-                      </th>
-                    </tr>
-                  </thead>
+                return {
+                  player,
+                  score,
+                  bonus,
+                  total: parts.total,
+                };
+              })
+              .sort((left, right) => {
+                if (right.total !== left.total) {
+                  return right.total - left.total;
+                }
 
-                  <tbody>
-                    {players
-                      .filter((player) => player.role !== "admin")
-                      .map((player) => {
-                        const parts = normalizeScoreParts(game.scores[player.id]);
+                return left.player.login.localeCompare(right.player.login, "ru");
+              });
+
+            return (
+              <div
+                key={game.id}
+                className="rounded-2xl border border-yellow-500/15 bg-black/40 p-4 backdrop-blur-md"
+              >
+                <h2 className="mb-4 text-lg text-yellow-200">{game.gameName}</h2>
+
+                <div className="overflow-auto rounded-xl border border-yellow-500/10">
+                  <table className="w-full min-w-[620px] text-sm">
+                    <thead className="bg-yellow-500/10 text-yellow-100">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium">Игрок</th>
+                        <th className="px-4 py-3 text-left font-medium">Счет</th>
+                        <th className="px-4 py-3 text-left font-medium">Бонусы</th>
+                        <th className="px-4 py-3 text-left font-medium">Место</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {gameRows.map((row, index) => {
+                        const rank = index + 1;
+                        const isTop1 = rank === 1;
+                        const isTop2 = rank === 2;
+                        const isTop3 = rank === 3;
 
                         return (
                           <tr
-                            key={player.id}
-                            className="border-t border-yellow-500/10"
+                            key={row.player.id}
+                            className={`border-t border-yellow-500/10 transition-colors ${
+                              isTop1 ? "bg-yellow-500/10" : ""
+                            }`}
                           >
-                            <td className="px-4 py-3">{player.login}</td>
-                            <td className="px-4 py-3 text-zinc-300">
-                              {parts.game ?? parts.total}
+                            <td className="px-4 py-3">
+                              <span className={`font-bold ${
+                                isTop1
+                                  ? "text-yellow-400"
+                                  : isTop2
+                                    ? "text-zinc-200"
+                                    : isTop3
+                                      ? "text-amber-600"
+                                      : "text-zinc-300"
+                              }`}>
+                                {row.player.login}
+                              </span>
                             </td>
                             <td className="px-4 py-3 text-zinc-300">
-                              {parts.voting ?? 0}
+                              {row.score}
+                            </td>
+                            <td className="px-4 py-3 text-indigo-300 font-medium">
+                              +{row.bonus}
                             </td>
                             <td className="px-4 py-3 text-green-300">
-                              {parts.total}
+                              {isTop1 ? "🥇" : isTop2 ? "🥈" : isTop3 ? "🥉" : `${rank}.`}
                             </td>
                           </tr>
                         );
                       })}
-                  </tbody>
-                </table>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </section>
       </div>
     </div>

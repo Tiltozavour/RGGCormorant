@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import type { GameCard } from "../types/card";
 import type { GameState, Player } from "../types/game";
 import type { User } from "firebase/auth";
-import { doc, updateDoc, increment, writeBatch } from "firebase/firestore";
+import { arrayUnion, doc, updateDoc, increment, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { uploadStarterCards } from "../types/cardService";
 import { PHASE_LABELS } from "./gameConstants";
@@ -394,27 +394,81 @@ const PlayerVotingView: React.FC<{ currentUser: User | null, players: Player[], 
 };
 
 const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFinish: () => void }> = ({ gameState, players, onFinish }) => {
-  void players;
   const handleFinish = async () => {
     const currentVotes = gameState.votes || {};
     const voteCounts: Record<string, number> = {};
     Object.values(currentVotes).forEach((vid) => { voteCounts[vid as string] = (voteCounts[vid as string] || 0) + 1; });
-    
+    const bonusByPlayer: Record<string, number> = {};
+
     const entries = Object.entries(voteCounts);
     if (entries.length > 0) {
       const max = Math.max(...Object.values(voteCounts));
       const winners = entries.filter(([, count]) => count === max).map(([id]) => id);
       const bonus = winners.length === 1 ? 3 : (winners.length === 2 ? 2 : 1);
+      winners.forEach((wid) => {
+        bonusByPlayer[wid] = bonus;
+      });
 
       const batch = writeBatch(db);
       winners.forEach((wid) => batch.update(doc(db, "players", wid), {
         tiltCoins: increment(bonus),
         bonusPoints: bonus
       }));
-      batch.update(doc(db, "gameState", "current"), { votes: {} });
+      const historyScores = Object.fromEntries(
+        players
+          .filter((player) => player.role !== "admin")
+          .map((player) => {
+            const gameScore = gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0;
+            const votingScore = bonusByPlayer[player.id] ?? 0;
+
+            return [
+              player.id,
+              {
+                game: gameScore,
+                voting: votingScore,
+                total: gameScore + votingScore,
+              },
+            ];
+          }),
+      );
+
+      batch.update(doc(db, "gameState", "current"), {
+        votes: {},
+        gameHistory: arrayUnion({
+          id: `${gameState.currentGame || "game"}_${Date.now()}`,
+          gameName: gameState.currentGame || "Игра без названия",
+          scores: historyScores,
+          createdAt: Date.now(),
+        }),
+      });
       await batch.commit();
     } else {
-      await updateDoc(doc(db, "gameState", "current"), { votes: {} });
+      const historyScores = Object.fromEntries(
+        players
+          .filter((player) => player.role !== "admin")
+          .map((player) => {
+            const gameScore = gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0;
+
+            return [
+              player.id,
+              {
+                game: gameScore,
+                voting: 0,
+                total: gameScore,
+              },
+            ];
+          }),
+      );
+
+      await updateDoc(doc(db, "gameState", "current"), {
+        votes: {},
+        gameHistory: arrayUnion({
+          id: `${gameState.currentGame || "game"}_${Date.now()}`,
+          gameName: gameState.currentGame || "Игра без названия",
+          scores: historyScores,
+          createdAt: Date.now(),
+        }),
+      });
     }
     onFinish();
   };

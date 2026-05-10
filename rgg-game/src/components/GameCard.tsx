@@ -39,12 +39,15 @@ const GameCard: React.FC<GameCardProps> = ({
   const legendaryBodyBackground = isLegendary
     ? {
         backgroundImage: `
+          url("/cards/card_face_light.svg"),
           radial-gradient(circle at 50% 0%, rgba(250, 204, 21, 0.16) 0%, transparent 36%),
           radial-gradient(circle at 12% 90%, rgba(168, 85, 247, 0.18) 0%, transparent 34%),
           radial-gradient(circle at 88% 84%, rgba(14, 165, 233, 0.14) 0%, transparent 34%),
           linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(2, 6, 23, 0.99) 54%, rgba(24, 24, 27, 0.98) 100%)
         `,
-        backgroundBlendMode: "screen, screen, screen, normal",
+        backgroundSize: "cover, auto, auto, auto, auto",
+        backgroundPosition: "center, center, center, center, center",
+        backgroundBlendMode: "soft-light, screen, screen, screen, normal",
       }
     : {
         backgroundImage: card.faceCard ? `url("${card.faceCard}")` : 'none',

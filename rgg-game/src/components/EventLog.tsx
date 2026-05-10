@@ -17,6 +17,7 @@ interface EventLogProps {
 
 function EventLog({ gameEvents, allCards, players, onClear, isClearing, canClear }: EventLogProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [previewCardId, setPreviewCardId] = useState<string | null>(null);
   void players;
 
   const uniqueGameEvents = useMemo(() => {
@@ -24,8 +25,13 @@ function EventLog({ gameEvents, allCards, players, onClear, isClearing, canClear
       .sort((a, b) => b.timestamp - a.timestamp);
   }, [gameEvents]);
 
+  const previewCard = previewCardId ? allCards[previewCardId] : null;
+
   return (
-    <div className={`fixed top-1/2 -translate-y-1/2 left-0 h-1/2 w-80 z-30 transition-transform duration-300 ${isCollapsed ? '-translate-x-full' : 'translate-x-0'}`}>
+    <div
+      className={`fixed top-1/2 -translate-y-1/2 left-0 h-1/2 w-80 z-30 transition-transform duration-300 ${isCollapsed ? '-translate-x-full' : 'translate-x-0'}`}
+      onMouseLeave={() => setPreviewCardId(null)}
+    >
       <div className="h-full w-full bg-black/40 backdrop-blur-md border-r border-white/10 overflow-y-auto custom-scrollbar" style={{ direction: 'rtl' }}>
         <div className="p-4" style={{ direction: 'ltr' }}>
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -57,16 +63,18 @@ function EventLog({ gameEvents, allCards, players, onClear, isClearing, canClear
                   const card = allCards[event.cardId];
                   const config = RARITY_CONFIG[card.rarity as keyof typeof RARITY_CONFIG] || RARITY_CONFIG.default;
                   return (
-                    <span className="relative group/card inline-block ml-1">
+                    <span className="inline-block ml-1">
                       <span
-                        className="cursor-help font-bold underline decoration-2 underline-offset-2 transition-colors"
+                        className="cursor-help font-bold underline decoration-2 underline-offset-2 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
                         style={{ color: config.bgCard }}
+                        tabIndex={0}
+                        onMouseEnter={() => setPreviewCardId(card.id)}
+                        onMouseLeave={() => setPreviewCardId(null)}
+                        onFocus={() => setPreviewCardId(card.id)}
+                        onBlur={() => setPreviewCardId(null)}
                       >
                         [{card.name}]
                       </span>
-                      <div className="fixed left-80 bottom-1/4 scale-[0.45] origin-left opacity-0 group-hover/card:opacity-100 pointer-events-none transition-all duration-200 z-[100] drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]">
-                        <GameCard card={card} index={0} totalCards={1} />
-                      </div>
                     </span>
                   );
                 })()}
@@ -75,6 +83,15 @@ function EventLog({ gameEvents, allCards, players, onClear, isClearing, canClear
           </div>
         </div>
       </div>
+
+      {previewCard && !isCollapsed && (
+        <div className="pointer-events-none absolute left-full top-1/2 z-[100] ml-4 h-[234px] w-36 -translate-y-1/2 drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]">
+          <div className="scale-[0.45] origin-top-left">
+            <GameCard card={previewCard} index={0} totalCards={1} />
+          </div>
+        </div>
+      )}
+
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
         className="absolute left-full top-0 mt-4 h-10 w-8 bg-black/60 backdrop-blur-md border border-l-0 border-white/20 flex items-center justify-center text-white/70 hover:text-white rounded-r-xl shadow-2xl transition-all"
