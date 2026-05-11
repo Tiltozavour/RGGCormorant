@@ -411,14 +411,14 @@
   },
   {
     "id": "leg_003",
-    "name": "Мигель Кабреро",
-    "description": "Soy un hombre muy honrado, que me gusta lo mejor",
+    "name": "Клайд Харди",
+    "description": "Однажды потеряв всё, я нашёл намного больше",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/cabrero.gif",
+    "artCard": "/cards/legend/hardy.gif",
     "price": null,
     "howtowork": "Linkorn",
     "number": 30
@@ -426,7 +426,7 @@
   {
     "id": "leg_004",
     "name": "Джон Голт",
-    "description": "Молодой человек, зачем вы торгуйте запрещенкой в моём квартале? Переместитесь на пару улиц ниже, там как раз дежурит мой коллега которому нужно повышение",
+    "description": "Молодой человек, зачем вы нарушайте в моём квартале? Переместитесь на пару улиц ниже, там как раз дежурит мой коллега которому нужно повышение",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
@@ -465,7 +465,7 @@
     "howtowork": "RedWolf",
     "number": 32
   }, 
-     {
+  {
     "id": "leg_007",
     "name": "Энтони Д'Анжело",
     "description": "ЗАКОН ЗАКОН, КАК ЖЕ Я ЛЮБЛЮ ЗАКОН",
@@ -478,6 +478,20 @@
     "price": null,
     "howtowork": "Samura",
     "number": 33
+  },
+   {
+    "id": "leg_009",
+    "name": "Unknown Unknown",
+    "description": "Я отдал свою молодость этому делу, не для того чтобы какой-то там лох приходил и отбирал моё наследие! Я буду бороться за него до конца своих дней!",
+    "deck": "inventory",
+    "rarity": "legendary",
+    "action": "prize",
+    "value": 0,
+    "faceCard": "/cards/card_face_light.svg",
+    "artCard": "/cards/legend/unknown.gif",
+    "price": null,
+    "howtowork": "Rasul",
+    "number": 34
   }
 
 ]

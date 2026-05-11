@@ -996,7 +996,7 @@ function AppClean() {
               .sort((a: GameCardType, b: GameCardType) => a.number - b.number)
               .map((card: GameCardType) => {
                 const winner = players.find((player) => player.id === card.winnerId);
-                const isRevealed = card.isWon || gameState.revealedCards?.includes(card.id);
+                const isRevealed = isAdmin || card.isWon || gameState.revealedCards?.includes(card.id);
                 
                 if (!isRevealed) {
                   return (
