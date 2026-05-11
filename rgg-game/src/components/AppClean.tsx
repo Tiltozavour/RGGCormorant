@@ -19,7 +19,7 @@ import GameCard from "./GameCard";
 import GameAlertOverlay from "./GameAlertOverlay";
 import DiceVisual from "./DiceVisual";
 import DuelDiceVisual from "./DuelDiceVisual"; // Import the new component
-import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS } from "./gameConstants";
+import { FALLBACK_AVATAR, PHASE_LABELS, AURA_COLORS, getPublicAssetUrl } from "./gameConstants";
 import EventLog from "./EventLog";
 import InteractionPendingOverlay from "./InteractionPendingOverlay";
 import ShopAndGamblingOverlays from "./ShopAndGamblingOverlays";
@@ -581,7 +581,7 @@ function AppClean() {
         muted
         className="fixed top-0 left-0 w-full h-full object-cover blur-sm scale-105 -z-20"
       >
-        <source src="/video/bg.mp4" type="video/mp4" />
+        <source src={getPublicAssetUrl("/video/bg.mp4")} type="video/mp4" />
       </video>
 
       <div className="sticky top-0 z-[60] flex justify-between items-center p-4 backdrop-blur-md border-b border-yellow-500/20 bg-black/20">
@@ -756,7 +756,7 @@ function AppClean() {
                 return [{
                   id: card.id,
                   name: card.name,
-                  image: card.artCard || card.faceCard,
+                  image: getPublicAssetUrl(card.artCard || card.faceCard),
                   count,
                   requiresResult: true,
                   onUse: () => { void handlers.handleUseCard(card); },
@@ -931,7 +931,7 @@ function AppClean() {
                       className="w-80 h-[520px] rounded-[2.5rem] bg-zinc-900 border-2 border-white/5 flex flex-col items-center justify-center gap-4 relative group"
                     >
                       <img 
-                        src="/cards/card_back.svg" 
+                        src={getPublicAssetUrl("/cards/card_back.svg")}
                         className="w-full h-full object-cover rounded-[2.5rem] opacity-20 grayscale" 
                         alt="locked" 
                       />
@@ -1005,7 +1005,7 @@ function AppClean() {
                       className="w-80 h-[520px] rounded-[2.5rem] bg-zinc-900 border-2 border-white/5 flex flex-col items-center justify-center gap-4 relative group"
                     >
                       <img 
-                        src="/cards/card_back.svg" 
+                        src={getPublicAssetUrl("/cards/card_back.svg")}
                         className="w-full h-full object-cover rounded-[2.5rem] opacity-20 grayscale" 
                         alt="locked" 
                       />
@@ -1333,7 +1333,7 @@ function AppClean() {
                       ["--end-rot" as string]: endRot,
                     }}
                   >
-                    <img src="/cards/card_back.svg" className="w-full h-full object-cover rounded-[1.1rem] opacity-60" alt="Shuffling" />
+                    <img src={getPublicAssetUrl("/cards/card_back.svg")} className="w-full h-full object-cover rounded-[1.1rem] opacity-60" alt="Shuffling" />
                   </div>
                 ))}
                 <div className="absolute -inset-20 bg-red-500/10 blur-[100px] rounded-full animate-pulse" />
@@ -1355,7 +1355,7 @@ function AppClean() {
                     }}
                     className="w-36 h-[225px] sm:w-44 sm:h-[275px] rounded-[1.5rem] bg-zinc-900 border-4 border-red-500/30 cursor-pointer hover:scale-105 hover:border-red-500 hover:shadow-[0_0_40px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center relative group pointer-events-auto disabled:pointer-events-none disabled:opacity-50"
                   >
-                    <img src="/cards/card_back.svg" className="w-full h-full object-cover rounded-[1.1rem] opacity-80 group-hover:opacity-100" alt="Back" />
+                    <img src={getPublicAssetUrl("/cards/card_back.svg")} className="w-full h-full object-cover rounded-[1.1rem] opacity-80 group-hover:opacity-100" alt="Back" />
                     <div className="absolute inset-0 flex items-center justify-center">
                       <span className="text-red-200/10 text-8xl font-black italic group-hover:text-red-200/20 transition-colors">?</span>
                     </div>

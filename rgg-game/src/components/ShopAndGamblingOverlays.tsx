@@ -3,6 +3,7 @@ import type { GameCard as GameCardType } from "../types/card";
 import type { GameState, Player } from "../types/game";
 import GameCard from "./GameCard";
 import { ru } from "../i18n/ru";
+import { getPublicAssetUrl } from "./gameConstants";
 
 interface ShopAndGamblingOverlaysProps {
   gameState: GameState;
@@ -74,7 +75,7 @@ function ShopAndGamblingOverlays({
                     style={{ transform: isRevealed ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
                   >
                     <div className="absolute inset-0 rounded-[2rem] bg-blue-900/50 border-4 border-blue-400/30 hover:border-blue-400 hover:shadow-[0_0_50px_rgba(59,130,246,0.4)] transition-all flex items-center justify-center group [backface-visibility:hidden]">
-                      <img src="/cards/card_back.svg" className="w-full h-full object-cover rounded-[1.8rem] opacity-80 group-hover:opacity-100" alt="Back" />
+                      <img src={getPublicAssetUrl("/cards/card_back.svg")} className="w-full h-full object-cover rounded-[1.8rem] opacity-80 group-hover:opacity-100" alt="Back" />
                       <span className="absolute text-blue-200/20 text-8xl font-black italic">?</span>
                     </div>
                     <div className="absolute inset-0 flex items-center justify-center [transform:rotateY(180deg)] [backface-visibility:hidden]">

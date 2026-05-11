@@ -1,6 +1,6 @@
 import React from 'react';
 import type { GameCard as GameCardType } from '../types/card';
-import { RARITY_CONFIG, isHexColor } from './gameConstants';
+import { RARITY_CONFIG, getPublicAssetUrl, isHexColor } from './gameConstants';
 
 interface GameCardProps {
   card: GameCardType;
@@ -21,6 +21,8 @@ const GameCard: React.FC<GameCardProps> = ({
 }) => {
   const config = RARITY_CONFIG[card.rarity] ?? RARITY_CONFIG.default;
   const isLegendary = card.rarity === 'legendary';
+  const faceCardUrl = getPublicAssetUrl(card.faceCard);
+  const artCardUrl = getPublicAssetUrl(card.artCard);
   void totalCards;
   
   // Вычисляем эффективный фоновый цвет для кнопок и наложений
@@ -39,7 +41,7 @@ const GameCard: React.FC<GameCardProps> = ({
   const legendaryBodyBackground = isLegendary
     ? {
         backgroundImage: `
-          url("/cards/card_face_light.svg"),
+          url("${getPublicAssetUrl("/cards/card_face_light.svg")}"),
           radial-gradient(circle at 50% 0%, rgba(250, 204, 21, 0.16) 0%, transparent 36%),
           radial-gradient(circle at 12% 90%, rgba(168, 85, 247, 0.18) 0%, transparent 34%),
           radial-gradient(circle at 88% 84%, rgba(14, 165, 233, 0.14) 0%, transparent 34%),
@@ -50,7 +52,7 @@ const GameCard: React.FC<GameCardProps> = ({
         backgroundBlendMode: "soft-light, screen, screen, screen, normal",
       }
     : {
-        backgroundImage: card.faceCard ? `url("${card.faceCard}")` : 'none',
+        backgroundImage: faceCardUrl ? `url("${faceCardUrl}")` : 'none',
         backgroundSize: 'cover',
         backgroundBlendMode: 'overlay',
       };
@@ -184,9 +186,9 @@ const GameCard: React.FC<GameCardProps> = ({
 
         <div className="absolute inset-0 bg-black/20 z-10" />
         
-        {card.artCard ? (
+        {artCardUrl ? (
           <img 
-            src={card.artCard} 
+            src={artCardUrl}
             alt={card.name} 
             className={`${isLegendary ? 'h-full w-full' : 'h-[80%] w-[80%]'} object-contain ${isLegendary ? 'object-bottom' : ''} drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-20 transition-transform duration-500 group-hover:scale-110`} 
           />

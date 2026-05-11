@@ -5,7 +5,7 @@ import type { User } from "firebase/auth";
 import { arrayUnion, doc, updateDoc, increment, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { uploadStarterCards } from "../types/cardService";
-import { PHASE_LABELS } from "./gameConstants";
+import { PHASE_LABELS, getPublicAssetUrl } from "./gameConstants";
 import { isGameParticipant } from "./playerFilters";
 import { ru } from "../i18n/ru";
 import AdminDialog from "./AdminDialog";
@@ -322,7 +322,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
                   onClick={onOpenHand}
                   className="relative group cursor-pointer w-16 h-20 rounded-xl border-2 border-white/20 overflow-hidden transition-all hover:-translate-y-2 hover:scale-110 shadow-2xl"
                   style={{
-                    backgroundImage: `url("${firstCardId ? allCards[firstCardId]?.faceCard : ''}"), linear-gradient(165deg, #4b5563 0%, #000 100%)`,
+                    backgroundImage: `url("${getPublicAssetUrl(firstCardId ? allCards[firstCardId]?.faceCard : '')}"), linear-gradient(165deg, #4b5563 0%, #000 100%)`,
                     backgroundSize: "cover"
                   }}
                 >

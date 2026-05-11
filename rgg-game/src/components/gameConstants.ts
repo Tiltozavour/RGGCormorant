@@ -1,7 +1,13 @@
 import type { GamePhase } from "../types/game";
 
+export const getPublicAssetUrl = (path: string | null | undefined): string => {
+  if (!path) return "";
+  if (!path.startsWith("/")) return path;
+  return `${import.meta.env.BASE_URL}${path.slice(1)}`;
+};
+
 export const FALLBACK_AVATAR =
-  "/avatars/fallback.jpg";
+  getPublicAssetUrl("/avatars/fallback.jpg");
 
 export const PHASE_ORDER: GamePhase[] = [
   "waiting_game",

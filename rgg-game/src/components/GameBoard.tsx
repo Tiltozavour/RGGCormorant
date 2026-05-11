@@ -5,7 +5,7 @@ import { gameMap } from "./gameMap";
 import type { Player } from "../types/game";
 import { GameWheel } from "./GameWheel";
 import { fetchAvailableGames } from "./gameList";
-import { FALLBACK_AVATAR } from "./gameConstants";
+import { FALLBACK_AVATAR, getPublicAssetUrl } from "./gameConstants";
 import "./GameWheel.css";
 
 interface GameBoardProps {
@@ -406,7 +406,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
     return (
       <div className="relative w-full h-full">
         <img
-          src="/map.jpg"
+          src={getPublicAssetUrl("/map.jpg")}
           className="absolute inset-0 w-full h-full object-contain opacity-20 pointer-events-none"
         />
 
@@ -497,7 +497,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
 )}
       <div className="relative w-full h-full">
       <img
-        src="/map.jpg"
+        src={getPublicAssetUrl("/map.jpg")}
         className="absolute inset-0 w-full h-full object-contain opacity-20 pointer-events-none"
       />
 
