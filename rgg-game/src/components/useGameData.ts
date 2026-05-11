@@ -3340,7 +3340,7 @@ export function useGameData(
     if (nextPhase === "turn") {
       const turnState = buildTurnState(players, gameState);
       Object.assign(payload, turnState);
-      payload.goldenCardHolderIds = getGoldenCardHolderIds(players, gameState);
+      payload.goldenCardHolderIds = getGoldenCardHolderIds(players, gameState, turnState.turnOrder);
       if (turnState.turnOrder.length === 0) {
         notify("Очередь хода пуста: тестовый переход в ход без участников.", 'warning');
       }
@@ -3502,7 +3502,7 @@ export function useGameData(
     await updateDoc(doc(db, "gameState", "current"), {
       ...turnState,
       phase: "turn",
-      goldenCardHolderIds: getGoldenCardHolderIds(players, gameState),
+      goldenCardHolderIds: getGoldenCardHolderIds(players, gameState, turnState.turnOrder),
     });
   };
 

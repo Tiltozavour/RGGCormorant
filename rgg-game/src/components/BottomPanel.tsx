@@ -400,6 +400,7 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
     const voteCounts: Record<string, number> = {};
     Object.values(currentVotes).forEach((vid) => { voteCounts[vid as string] = (voteCounts[vid as string] || 0) + 1; });
     const bonusByPlayer: Record<string, number> = {};
+    const participants = players.filter(isGameParticipant);
 
     const entries = Object.entries(voteCounts);
     if (entries.length > 0) {
@@ -416,8 +417,7 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
         bonusPoints: bonus
       }));
       const historyScores = Object.fromEntries(
-        players
-          .filter(isGameParticipant)
+        participants
           .map((player) => {
             const gameScore = gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0;
             const votingScore = bonusByPlayer[player.id] ?? 0;
@@ -432,8 +432,16 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
             ];
           }),
       );
+      const roundTotals = Object.fromEntries(
+        participants.map((player) => {
+          const gameScore = gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0;
+          const votingScore = bonusByPlayer[player.id] ?? 0;
+          return [player.id, gameScore + votingScore];
+        }),
+      );
 
       batch.update(doc(db, "gameState", "current"), {
+        currentResults: roundTotals,
         votes: {},
         gameHistory: arrayUnion({
           id: `${gameState.currentGame || "game"}_${Date.now()}`,
@@ -444,9 +452,14 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
       });
       await batch.commit();
     } else {
+      const roundTotals = Object.fromEntries(
+        participants.map((player) => {
+          const gameScore = gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0;
+          return [player.id, gameScore];
+        }),
+      );
       const historyScores = Object.fromEntries(
-        players
-          .filter(isGameParticipant)
+        participants
           .map((player) => {
             const gameScore = gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0;
 
@@ -462,6 +475,7 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
       );
 
       await updateDoc(doc(db, "gameState", "current"), {
+        currentResults: roundTotals,
         votes: {},
         gameHistory: arrayUnion({
           id: `${gameState.currentGame || "game"}_${Date.now()}`,
@@ -471,6 +485,7 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
         }),
       });
     }
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
     onFinish();
   };
 
