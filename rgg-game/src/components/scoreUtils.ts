@@ -16,6 +16,19 @@ const EMPTY_PARTS: GameScoreParts = {
   total: 0,
 };
 
+export function calculatePlacementScore(
+  groupSize: number,
+  place: number
+): number {
+  if (groupSize <= 1 || place < 1) {
+    return Math.max(groupSize, 0);
+  }
+
+  const boundedPlace = Math.min(place, groupSize);
+
+  return groupSize - boundedPlace + 1;
+}
+
 export function normalizeScoreParts(
   value: number | GameScoreParts | undefined
 ): GameScoreParts {

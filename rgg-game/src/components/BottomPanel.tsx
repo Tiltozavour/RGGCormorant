@@ -7,6 +7,7 @@ import { db } from "../firebase";
 import { uploadStarterCards } from "../types/cardService";
 import { PHASE_LABELS, getPublicAssetUrl } from "./gameConstants";
 import { isGameParticipant } from "./playerFilters";
+import { calculatePlacementScore } from "./scoreUtils";
 import { ru } from "../i18n/ru";
 import AdminDialog from "./AdminDialog";
 
@@ -54,7 +55,10 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   void onPrepareTurn;
   void onCardClick;
   const [isFillingResults, setIsFillingResults] = useState(false);
+  const [resultInputMode, setResultInputMode] = useState<"scores" | "places">("places");
   const [tempScores, setTempScores] = useState<Record<string, number>>({});
+  const [tempResultGroups, setTempResultGroups] = useState<Record<string, number>>({});
+  const [tempResultPlaces, setTempResultPlaces] = useState<Record<string, number>>({});
   const [isPending, setIsPending] = useState(false);
   const [dialog, setDialog] = useState<{
     title: string;
@@ -141,11 +145,12 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   const handleSaveResults = async () => {
     if (!isAdmin) return;
     try {
-      const roundResults = Object.fromEntries(
-        players
-          .filter(isGameParticipant)
-          .map((player) => [player.id, tempScores[player.id] ?? 0])
-      );
+      const participants = players.filter(isGameParticipant);
+      const roundResults = resultInputMode === "places"
+        ? buildPlacementResults(participants, tempResultGroups, tempResultPlaces)
+        : Object.fromEntries(
+            participants.map((player) => [player.id, tempScores[player.id] ?? 0])
+          );
       const batch = writeBatch(db);
       Object.entries(roundResults).forEach(([playerId, score]) => {
         batch.update(doc(db, "players", playerId), {
@@ -296,19 +301,72 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
         {/* Ввод результатов Админом */}
         {isAdmin && isFillingResults && (
-          <div className="flex gap-4 items-center overflow-x-auto w-full">
-            {players.filter(isGameParticipant).map(p => (
-              <div key={p.id} className="flex flex-col items-center gap-1">
-                <span className="text-[10px] text-zinc-500">{p.login}</span>
-                <input
-                  type="number"
-                  className="w-12 bg-black border border-zinc-700 rounded text-center text-xs text-yellow-400"
-                  value={tempScores[p.id] ?? 0}
-                  onChange={(e) => setTempScores(prev => ({ ...prev, [p.id]: parseInt(e.target.value) || 0 }))}
-                />
-              </div>
-            ))}
-            <button onClick={handleSaveResults} className="bg-green-600 px-4 py-2 rounded-xl text-xs font-bold">{ru.bottomPanel.save}</button>
+          <div className="flex w-full items-center gap-3 overflow-x-auto">
+            <div className="flex shrink-0 rounded-lg border border-white/10 bg-black/50 p-0.5 text-[10px] font-bold uppercase">
+              <button
+                type="button"
+                onClick={() => setResultInputMode("places")}
+                className={`rounded-md px-2 py-1 ${resultInputMode === "places" ? "bg-yellow-500 text-black" : "text-zinc-400"}`}
+              >
+                Места
+              </button>
+              <button
+                type="button"
+                onClick={() => setResultInputMode("scores")}
+                className={`rounded-md px-2 py-1 ${resultInputMode === "scores" ? "bg-yellow-500 text-black" : "text-zinc-400"}`}
+              >
+                Очки
+              </button>
+            </div>
+
+            {resultInputMode === "places" ? (
+              players.filter(isGameParticipant).map((p) => {
+                const group = tempResultGroups[p.id] ?? 1;
+                const place = tempResultPlaces[p.id] ?? 1;
+                const groupSize = players
+                  .filter(isGameParticipant)
+                  .filter((player) => (tempResultGroups[player.id] ?? 1) === group).length;
+                const previewScore = calculatePlacementScore(groupSize, place);
+
+                return (
+                  <div key={p.id} className="flex min-w-[8.5rem] flex-col gap-1 rounded-lg border border-white/10 bg-zinc-950/70 px-2 py-1">
+                    <span className="truncate text-[10px] text-zinc-300">{p.login}</span>
+                    <div className="flex items-center gap-1">
+                      <label className="text-[9px] uppercase text-zinc-500">Гр.</label>
+                      <input
+                        type="number"
+                        min={1}
+                        className="w-10 rounded border border-zinc-700 bg-black text-center text-xs text-yellow-400"
+                        value={group}
+                        onChange={(e) => setTempResultGroups((prev) => ({ ...prev, [p.id]: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
+                      />
+                      <label className="text-[9px] uppercase text-zinc-500">М.</label>
+                      <input
+                        type="number"
+                        min={1}
+                        className="w-10 rounded border border-zinc-700 bg-black text-center text-xs text-yellow-400"
+                        value={place}
+                        onChange={(e) => setTempResultPlaces((prev) => ({ ...prev, [p.id]: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
+                      />
+                    </div>
+                    <span className="text-[9px] text-zinc-500">{previewScore} очк.</span>
+                  </div>
+                );
+              })
+            ) : (
+              players.filter(isGameParticipant).map(p => (
+                <div key={p.id} className="flex flex-col items-center gap-1">
+                  <span className="text-[10px] text-zinc-500">{p.login}</span>
+                  <input
+                    type="number"
+                    className="w-12 bg-black border border-zinc-700 rounded text-center text-xs text-yellow-400"
+                    value={tempScores[p.id] ?? 0}
+                    onChange={(e) => setTempScores(prev => ({ ...prev, [p.id]: parseFloat(e.target.value) || 0 }))}
+                  />
+                </div>
+              ))
+            )}
+            <button onClick={handleSaveResults} className="shrink-0 bg-green-600 px-4 py-2 rounded-xl text-xs font-bold">{ru.bottomPanel.save}</button>
           </div>
         )}
 
@@ -365,6 +423,27 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         }}
       />
     </div>
+  );
+};
+
+const buildPlacementResults = (
+  participants: Player[],
+  groups: Record<string, number>,
+  places: Record<string, number>
+): Record<string, number> => {
+  const groupSizes = participants.reduce<Record<number, number>>((acc, player) => {
+    const group = groups[player.id] ?? 1;
+    acc[group] = (acc[group] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return Object.fromEntries(
+    participants.map((player) => {
+      const group = groups[player.id] ?? 1;
+      const place = places[player.id] ?? 1;
+
+      return [player.id, calculatePlacementScore(groupSizes[group] ?? 0, place)];
+    })
   );
 };
 
