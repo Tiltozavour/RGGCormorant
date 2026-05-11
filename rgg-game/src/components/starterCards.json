@@ -404,7 +404,7 @@
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/beiker.gif",
+    "artCard": "/cards/legend/beikerW.gif",
     "price": null,
     "howtowork": "PlasticPug",
     "number": 29
@@ -464,6 +464,20 @@
     "price": null,
     "howtowork": "RedWolf",
     "number": 32
+  }, 
+     {
+    "id": "leg_007",
+    "name": "Энтони Д'Анжело",
+    "description": "ЗАКОН ЗАКОН, КАК ЖЕ Я ЛЮБЛЮ ЗАКОН",
+    "deck": "inventory",
+    "rarity": "legendary",
+    "action": "prize",
+    "value": 0,
+    "faceCard": "/cards/card_face_light.svg",
+    "artCard": "/cards/legend/danjelo.gif",
+    "price": null,
+    "howtowork": "Samura",
+    "number": 33
   }
 
 ]
