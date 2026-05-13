@@ -28,6 +28,7 @@
 - Tailwind CSS `4.2.2` через `@tailwindcss/vite`
 - Firebase `12.11.0`
 - ESLint `9.39.4`
+- Vitest `4.1.6`
 
 Основные конфиги:
 
@@ -74,6 +75,7 @@ npm run dev
 Проверки:
 
 ```bash
+npm test
 npm run lint
 npm run build
 ```
@@ -89,11 +91,14 @@ npm run preview
 - `npm run dev` - Vite dev server.
 - `npm run build` - `tsc -b`, затем production build Vite.
 - `npm run lint` - ESLint.
+- `npm test` - Vitest unit tests для pure business logic.
 - `npm run preview` - preview production build.
 - `npm run assets:check-external` - проверка, что карточные/аватарные ассеты не ссылаются на внешний CDN.
 - `npm run seed:cards` - upsert стартовых `cards` и `prizes`.
 - `npm run seed:cards:reset` - очистить `cards`/`prizes`, затем seed. Требует dev-предохранители.
 - `npm run reset:dev` - полный dev reset состояния Firestore. Требует dev-предохранители.
+- `npm run predeploy` - production build перед публикацией.
+- `npm run deploy` - публикация `dist` на GitHub Pages через `gh-pages`.
 
 Старый вход `node scripts/resetFirebaseState.mjs` оставлен для совместимости и вызывает защищенный `reset:dev`.
 
@@ -230,7 +235,9 @@ src/
     useModalStates.ts
     adminHandlers.ts
     cardHandlers.ts
+    cardEffectRules.ts
     duelHandlers.ts
+    interactionCardPicker.ts
     turnHandlers.ts
     gameConstants.ts
     gameList.ts
@@ -249,6 +256,9 @@ scripts/
   seedCards.mjs
   resetDevState.mjs
   resetFirebaseState.mjs
+tests/
+  cardEffectRules.test.ts
+  interactionCardPicker.test.ts
 public/
   map.jpg
   icons.svg
@@ -340,6 +350,8 @@ public/
 - `winnerId`
 
 Визуально легендарные карты используют отдельную тему в `GameCard.tsx`: космический фон, мягкие nebula-блики, звездный слой, отдельный нижний фон и `card_face_light.svg` как текстурный слой. Общие цвета редкостей задаются в `gameConstants.ts`.
+
+`useFirestoreSubscriptions.ts` подписывается на `cards` и `prizes` отдельно и пересобирает `allCards` из двух актуальных snapshot-карт. Это важно для легендарных карт: удаление или reset документа в `prizes` не должен оставлять в памяти старые поля вроде `isWon: true`.
 
 ### `gameEvents`
 
@@ -546,9 +558,20 @@ waiting_game -> playing -> results -> voting -> turn -> next_game
 Основная логика применения карт остается в `useGameData.ts`, но часть helper-логики вынесена в:
 
 - `cardHandlers.ts`
+- `cardEffectRules.ts`
 - `turnHandlers.ts`
 - `duelHandlers.ts`
 - `adminHandlers.ts`
+- `interactionCardPicker.ts`
+
+`cardEffectRules.ts` содержит тестируемые pure functions для правил карт: список отражаемых карт, проверку возможности ответной карты "А может тебя?", расчет "Судьи душ" и промокодное снижение потерь.
+
+`interactionCardPicker.ts` отвечает за генерацию трех карт для B-Shop и Gambling:
+
+- B-Shop выбирает карты из `inventory` с заданной ценой;
+- Gambling выбирает карты по весам редкости `common`/`rare`/`epic`;
+- momental-карты в Gambling имеют повышенный вес;
+- легендарная карта может попасть в Gambling с небольшим шансом, если она еще не выиграна.
 
 ## 16. Active Interactions
 
@@ -575,6 +598,8 @@ UI вынесен частично:
 - `TaxResponseOverlay.tsx`
 - `InteractionPendingOverlay.tsx`
 - часть дуэльных overlay пока остается в `AppClean.tsx`.
+
+Карты для `bshop` и `gambling` больше не собираются локальными функциями внутри `useGameData.ts`; для этого используется общий helper `getRandomInteractionCardIds` из `interactionCardPicker.ts`.
 
 ## 17. Дуэли
 
@@ -621,6 +646,14 @@ UI вынесен частично:
 - `InteractionPendingOverlay.tsx` - глобальный индикатор ожидания.
 
 Browser dialogs удалены из `src`: `alert`, `confirm`, `prompt` больше не используются.
+
+Игровые уведомления из `players/{uid}.lastNotification` и `gameState/current.notifications[uid]` показываются через `GameAlertOverlay`. Чтобы одно и то же уведомление не всплывало повторно после перезагрузки страницы, `AppClean.tsx` хранит ограниченный список уже показанных ключей в `localStorage`:
+
+```text
+rgg-shown-notifications:{uid}
+```
+
+Старый формат `rgg-shown-notification:{key}` тоже учитывается для совместимости. Клиент больше не очищает `lastNotification` и `notifications[uid]` сразу после показа, поэтому источник состояния остается в Firestore, а повторный показ гасится на стороне конкретного браузера.
 
 ## 19. Локализация
 
@@ -711,6 +744,8 @@ UI админских prompt/confirm заменен на `AdminDialog`.
 - `src/App.css`
 - `src/components/GameWheel.css`
 - `src/components/DiceVisual.css`
+
+Глобальные анимации и классы карточек (`animate-holo`, `animate-float`, `animate-shimmer-fast`, `animate-legendary-glow`, tooltip номера карты) находятся в `src/index.css`. Раньше часть этих стилей инлайнилась внутри `GameCard.tsx`; теперь компонент не вставляет собственный `<style>` при каждом рендере.
 
 Шрифт:
 
@@ -816,6 +851,8 @@ npm run seed:cards:reset
    - `turnHandlers`
    - `duelHandlers`
    - `adminHandlers`
+   - `cardEffectRules`
+   - `interactionCardPicker`
 8. `AppClean.tsx` частично разделен:
    - event log
    - toast container
@@ -832,6 +869,12 @@ npm run seed:cards:reset
 15. Добавлена проверка `npm run assets:check-external`.
 16. Обработан сценарий удаленного `players/{uid}`: приложение выходит из старой Auth-сессии вместо вечной загрузки профиля.
 17. Обновлена визуальная тема легендарных карт: космический стиль, отдельная нижняя часть и `card_face_light.svg` как текстурный слой.
+18. Логика подбора карт для B-Shop/Gambling вынесена из `useGameData.ts` в `interactionCardPicker.ts`.
+19. Повторный показ игровых уведомлений стабилизирован через per-user список ключей в `localStorage`; клиент больше не стирает уведомления из Firestore сразу после открытия alert.
+20. Инлайн-стили `GameCard.tsx` перенесены в `src/index.css`.
+21. Добавлен `cardEffectRules.ts` с первыми pure rules для карточной логики: отражение, "Судья душ" и промокодное снижение потерь.
+22. Добавлен Vitest и первые unit tests для `cardEffectRules.ts` и `interactionCardPicker.ts`.
+23. `useFirestoreSubscriptions.ts` больше не накапливает устаревшие данные `cards`/`prizes`: `allCards` пересобирается из актуальных snapshot-карт.
 
 ## 28. Остаточный Техдолг
 
@@ -839,28 +882,31 @@ npm run seed:cards:reset
 
 Минимальный набор перед тем, как давать ссылку другим игрокам:
 
-1. Запустить `npm run lint`.
-2. Запустить `npm run build`.
-3. Запустить `npm run assets:check-external`.
-4. Деплойнуть Firestore rules:
+1. Запустить `npm test`.
+2. Запустить `npm run lint`.
+3. Запустить `npm run build`.
+4. Запустить `npm run assets:check-external`.
+5. Деплойнуть Firestore rules:
 
 ```bash
 firebase deploy --only firestore:rules
 ```
 
-5. Проверить `.env.local`/hosting env: все `VITE_FIREBASE_*` указывают на нужный Firebase project.
-6. Запустить `npm run seed:cards` для нужного проекта.
-7. Создать или проверить invite-коды в `invites`.
-8. Проверить руками один короткий сценарий: регистрация игрока, стартовая клетка, бросок, покупка/использование карты, действие админа.
+6. Проверить `.env.local`/hosting env: все `VITE_FIREBASE_*` указывают на нужный Firebase project.
+7. Запустить `npm run seed:cards` для нужного проекта.
+8. Создать или проверить invite-коды в `invites`.
+9. Проверить руками один короткий сценарий: регистрация игрока, стартовая клетка, бросок, покупка/использование карты, действие админа.
+10. Для GitHub Pages: проверить `homepage` в `package.json`, затем выполнить `npm run deploy`.
 
 ### Высокий Приоритет После Первого Деплоя
 
-1. Добавить тесты бизнес-логики.
+1. Расширять тесты бизнес-логики: покрыть налоги, дуэли, колесо, легендарки и новые pure helpers из карточных flow.
 2. Дальше дробить `useGameData.ts`.
 3. Дальше дробить `AppClean.tsx`, особенно дуэльные overlay и коллекцию/руку.
 4. Продолжить перевод текстов в `src/i18n/ru.ts`.
-5. Вынести карточные эффекты в тестируемые pure functions.
+5. Продолжать выносить карточные эффекты в тестируемые pure functions.
 6. Усилить Firestore rules после переноса критичных операций на backend.
+7. Решить долгосрочную модель очистки/истечения `lastNotification` и `gameState.notifications`: сейчас повторный показ защищен на клиенте, но сами записи могут оставаться в Firestore.
 
 ### Средний Приоритет
 
@@ -892,6 +938,8 @@ firebase deploy --only firestore:rules
 - `src/components/BottomPanel.tsx` - нижняя панель.
 - `src/components/PlayersSidebar.tsx` - игроки и админские операции.
 - `src/components/AdminDialog.tsx` - собственные модалки.
+- `src/components/cardEffectRules.ts` - pure rules для отражения, "Судьи душ" и промокодных потерь.
+- `src/components/interactionCardPicker.ts` - подбор карт для B-Shop/Gambling interactions.
 - `src/components/starterCards.json` - база карт.
 - `src/components/gameMap.ts` - граф поля.
 - `src/types/game.ts` - типы игроков, фазы, gameState.
@@ -903,3 +951,5 @@ firebase deploy --only firestore:rules
 - `scripts/firebaseScriptUtils.mjs` - shared helpers для seed/reset.
 - `scripts/seedCards.mjs` - seed cards/prizes.
 - `scripts/resetDevState.mjs` - защищенный dev reset.
+- `tests/cardEffectRules.test.ts` - Vitest-покрытие pure rules карт.
+- `tests/interactionCardPicker.test.ts` - Vitest-покрытие B-Shop/Gambling picker.

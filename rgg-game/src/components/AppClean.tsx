@@ -6,8 +6,9 @@ import BottomPanel from "./BottomPanel";
 import GameBoard from "./GameBoard";
 import PlayersSidebar from "./PlayersSidebar";
 import ScoresDetailsPage from "./ScoresDetailsPage";
-import { collection, deleteField, doc, getDocs, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, getDocs, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
+import { uploadStarterCards } from "../types/cardService";
 //import { v4 as uuidv4 } from 'uuid'; 
 
 import type { Player } from "../types/game";
@@ -25,6 +26,7 @@ import InteractionPendingOverlay from "./InteractionPendingOverlay";
 import ShopAndGamblingOverlays from "./ShopAndGamblingOverlays";
 import TaxResponseOverlay from "./TaxResponseOverlay";
 import ToastContainer from "./ToastContainer";
+import AdminDialog from "./AdminDialog";
 import type { ToastNotification } from "./useModalStates";
 import { ru } from "../i18n/ru";
 
@@ -33,6 +35,34 @@ const getNotificationKey = (
   userId: string,
   notif: { message: string; timestamp: number; cardId?: string },
 ) => `${source}:${userId}:${notif.timestamp}:${notif.cardId ?? ""}:${notif.message}`;
+
+const SEEN_NOTIFICATION_STORAGE_LIMIT = 200;
+
+const getSeenNotificationStorageKey = (userId: string) => `rgg-shown-notifications:${userId}`;
+
+const getSeenNotificationKeys = (userId: string) => {
+  try {
+    const rawValue = window.localStorage.getItem(getSeenNotificationStorageKey(userId));
+    const parsedValue = rawValue ? JSON.parse(rawValue) : [];
+    return Array.isArray(parsedValue) ? parsedValue.filter((value): value is string => typeof value === "string") : [];
+  } catch {
+    return [];
+  }
+};
+
+const hasSeenNotification = (userId: string, notifKey: string) => (
+  getSeenNotificationKeys(userId).includes(notifKey) ||
+  window.localStorage.getItem(`rgg-shown-notification:${notifKey}`) === "1"
+);
+
+const markNotificationSeen = (userId: string, notifKey: string) => {
+  const nextKeys = [
+    notifKey,
+    ...getSeenNotificationKeys(userId).filter((key) => key !== notifKey),
+  ].slice(0, SEEN_NOTIFICATION_STORAGE_LIMIT);
+
+  window.localStorage.setItem(getSeenNotificationStorageKey(userId), JSON.stringify(nextKeys));
+};
 
 const getInventoryCardStacks = (
   inventory: string[] | undefined,
@@ -84,6 +114,13 @@ function AppClean() {
   void localEvents; void setLocalEvents;
   const [isClearingEventLog, setIsClearingEventLog] = useState(false);
   const [selectedCardPreviewMode, setSelectedCardPreviewMode] = useState<'use' | 'view'>('use');
+  const [isAdminSidebarActionPending, setIsAdminSidebarActionPending] = useState(false);
+  const [adminSidebarDialog, setAdminSidebarDialog] = useState<{
+    title: string;
+    message: string;
+    danger?: boolean;
+    onConfirm?: () => void | Promise<void>;
+  } | null>(null);
 
   const notify = useCallback((message: string, type: ToastNotification['type'] = 'info', cardId?: string) => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -96,6 +133,19 @@ function AppClean() {
     }, type === 'error' ? 7000 : 4500);
      return () => clearTimeout(timer); // Но notify вызывается не в useEffect, тут сложнее.
   }, [setToasts]);
+
+  const runAdminSidebarAction = useCallback(async (action: () => void | Promise<void>) => {
+    if (isAdminSidebarActionPending) return;
+    setIsAdminSidebarActionPending(true);
+    try {
+      await action();
+    } catch (error) {
+      console.error(error);
+      notify("Не удалось выполнить админское действие.", "error");
+    } finally {
+      setIsAdminSidebarActionPending(false);
+    }
+  }, [isAdminSidebarActionPending, notify]);
 
   const logEvent = useEventLogger();
 
@@ -221,20 +271,19 @@ function AppClean() {
     const notifKey = getNotificationKey("player", user.uid, notif);
     if (shownNotificationKeysRef.current.has(notifKey)) return;
 
-    if (window.localStorage.getItem(`rgg-shown-notification:${notifKey}`)) {
-      void updateDoc(doc(db, "players", user.uid), { lastNotification: deleteField() }).catch(console.error);
+    if (hasSeenNotification(user.uid, notifKey)) {
+      shownNotificationKeysRef.current.add(notifKey);
       return;
     }
 
     shownNotificationKeysRef.current.add(notifKey);
-    window.localStorage.setItem(`rgg-shown-notification:${notifKey}`, "1");
+    markNotificationSeen(user.uid, notifKey);
     setGameAlert({
       title: ru.app.attention,
       message: notif.message,
       type: 'warning',
       cardId: notif.cardId
     });
-    void updateDoc(doc(db, "players", user.uid), { lastNotification: deleteField() }).catch(console.error);
   }, [playerData?.lastNotification, user?.uid]);
 
   useEffect(() => {
@@ -244,20 +293,19 @@ function AppClean() {
     const notifKey = getNotificationKey("game", user.uid, notif);
     if (shownNotificationKeysRef.current.has(notifKey)) return;
 
-    if (window.localStorage.getItem(`rgg-shown-notification:${notifKey}`)) {
-      void updateDoc(doc(db, "gameState", "current"), { [`notifications.${user.uid}`]: deleteField() }).catch(console.error);
+    if (hasSeenNotification(user.uid, notifKey)) {
+      shownNotificationKeysRef.current.add(notifKey);
       return;
     }
 
     shownNotificationKeysRef.current.add(notifKey);
-    window.localStorage.setItem(`rgg-shown-notification:${notifKey}`, "1");
+    markNotificationSeen(user.uid, notifKey);
     setGameAlert({
       title: ru.app.attention,
       message: notif.message,
       type: 'warning',
       cardId: notif.cardId
     });
-    void updateDoc(doc(db, "gameState", "current"), { [`notifications.${user.uid}`]: deleteField() }).catch(console.error);
   }, [gameState.notifications, user?.uid, setGameAlert]);
 
   useEffect(() => {
@@ -798,7 +846,6 @@ function AppClean() {
             onPrevPhase={() => { void handlers.handleStepPhase(-1); }}
             onNextPhase={() => { void handlers.handleStepPhase(1); }}
             onPrepareTurn={() => { void handlers.handlePrepareTurn(); }}
-            onResetGame={handlers.handleResetGameForTesting}
             onConfirmRoll={handlers.handleConfirmRoll}
             canConfirmRoll={canConfirmRoll}
             onToggleWheel={() => void syncWheelVisibility("current", !gameState.showWheel)}
@@ -1217,6 +1264,38 @@ function AppClean() {
               <span className="text-yellow-500 font-black uppercase text-xs tracking-widest">Галерея Артефактов</span>
             </button>
 
+            {isAdmin && (
+              <div className="mt-2 flex flex-col gap-2 rounded-2xl border border-red-500/20 bg-red-950/10 p-3">
+                <div className="px-1 text-[10px] font-black uppercase tracking-[0.2em] text-red-300/80">
+                  Админ
+                </div>
+                <button
+                  onClick={() => void runAdminSidebarAction(async () => {
+                    await uploadStarterCards();
+                    notify(ru.bottomPanel.initCardsSuccess, "success");
+                  })}
+                  disabled={isAdminSidebarActionPending}
+                  className="w-full rounded-xl border border-blue-500/30 bg-slate-900/80 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-blue-300 transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Init
+                </button>
+                <button
+                  onClick={() => {
+                    setAdminSidebarDialog({
+                      title: ru.bottomPanel.resetTitle,
+                      message: ru.bottomPanel.resetConfirm,
+                      danger: true,
+                      onConfirm: () => runAdminSidebarAction(handlers.handleResetGameForTesting),
+                    });
+                  }}
+                  disabled={isAdminSidebarActionPending}
+                  className="w-full rounded-xl border border-red-500/40 bg-red-950/70 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-red-300 transition-all hover:bg-red-900 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Reset
+                </button>
+              </div>
+            )}
+
             </div>
           </div>
         </div>
@@ -1230,6 +1309,22 @@ function AppClean() {
           </button>
         </div>
       </aside>
+
+      <AdminDialog
+        isOpen={Boolean(adminSidebarDialog)}
+        variant={adminSidebarDialog?.onConfirm ? "confirm" : "info"}
+        title={adminSidebarDialog?.title ?? ""}
+        message={adminSidebarDialog?.message}
+        confirmLabel={adminSidebarDialog?.onConfirm ? ru.bottomPanel.confirm : ru.bottomPanel.ok}
+        cancelLabel={ru.bottomPanel.cancel}
+        danger={adminSidebarDialog?.danger}
+        onClose={() => setAdminSidebarDialog(null)}
+        onConfirm={() => {
+          const action = adminSidebarDialog?.onConfirm;
+          setAdminSidebarDialog(null);
+          if (action) void action();
+        }}
+      />
 
       {isAvatarModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[10001] p-4">

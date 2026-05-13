@@ -492,6 +492,20 @@
     "price": null,
     "howtowork": "Rasul",
     "number": 34
+  }, 
+  {
+    "id": "leg_010",
+    "name": "Unknown Unknown",
+    "description": "...",
+    "deck": "inventory",
+    "rarity": "legendary",
+    "action": "prize",
+    "value": 0,
+    "faceCard": "/cards/card_face_light.svg",
+    "artCard": "/cards/legend/comrade.gif",
+    "price": null,
+    "howtowork": "Comrade",
+    "number": 34
   }
 
 ]

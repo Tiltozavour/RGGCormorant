@@ -17,7 +17,7 @@ import {
 import { auth, db } from "../firebase"; // Assuming db is imported
 import { resetStarterCards } from "../types/cardService";
 import { gameMap } from "./gameMap";
-import type { CardRarity, GameCard } from "../types/card";
+import type { GameCard } from "../types/card";
 import type { DuelWeapon } from "../types/duel";
 import { defaultGameState } from "../types/game";
 import type { DuelState, GameState, Player } from "../types/game";
@@ -25,15 +25,21 @@ import { PHASE_ORDER } from "./gameConstants";
 import { useFirestoreSubscriptions } from "./useFirestoreSubscriptions";
 import { getResetPlayerPatch } from "./adminHandlers";
 import {
+  REFLECT_CARD_ID,
+  calculateJudgeCoinsOutcome,
+  calculatePromoAdjustedLoss,
+  canOfferReflectResponse,
+} from "./cardEffectRules";
+import {
   addOneCardToInventory,
   isPlayerNearby,
   makeHotCoinGain,
   pickRandom,
-  pickWeighted,
   removeOneCardFromInventory,
   shuffle,
 } from "./cardHandlers";
 import { getFinishedDuelCleanupUpdates } from "./duelHandlers";
+import { getRandomInteractionCardIds } from "./interactionCardPicker";
 import { buildTurnState, getGoldenCardHolderIds, rollD6 } from "./turnHandlers";
 
 import type { GameEvent, ToastNotification } from "./useModalStates"; // Import new types
@@ -87,38 +93,15 @@ const clearTemporaryStatus = {
   statusDuration: 0,
 };
 
-const REFLECT_CARD_ID = "inv_012";
-const REFLECTABLE_CARD_IDS = new Set([
-  "inv_007",
-  "inv_008",
-  "inv_009",
-  "inv_010",
-  "inv_011",
-  "inv_012",
-  "inv_013",
-  "inv_015",
-  "inv_016",
-]);
+/*
 
-/**
  * Проверяет, находится ли игрок в пределах одной клетки (соседняя или та же).
  * @param player1Id ID первого игрока.
  * @param player2Id ID второго игрока.
  * @param allPlayers Список всех активных игроков.
  * @param map Текущая карта игрового поля.
  * @returns true, если игроки находятся рядом, иначе false.
- */
-type GamblingRarity = Exclude<CardRarity, "legendary">;
-
-const GAMBLING_RARITY_WEIGHTS: Array<{ rarity: GamblingRarity; weight: number }> = [
-  { rarity: "common", weight: 50 },
-  { rarity: "rare", weight: 30 },
-  { rarity: "epic", weight: 20 },
-];
-
-const GAMBLING_LEGENDARY_CHANCE = 0.05;
-const GAMBLING_MOMENTAL_WEIGHT = 3;
-
+*/
 export function useGameData(
   notify: (message: string, type?: ToastNotification['type'], cardId?: string) => void,
   logEvent: (event: GameEvent) => void
@@ -204,7 +187,6 @@ export function useGameData(
     },
     [],
   );
-
   useEffect(() => {
     // Текст восстановлен после сбоя кодировки.
     if (!isAdmin || !gameState.activeDuels) return;
@@ -240,45 +222,6 @@ export function useGameData(
       let actualValue = momentalCard.value;
       let promoCodeUsed = false;
       let openedSpecialInteraction = false;
-      const getInteractionCards = (type: "gambling" | "bshop") => {
-        const cardsArray = Object.values(allCards).filter((card): card is GameCard => Boolean(card?.id && card.deck && card.rarity));
-        if (cardsArray.length === 0) return [];
-        const result: string[] = [];
-        const availableLegendaryCards = cardsArray.filter((card) => card.rarity === "legendary" && !card.isWon);
-        const legendarySlot =
-          type === "gambling" && availableLegendaryCards.length > 0 && Math.random() < GAMBLING_LEGENDARY_CHANCE
-            ? Math.floor(Math.random() * 3)
-            : -1;
-
-        for (let i = 0; i < 3; i += 1) {
-          if (type === "bshop") {
-            const pool = cardsArray.filter((card) => card.deck === "inventory" && typeof card.price === 'number');
-            const selected = pickRandom(pool);
-            if (selected) result.push(selected.id);
-          } else if (i === legendarySlot) {
-            const selected = pickRandom(availableLegendaryCards);
-            if (selected) result.push(selected.id);
-          } else {
-            const rarity = pickWeighted(
-              GAMBLING_RARITY_WEIGHTS.filter(({ rarity }) =>
-                cardsArray.some((card) => card.rarity === rarity),
-              ),
-              ({ weight }) => weight,
-            )?.rarity;
-
-            const pool = rarity
-              ? cardsArray.filter((card) => card.rarity === rarity)
-              : cardsArray.filter((card) => card.rarity !== "legendary");
-            const selected = pickWeighted(
-              pool,
-              (card) => (card.deck === "momental" ? GAMBLING_MOMENTAL_WEIGHT : 1),
-            );
-            if (selected) result.push(selected.id);
-          }
-        }
-
-        return result;
-      };
 
       const openSpecialInteractionIfNeeded = (position: number) => {
         const finalCell = gameMap.find((cell) => cell.id === position);
@@ -290,7 +233,7 @@ export function useGameData(
           activeInteraction: {
             playerId: player.id,
             type: cellType,
-            cards: getInteractionCards(cellType),
+            cards: getRandomInteractionCardIds(cellType, allCards),
             fromCardMove,
           },
         });
@@ -706,11 +649,12 @@ export function useGameData(
     try {
       const targetHasReflect = false;
       const targetHasFish = targetPlayer?.customStatus === "fish_shield";
-      const canOfferReflect =
-        !!targetPlayerId &&
-        targetPlayerId !== user.uid &&
-        !!targetPlayer?.inventory?.includes(REFLECT_CARD_ID) &&
-        REFLECTABLE_CARD_IDS.has(card.id);
+      const canOfferReflect = canOfferReflectResponse({
+        cardId: card.id,
+        currentPlayerId: user.uid,
+        targetPlayerId,
+        targetInventory: targetPlayer?.inventory,
+      });
 
       if (canOfferReflect) {
         const timestamp = Date.now();
@@ -813,10 +757,17 @@ export function useGameData(
               const timestamp = Date.now();
 
               if (roll >= 4) {
-                const actualVictimLoss = card.value;
+                const {
+                  amount: actualVictimLoss,
+                  promoCodeReduced,
+                } = calculatePromoAdjustedLoss({
+                  amount: card.value,
+                  hasPromoCode: targetPlayer.customStatus === "promo_code_active",
+                });
                 await runTransaction(db, async (transaction) => {
                   transaction.update(targetRef, {
                     tiltCoins: increment(-actualVictimLoss),
+                    ...(promoCodeReduced ? clearTemporaryStatus : {}),
                     lastNotification: {
                       message: `${playerData.login} украл у вас ${actualVictimLoss} монет картой "${displayCardName}" (бросок ${roll}).`,
                       timestamp,
@@ -999,7 +950,7 @@ export function useGameData(
               activeInteraction: {
                 playerId: playerData.id,
                 type: "bshop",
-                cards: getRandomInteractionCards("bshop"),
+                cards: getRandomInteractionCardIds("bshop", allCards),
               },
             },
           );
@@ -1105,11 +1056,12 @@ export function useGameData(
             }
 
             const roll = rollD6();
-            const baseDelta = roll >= 4 ? (card.value || 2) : -(card.value || 2);
             const affectedPlayer = (isHostile && targetHasReflect) ? playerData : targetPlayer;
-            const promoCodeReduced = baseDelta < 0 && affectedPlayer?.customStatus === "promo_code_active";
-            const delta = promoCodeReduced ? Math.ceil(baseDelta / 2) : baseDelta;
-            const amount = Math.abs(delta);
+            const { baseDelta, delta, amount, promoCodeReduced } = calculateJudgeCoinsOutcome({
+              roll,
+              cardValue: card.value,
+              hasPromoCode: affectedPlayer?.customStatus === "promo_code_active",
+            });
             const promoText = promoCodeReduced ? " Промокодик смягчил потерю." : "";
             const resultText = delta >= 0 ? `получает ${amount} монет` : `теряет ${amount} монет`;
             const resultMsg = `Судья душ: бросок ${roll}. ${affectedPlayerName} ${resultText}.`;
@@ -1192,7 +1144,7 @@ export function useGameData(
                 activeInteraction: {
                   playerId: user.uid,
                   type: "gambling",
-                  cards: getRandomInteractionCards("gambling"),
+                  cards: getRandomInteractionCardIds("gambling", allCards),
                 },
               },
             );
@@ -1219,7 +1171,7 @@ export function useGameData(
                 activeInteraction: {
                   playerId: user.uid,
                   type: "gambling",
-                  cards: getRandomInteractionCards("gambling"),
+                  cards: getRandomInteractionCardIds("gambling", allCards),
                 },
               },
             );
@@ -1619,13 +1571,16 @@ export function useGameData(
             const hotAmount = hotCoinGain?.playerId === victimData.id ? hotCoinGain.amount : 0;
             const baseStealAmount = Math.ceil(Math.max(0, hotAmount) / 2);
             const actualVictimHasPromoCode = victimData.customStatus === "promo_code_active";
-            const stealAmount = actualVictimHasPromoCode ? Math.floor(baseStealAmount / 2) : baseStealAmount;
+            const { amount: stealAmount, promoCodeReduced } = calculatePromoAdjustedLoss({
+              amount: baseStealAmount,
+              hasPromoCode: actualVictimHasPromoCode,
+            });
 
             if (baseStealAmount > 0) {
               await runTransaction(db, async (transaction) => {
                 transaction.update(actualTargetRef, {
                   tiltCoins: increment(-stealAmount),
-                  ...(actualVictimHasPromoCode ? clearTemporaryStatus : {}),
+                  ...(promoCodeReduced ? clearTemporaryStatus : {}),
                 });
                 transaction.update(actualRecipientRef, { tiltCoins: increment(stealAmount) });
                 transaction.update(doc(db, "gameState", "current"), { hotCoinGain: null });
@@ -1633,7 +1588,7 @@ export function useGameData(
               
               const victimName = targetHasReflect ? "цель" : targetPlayer.login;
               const getterName = targetHasReflect ? targetPlayer.login : "цель";
-              const promoText = actualVictimHasPromoCode ? " Промокодик снизил потерю вдвое." : "";
+              const promoText = promoCodeReduced ? " Промокодик снизил потерю вдвое." : "";
               notify(`${getterName} получил ${stealAmount} монет от ${victimName}.${promoText}`, 'success', card.id);
               
               logEvent({
@@ -1641,7 +1596,7 @@ export function useGameData(
                 timestamp: Date.now(), type: 'coin_change',
                 message: `${getterName} получил ${stealAmount} монет от ${victimName}.${promoText}`,
                 playerId: user.uid, targetPlayerId: targetPlayerId ?? undefined, cardId: card.id,
-                details: { amount: stealAmount, baseAmount: baseStealAmount, reflected: targetHasReflect, promoCodeReduced: actualVictimHasPromoCode }
+                details: { amount: stealAmount, baseAmount: baseStealAmount, reflected: targetHasReflect, promoCodeReduced }
               });
             } else {
               notify("Событие игры обновлено.", 'info');
@@ -1681,52 +1636,6 @@ export function useGameData(
       notify("Событие игры обновлено.", 'error');
     }
   };
-
-  const getRandomInteractionCards = useCallback(
-    (type: "gambling" | "bshop"): string[] => {
-      const cardsArray = Object.values(allCards).filter((card): card is GameCard => Boolean(card?.id && card.deck && card.rarity));
-      if (cardsArray.length === 0) return [];
-      const result: string[] = [];
-      const availableLegendaryCards = cardsArray.filter((card) => card.rarity === "legendary" && !card.isWon);
-      const legendarySlot =
-        type === "gambling" && availableLegendaryCards.length > 0 && Math.random() < GAMBLING_LEGENDARY_CHANCE
-          ? Math.floor(Math.random() * 3)
-          : -1;
-
-      for (let i = 0; i < 3; i += 1) {
-        if (type === "bshop") {
-          const pool = cardsArray.filter(
-            (card) => card.deck === "inventory" && typeof card.price === 'number',
-          );
-          const selected = pickRandom(pool);
-          if (selected) result.push(selected.id);
-        } else if (i === legendarySlot) {
-          const selected = pickRandom(availableLegendaryCards);
-          if (selected) result.push(selected.id);
-        } else {
-          const rarity = pickWeighted(
-            GAMBLING_RARITY_WEIGHTS.filter(({ rarity }) =>
-              cardsArray.some((card) => card.rarity === rarity),
-            ),
-            ({ weight }) => weight,
-          )?.rarity;
-
-          const pool = rarity
-            ? cardsArray.filter((card) => card.rarity === rarity)
-            : cardsArray.filter((card) => card.rarity !== "legendary");
-
-          const selected = pickWeighted(
-            pool,
-            (card) => (card.deck === "momental" ? GAMBLING_MOMENTAL_WEIGHT : 1),
-          );
-          if (selected) result.push(selected.id);
-        }
-      }
-
-      return result;
-    },
-    [allCards],
-  );
 
   // Текст восстановлен после сбоя кодировки.
   const handleDrawnCardDistribution = useCallback(
@@ -2094,11 +2003,12 @@ export function useGameData(
 
     const applyJudge = async (targetId: string, targetName: string, reflected: boolean) => {
       const roll = rollD6();
-      const baseDelta = roll >= 4 ? (card.value || 2) : -(card.value || 2);
       const affectedPlayer = getPlayerById(targetId);
-      const promoCodeReduced = baseDelta < 0 && affectedPlayer?.customStatus === "promo_code_active";
-      const delta = promoCodeReduced ? Math.ceil(baseDelta / 2) : baseDelta;
-      const amount = Math.abs(delta);
+      const { delta, amount, promoCodeReduced } = calculateJudgeCoinsOutcome({
+        roll,
+        cardValue: card.value,
+        hasPromoCode: affectedPlayer?.customStatus === "promo_code_active",
+      });
       const promoText = promoCodeReduced ? " Промокодик смягчил потерю." : "";
       const message = `Судья душ: бросок ${roll}. ${targetName} ${delta >= 0 ? `получает ${amount} монет` : `теряет ${amount} монет`}.${promoText}`;
 
@@ -2150,7 +2060,7 @@ export function useGameData(
           activeInteraction: {
             playerId: target.id,
             type: "gambling",
-            cards: getRandomInteractionCards("gambling"),
+            cards: getRandomInteractionCardIds("gambling", allCards),
           },
         });
       } else {
@@ -2175,7 +2085,10 @@ export function useGameData(
 
       if (roll >= 4) {
         const hasPromoCode = target.customStatus === "promo_code_active";
-        const victimLoss = hasPromoCode ? 2 : card.value;
+        const { amount: victimLoss, promoCodeReduced } = calculatePromoAdjustedLoss({
+          amount: card.value,
+          hasPromoCode,
+        });
         await runTransaction(db, async (transaction) => {
           transaction.update(doc(db, "players", target.id), {
             tiltCoins: increment(-victimLoss),
@@ -2184,7 +2097,7 @@ export function useGameData(
               timestamp,
               cardId: card.id,
             },
-            ...(hasPromoCode ? clearTemporaryStatus : {}),
+            ...(promoCodeReduced ? clearTemporaryStatus : {}),
           });
           transaction.update(doc(db, "players", thief.id), { tiltCoins: increment(victimLoss) });
           transaction.update(gameStateRef, { activeInteraction: null });
@@ -2220,7 +2133,7 @@ export function useGameData(
           activeInteraction: {
             playerId: victim.id,
             type: "gambling",
-            cards: getRandomInteractionCards("gambling"),
+            cards: getRandomInteractionCardIds("gambling", allCards),
             actingCardId: card.id,
           },
         });
@@ -2441,7 +2354,7 @@ export function useGameData(
           updates.activeInteraction = {
             playerId: user.uid,
             type: "gambling",
-            cards: getRandomInteractionCards("gambling"),
+            cards: getRandomInteractionCardIds("gambling", allCards),
             actingCardId: taxCardId,
             fromTaxCard: true,
             taxQueue: queue,
@@ -2998,7 +2911,7 @@ export function useGameData(
             activeInteraction: { 
               playerId: targetPlayerId,
               type: cellType,
-              cards: getRandomInteractionCards(cellType),
+              cards: getRandomInteractionCardIds(cellType, allCards),
               fromCardMove: isCardMove,
             },
             forcedMovePlayerId: null,
@@ -3044,7 +2957,7 @@ export function useGameData(
         });
       });
     },
-    [user, getRandomInteractionCards, notify, logEvent, getPlayerById], // Add notify and logEvent to dependencies
+    [user, allCards, notify, logEvent, getPlayerById], // Add notify and logEvent to dependencies
   );
 
   const handleFinishInteraction = async (
@@ -3257,7 +3170,7 @@ export function useGameData(
             ? {
                 playerId: pendingRoll.playerId,
                 type: "gambling",
-                cards: getRandomInteractionCards("gambling"),
+                cards: getRandomInteractionCardIds("gambling", allCards),
               }
             : null,
         });

@@ -4,12 +4,10 @@ import type { GameState, Player } from "../types/game";
 import type { User } from "firebase/auth";
 import { arrayUnion, doc, updateDoc, increment, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
-import { uploadStarterCards } from "../types/cardService";
 import { PHASE_LABELS, getPublicAssetUrl } from "./gameConstants";
 import { isGameParticipant } from "./playerFilters";
 import { calculatePlacementScore } from "./scoreUtils";
 import { ru } from "../i18n/ru";
-import AdminDialog from "./AdminDialog";
 
 interface BottomPanelProps {
   currentUser: User | null;
@@ -22,7 +20,6 @@ interface BottomPanelProps {
   onPrevPhase: () => void;
   onNextPhase: () => void;
   onPrepareTurn: () => void;
-  onResetGame?: () => void | Promise<void>;
   onConfirmRoll: () => void;
   canConfirmRoll: boolean;
   onToggleWheel?: () => void;
@@ -43,7 +40,6 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   onPrevPhase,
   onNextPhase,
   onPrepareTurn,
-  onResetGame,
   onConfirmRoll,
   canConfirmRoll,
   onToggleWheel,
@@ -60,13 +56,6 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   const [tempResultGroups, setTempResultGroups] = useState<Record<string, number>>({});
   const [tempResultPlaces, setTempResultPlaces] = useState<Record<string, number>>({});
   const [isPending, setIsPending] = useState(false);
-  const [dialog, setDialog] = useState<{
-    title: string;
-    message: string;
-    danger?: boolean;
-    onConfirm?: () => void | Promise<void>;
-  } | null>(null);
-
   // Сбрасываем блокировку при любом изменении ключевых полей игрового состояния
   React.useEffect(() => {
     setIsPending(false);
@@ -81,19 +70,6 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
       console.error(e);
     } finally {
       setIsPending(false);
-    }
-  };
-
-  const handleInitCards = async () => {
-    if (!isAdmin) return;
-    try {
-      await uploadStarterCards();
-      setDialog({
-        title: ru.bottomPanel.initCardsTitle,
-        message: ru.bottomPanel.initCardsSuccess,
-      });
-    } catch (e) {
-      console.error(ru.bottomPanel.initCardsError, e);
     }
   };
 
@@ -123,24 +99,6 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     : (gameState.rollBonus ?? 0) > 0
     ? ru.bottomPanel.rollWithBonus(gameState.rollBonus)
     : ru.bottomPanel.rollDice;
-
-  const handleGiveAllCards = async () => {
-    if (!isAdmin) return;
-    try {
-      const allCardIds = Object.keys(allCards);
-      const targetPlayers = players.filter(isGameParticipant);
-      const updates = targetPlayers.map((p) =>
-        updateDoc(doc(db, "players", p.id), { inventory: allCardIds })
-      );
-      await Promise.all(updates);
-      setDialog({
-        title: ru.bottomPanel.giveAllCardsTitle,
-        message: ru.bottomPanel.giveAllCardsSuccess(allCardIds.length),
-      });
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   const handleSaveResults = async () => {
     if (!isAdmin) return;
@@ -234,28 +192,6 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
             <button onClick={() => void handleAction(onPrevPhase)} disabled={isPending} className="bg-zinc-700 px-3 py-1 rounded text-xs disabled:opacity-50">{ru.bottomPanel.phasePrev}</button>
             <button onClick={() => void handleAction(onNextPhase)} disabled={isPending} className="bg-zinc-700 px-3 py-1 rounded text-xs disabled:opacity-50">{ru.bottomPanel.phaseNext}</button>
             
-            {/* Тестовые кнопки */}
-            <button onClick={handleInitCards} className="bg-slate-800 hover:bg-slate-700 border border-blue-500/30 px-3 py-1 rounded text-[10px] uppercase text-blue-300">
-              Init
-            </button>
-            <button onClick={handleGiveAllCards} className="bg-slate-800 hover:bg-slate-700 border border-purple-500/30 px-3 py-1 rounded text-[10px] uppercase text-purple-300">
-              Give All
-            </button>
-            <button
-              onClick={() => {
-                setDialog({
-                  title: ru.bottomPanel.resetTitle,
-                  message: ru.bottomPanel.resetConfirm,
-                  danger: true,
-                  onConfirm: () => handleAction(async () => onResetGame?.()),
-                });
-              }}
-              disabled={isPending}
-              className="bg-red-950 hover:bg-red-900 border border-red-500/40 px-3 py-1 rounded text-[10px] uppercase text-red-300 disabled:opacity-50"
-            >
-              Reset
-            </button>
-
             {gameState.phase === "results" && (
               <button onClick={() => setIsFillingResults(!isFillingResults)} className="bg-blue-600 px-3 py-1 rounded text-xs">{ru.bottomPanel.results}</button>
             )}
@@ -407,21 +343,6 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
           )
         )}
       </div>
-      <AdminDialog
-        isOpen={Boolean(dialog)}
-        variant={dialog?.onConfirm ? "confirm" : "info"}
-        title={dialog?.title ?? ""}
-        message={dialog?.message}
-        confirmLabel={dialog?.onConfirm ? ru.bottomPanel.confirm : ru.bottomPanel.ok}
-        cancelLabel={ru.bottomPanel.cancel}
-        danger={dialog?.danger}
-        onClose={() => setDialog(null)}
-        onConfirm={() => {
-          const action = dialog?.onConfirm;
-          setDialog(null);
-          if (action) void action();
-        }}
-      />
     </div>
   );
 };

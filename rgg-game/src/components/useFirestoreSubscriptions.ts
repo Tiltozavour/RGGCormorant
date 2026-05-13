@@ -16,6 +16,14 @@ import { defaultGameState } from "../types/game";
 import type { GameState, Player } from "../types/game";
 import type { GameEvent, ToastNotification } from "./useModalStates";
 
+const snapshotToCardMap = (docs: Array<{ id: string; data: () => unknown }>) => {
+  const cards: Record<string, GameCard> = {};
+  docs.forEach((d) => {
+    cards[d.id] = { id: d.id, ...(d.data() as Omit<GameCard, "id">) };
+  });
+  return cards;
+};
+
 export function useFirestoreSubscriptions(
   notify: (message: string, type?: ToastNotification["type"], cardId?: string) => void,
 ) {
@@ -26,6 +34,8 @@ export function useFirestoreSubscriptions(
   const [players, setPlayers] = useState<Player[]>([]);
   const [gameState, setGameState] = useState<GameState>(defaultGameState);
   const [allCards, setAllCards] = useState<Record<string, GameCard>>({});
+  const cardsRef = useRef<Record<string, GameCard>>({});
+  const prizesRef = useRef<Record<string, GameCard>>({});
   const [gameEvents, setGameEvents] = useState<GameEvent[]>([]);
   const lastAppliedCardMoveRef = useRef<string | null>(null);
 
@@ -120,24 +130,21 @@ export function useFirestoreSubscriptions(
   useEffect(() => {
     if (!user) return;
     const unsubCards = onSnapshot(collection(db, "cards"), (snap) => {
-      const cards: Record<string, GameCard> = {};
-      snap.docs.forEach((d) => {
-        cards[d.id] = { id: d.id, ...d.data() } as GameCard;
-      });
-      setAllCards((prev) => ({ ...prev, ...cards }));
+      cardsRef.current = snapshotToCardMap(snap.docs);
+      setAllCards({ ...cardsRef.current, ...prizesRef.current });
     });
 
     const unsubPrizes = onSnapshot(collection(db, "prizes"), (snap) => {
-      const prizes: Record<string, GameCard> = {};
-      snap.docs.forEach((d) => {
-        prizes[d.id] = { id: d.id, ...d.data() } as GameCard;
-      });
-      setAllCards((prev) => ({ ...prev, ...prizes }));
+      prizesRef.current = snapshotToCardMap(snap.docs);
+      setAllCards({ ...cardsRef.current, ...prizesRef.current });
     });
 
     return () => {
       unsubCards();
       unsubPrizes();
+      cardsRef.current = {};
+      prizesRef.current = {};
+      setAllCards({});
     };
   }, [user]);
 
