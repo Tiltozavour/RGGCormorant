@@ -8,7 +8,7 @@
     "action": "add_coins",
     "value": 5,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/inv_001.gif",
+    "artCard": "/cards/faces/inv_001.webp",
     "price": null,
     "howtowork": "Мгновенно добавляет 5 тильтокоинов к вашему балансу.",
     "number": 1
@@ -22,7 +22,7 @@
     "action": "move_steps",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/inv_002.gif",
+    "artCard": "/cards/faces/inv_002.webp",
     "price": 2,
     "howtowork": "Перемещает вас вперед на 1 клетку.",
     "number": 2
@@ -36,7 +36,7 @@
     "action": "extra_roll",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/inv_003.gif",
+    "artCard": "/cards/faces/inv_003.webp",
     "price": 7,
     "howtowork": "Позволяет перебросить кубик ещё раз в свой ход, если вы не удовлетворены результатом. Можно использовать до броска, можно после, но только до начала движения.",
     "number": 3
@@ -64,7 +64,7 @@
     "action": "teleport_to_type",
     "value": 0,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/inv_005.gif",
+    "artCard": "/cards/faces/inv_005.webp",
     "price": 8,
     "howtowork": "Мгновенно перемещает вас на ближайшую клетку 'B-Shop' по ходу движения. Использовать ДО броска кубика. Ход завершается моментально",
     "number": 5
@@ -78,7 +78,7 @@
     "action": "fish_protection",
     "value": 1,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/inv_006.gif",
+    "artCard": "/cards/faces/inv_006.webp",
     "price": 4,
     "howtowork": "Универсальная защита. Отменяет действие любой карты, направленной на вас (включая налоги), а также нейтрализует любые эффекты моментальных карт (денежные штрафы, перемещения назад/вперед, телепортация) или клетки 'Gambling'.",
     "number": 6
@@ -249,7 +249,7 @@
     "action": "passive_benefit",
     "value": 0,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/coolest.gif",
+    "artCard": "/cards/faces/coolest.webp",
     "price": null,
     "howtowork": "Выдается на ход игрокам из нижней части таблицы прошлого раунда: всем с 0 очков и игрокам на последних трех местах среди тех, кто набрал больше 0. Дает скидку 50% в B-Shop с округлением цены вверх. Нельзя украсть или сбросить.",
     "number": 18
@@ -263,7 +263,7 @@
     "action": "promo_code_benefit",
     "value": 0,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/agent.gif",
+    "artCard": "/cards/faces/agent.webp",
     "price": null,
     "howtowork": "В следующий раз, если вас заставят заплатить отдайте только половину стоимости (нечетные значения в пользу игрока с этой картой) Не работает на Корупцию, Катжит не виноват и проигрыш в Дуэли.",
     "number": 19
@@ -277,7 +277,7 @@
     "action": "communism",
     "value": 0,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/comr.gif",
+    "artCard": "/cards/faces/comr.webp",
     "price": null,
     "howtowork": "Выберите игрока: вы забираете половину его текущих только что полученных монет, округляя в большую сторону в вашу пользу. Можно использовать вне своего хода.",
     "number": 20
@@ -333,7 +333,7 @@
     "action": "teleport",
     "value": 0,
     "faceCard": "/cards/card_back.svg",
-    "artCard": "/cards/faces/blackhole.gif",
+    "artCard": "/cards/faces/blackhole.webp",
     "price": null,
     "howtowork": "Мгновенно: телепортирует вас на стартовую клетку 6 или 15. ",
     "number": 24
@@ -390,7 +390,7 @@
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/hope.gif",
+    "artCard": "/cards/legend/hope.webp",
     "price": null,
     "howtowork": "Romantique",
     "number": 28
@@ -404,7 +404,7 @@
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/beikerW.gif",
+    "artCard": "/cards/legend/beikerW.webp",
     "price": null,
     "howtowork": "PlasticPug",
     "number": 29
@@ -418,7 +418,7 @@
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/hardy.gif",
+    "artCard": "/cards/legend/hardy.webp",
     "price": null,
     "howtowork": "Linkorn",
     "number": 30
@@ -432,7 +432,7 @@
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/gold.gif",
+    "artCard": "/cards/legend/gold.webp",
     "price": null,
     "howtowork": "Icecream",
     "number": 31
@@ -446,7 +446,7 @@
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/amadehi.gif",
+    "artCard": "/cards/legend/amadehi.webp",
     "price": null,
     "howtowork": "Tiltozavour",
     "number": 32
@@ -460,10 +460,10 @@
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/beikerG.gif",
+    "artCard": "/cards/legend/beikerG.webp",
     "price": null,
     "howtowork": "RedWolf",
-    "number": 32
+    "number": 33
   }, 
   {
     "id": "leg_007",
@@ -474,24 +474,24 @@
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/danjelo.gif",
+    "artCard": "/cards/legend/danjelo.webp",
     "price": null,
     "howtowork": "Samura",
-    "number": 33
+    "number": 34
   },
    {
     "id": "leg_009",
     "name": "Unknown Unknown",
-    "description": "Я отдал свою молодость этому делу, не для того чтобы какой-то там лох приходил и отбирал моё наследие! Я буду бороться за него до конца своих дней!",
+    "description": "...",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/unknown.gif",
+    "artCard": "/cards/legend/unknown.webp",
     "price": null,
     "howtowork": "Rasul",
-    "number": 34
+    "number": 35
   }, 
   {
     "id": "leg_010",
@@ -502,10 +502,24 @@
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/comrade.gif",
+    "artCard": "/cards/legend/comrade.webp",
     "price": null,
     "howtowork": "Comrade",
-    "number": 34
+    "number": 36
+  },
+    {
+    "id": "leg_011",
+    "name": "Unknown Unknown",
+    "description": "...",
+    "deck": "inventory",
+    "rarity": "legendary",
+    "action": "prize",
+    "value": 0,
+    "faceCard": "/cards/card_face_light.svg",
+    "artCard": "/cards/legend/rhodes.webp",
+    "price": null,
+    "howtowork": "Zaebumba",
+    "number": 37
   }
 
 ]

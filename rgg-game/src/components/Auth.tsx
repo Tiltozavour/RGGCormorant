@@ -122,7 +122,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         muted
         className="fixed top-0 left-0 w-full h-full object-cover blur-sm scale-105 -z-20"
       >
-        <source src={getPublicAssetUrl("/video/bg.mp4")} type="video/mp4" />
+        <source src={getPublicAssetUrl("/video/bg.webm")} type="video/webm" />
       </video>
 
       <div className="bg-zinc-900 border border-yellow-500/20 p-10 rounded-2xl w-96 shadow-xl flex flex-col gap-3">

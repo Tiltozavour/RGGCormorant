@@ -223,6 +223,7 @@ src/
     GameWheel.tsx
     InteractionPendingOverlay.tsx
     PlayersSidebar.tsx
+    ProfileSidebar.tsx
     ScoresDetailsPage.tsx
     ShopAndGamblingOverlays.tsx
     TaxResponseOverlay.tsx
@@ -237,8 +238,12 @@ src/
     cardHandlers.ts
     cardEffectRules.ts
     duelHandlers.ts
+    eventLogPolicy.ts
     interactionCardPicker.ts
+    legendaryHandlers.ts
+    taxHandlers.ts
     turnHandlers.ts
+    wheelHandlers.ts
     gameConstants.ts
     gameList.ts
     gameMap.ts
@@ -258,11 +263,13 @@ scripts/
   resetFirebaseState.mjs
 tests/
   cardEffectRules.test.ts
+  eventLogPolicy.test.ts
   interactionCardPicker.test.ts
+  legendaryHandlers.test.ts
+  taxHandlers.test.ts
+  wheelHandlers.test.ts
 public/
   map.jpg
-  icons.svg
-  favicon.svg
   cards/
   video/
 ```
@@ -563,6 +570,9 @@ waiting_game -> playing -> results -> voting -> turn -> next_game
 - `duelHandlers.ts`
 - `adminHandlers.ts`
 - `interactionCardPicker.ts`
+- `legendaryHandlers.ts`
+- `taxHandlers.ts`
+- `wheelHandlers.ts`
 
 `cardEffectRules.ts` содержит тестируемые pure functions для правил карт: список отражаемых карт, проверку возможности ответной карты "А может тебя?", расчет "Судьи душ" и промокодное снижение потерь.
 
@@ -572,6 +582,12 @@ waiting_game -> playing -> results -> voting -> turn -> next_game
 - Gambling выбирает карты по весам редкости `common`/`rare`/`epic`;
 - momental-карты в Gambling имеют повышенный вес;
 - легендарная карта может попасть в Gambling с небольшим шансом, если она еще не выиграна.
+
+`legendaryHandlers.ts` содержит helper-логику легендарных карт: определение легендарной/призовой карты и админскую выдачу prize-карты игроку.
+
+`wheelHandlers.ts` содержит клиентскую механику колеса: расчет payload вращения, переброс картой "Подкрутка", проверки доступности переброса и отмену последней активной карты на колесе через No, no, no Mr.Fish.
+
+`taxHandlers.ts` содержит вынесенные части налоговой механики: применение `pendingTaxPayout`, расчет доступных ответных карт и построение следующего `tax_response` из очереди.
 
 ## 16. Active Interactions
 
@@ -686,12 +702,27 @@ rgg-shown-notifications:{uid}
 Логирование:
 
 - `src/components/useEventLogger.ts`
+- `src/components/eventLogPolicy.ts`
 
 UI:
 
 - `src/components/EventLog.tsx`
 
 Админ может очищать лог через `AppClean.tsx`, используется batch delete по чанкам.
+
+Чтобы не расходовать Firestore quota на шумные события, `useEventLogger.ts` пропускает запись части низкоприоритетных событий в `gameEvents` по политике из `eventLogPolicy.ts`. По умолчанию не пишутся `coin_change`, `movement`, `status_effect` и `info`; важные `card_play`, `duel`, `success`, `warning`, `error` остаются. Также есть dedupe одинаковых событий на 3 секунды и клиентский лимит 80 записей в минуту.
+
+Для временной отладки подробного Firestore-лога в браузере:
+
+```js
+localStorage.setItem("rgg-verbose-firestore-events", "1")
+```
+
+Отключить:
+
+```js
+localStorage.removeItem("rgg-verbose-firestore-events")
+```
 
 ## 21. Записи В Firestore
 
@@ -727,7 +758,6 @@ playerData?.role === "admin"
 - завершение голосования;
 - открытие колеса;
 - seed/init карт из UI;
-- выдача всех карт;
 - reset состояния;
 - добавление/удаление карт игрокам;
 - изменение монет;
@@ -754,25 +784,23 @@ UI админских prompt/confirm заменен на `AdminDialog`.
 Публичные ассеты:
 
 - `public/map.jpg`
-- `public/icons.svg`
-- `public/favicon.svg`
 - `public/cards`
 - `public/avatars`
-- `public/video/bg.mp4`
+- `public/video/bg.webm`
 
-Карточные GIF хранятся локально:
+Карточные медиа хранятся локально:
 
-- обычные карты: `public/cards/faces`
-- легендарные карты: `public/cards/legend`
+- обычные карты: `public/cards/faces`, сейчас WebP;
+- легендарные карты: `public/cards/legend`, сейчас WebP;
 - fallback-аватар: `public/avatars/fallback.jpg`
 
-В `src/components/starterCards.json` поле `artCard` должно ссылаться на локальный путь вида `/cards/faces/inv_001.gif`, а не на `giphy.com`, `tenor.com` или другой внешний CDN. Для проверки:
+В `src/components/starterCards.json` поле `artCard` должно ссылаться на локальный путь вида `/cards/faces/inv_001.webp` или `/cards/legend/name.webp`, а не на `giphy.com`, `tenor.com` или другой внешний CDN. Для проверки:
 
 ```bash
 npm run assets:check-external
 ```
 
-Видео `public/video/bg.mp4` используется на экранах авторизации и основного приложения. GitHub не принимает обычные git-файлы больше `100 MB`, поэтому при замене фонового видео нужно держать размер ниже лимита или заранее переводить видео в Git LFS. Старые тяжелые версии файла в истории тоже блокируют push, даже если текущий файл уже сжат.
+Видео `public/video/bg.webm` используется на экранах авторизации и основного приложения. GitHub не принимает обычные git-файлы больше `100 MB`, поэтому при замене фонового видео нужно держать размер ниже лимита или заранее переводить видео в Git LFS. Старые тяжелые версии файла в истории тоже блокируют push, даже если текущий файл уже сжат.
 
 ## 24. Как Добавить Карту
 
@@ -853,6 +881,9 @@ npm run seed:cards:reset
    - `adminHandlers`
    - `cardEffectRules`
    - `interactionCardPicker`
+   - `legendaryHandlers`
+   - `taxHandlers`
+   - `wheelHandlers`
 8. `AppClean.tsx` частично разделен:
    - event log
    - toast container
@@ -860,12 +891,13 @@ npm run seed:cards:reset
    - interaction pending overlay
    - B-Shop/Gambling overlay
    - Tax overlay
+   - profile sidebar
 9. Типы дуэлей унифицированы в `src/types/duel.ts`.
 10. Часть последовательных Firestore writes заменена на `writeBatch`/`runTransaction`.
 11. Добавлены отдельные seed/reset скрипты с защитой от production reset.
 12. Добавлен `src/i18n/ru.ts`.
 13. Browser `alert`, `confirm`, `prompt` заменены на собственные модалки/notify.
-14. Внешние GIF карточек и fallback-аватар сохранены локально в `public/cards` и `public/avatars`.
+14. Внешние карточные медиа и fallback-аватар сохранены локально в `public/cards` и `public/avatars`.
 15. Добавлена проверка `npm run assets:check-external`.
 16. Обработан сценарий удаленного `players/{uid}`: приложение выходит из старой Auth-сессии вместо вечной загрузки профиля.
 17. Обновлена визуальная тема легендарных карт: космический стиль, отдельная нижняя часть и `card_face_light.svg` как текстурный слой.
@@ -875,6 +907,12 @@ npm run seed:cards:reset
 21. Добавлен `cardEffectRules.ts` с первыми pure rules для карточной логики: отражение, "Судья душ" и промокодное снижение потерь.
 22. Добавлен Vitest и первые unit tests для `cardEffectRules.ts` и `interactionCardPicker.ts`.
 23. `useFirestoreSubscriptions.ts` больше не накапливает устаревшие данные `cards`/`prizes`: `allCards` пересобирается из актуальных snapshot-карт.
+24. Механика колеса вынесена из `useGameData.ts` в `wheelHandlers.ts`; добавлен `wheelHandlers.test.ts`.
+25. Правый профильный сайдбар вынесен из `AppClean.tsx` в `ProfileSidebar.tsx`.
+26. Firestore event log получил `eventLogPolicy.ts`: низкоприоритетные события не пишутся в `gameEvents` по умолчанию, есть dedupe и клиентский лимит записей.
+27. Карточные медиа переведены на WebP; фон переведен на WebM.
+28. Часть налоговой механики вынесена в `taxHandlers.ts`; добавлен `taxHandlers.test.ts`.
+29. Часть логики легендарных карт вынесена в `legendaryHandlers.ts`; добавлен `legendaryHandlers.test.ts`.
 
 ## 28. Остаточный Техдолг
 
@@ -900,13 +938,14 @@ firebase deploy --only firestore:rules
 
 ### Высокий Приоритет После Первого Деплоя
 
-1. Расширять тесты бизнес-логики: покрыть налоги, дуэли, колесо, легендарки и новые pure helpers из карточных flow.
-2. Дальше дробить `useGameData.ts`.
-3. Дальше дробить `AppClean.tsx`, особенно дуэльные overlay и коллекцию/руку.
+1. Расширять тесты бизнес-логики: покрыть налоги, дуэли, легендарки и новые pure helpers из карточных flow. Колесо и event log policy уже имеют первые unit tests.
+2. Дальше дробить `useGameData.ts`: следующие кандидаты - налоги, дуэли, легендарки и active interactions.
+3. Дальше дробить `AppClean.tsx`: следующие кандидаты - коллекция/рука, легендарная галерея и дуэльные overlay.
 4. Продолжить перевод текстов в `src/i18n/ru.ts`.
 5. Продолжать выносить карточные эффекты в тестируемые pure functions.
 6. Усилить Firestore rules после переноса критичных операций на backend.
 7. Решить долгосрочную модель очистки/истечения `lastNotification` и `gameState.notifications`: сейчас повторный показ защищен на клиенте, но сами записи могут оставаться в Firestore.
+8. Следить за весом WebP-медиа и при необходимости дожимать самые тяжелые файлы.
 
 ### Средний Приоритет
 
@@ -933,13 +972,18 @@ firebase deploy --only firestore:rules
 - `src/components/useGameData.ts` - главный controller hook.
 - `src/components/useFirestoreSubscriptions.ts` - Auth/Firestore subscriptions.
 - `src/components/useEventLogger.ts` - запись game events.
+- `src/components/eventLogPolicy.ts` - фильтрация и throttling записей `gameEvents`.
 - `src/components/GameBoard.tsx` - карта и движение.
 - `src/components/GameWheel.tsx` - колесо.
 - `src/components/BottomPanel.tsx` - нижняя панель.
 - `src/components/PlayersSidebar.tsx` - игроки и админские операции.
+- `src/components/ProfileSidebar.tsx` - правый профильный сайдбар, аватар, аура, коллекции, админские Init/Reset.
 - `src/components/AdminDialog.tsx` - собственные модалки.
 - `src/components/cardEffectRules.ts` - pure rules для отражения, "Судьи душ" и промокодных потерь.
 - `src/components/interactionCardPicker.ts` - подбор карт для B-Shop/Gambling interactions.
+- `src/components/legendaryHandlers.ts` - helper-логика легендарных/prize-карт.
+- `src/components/taxHandlers.ts` - helper-логика налогов и `pendingTaxPayout`.
+- `src/components/wheelHandlers.ts` - helper-логика колеса и карточек `Подкрутка`/Fish.
 - `src/components/starterCards.json` - база карт.
 - `src/components/gameMap.ts` - граф поля.
 - `src/types/game.ts` - типы игроков, фазы, gameState.
@@ -952,4 +996,8 @@ firebase deploy --only firestore:rules
 - `scripts/seedCards.mjs` - seed cards/prizes.
 - `scripts/resetDevState.mjs` - защищенный dev reset.
 - `tests/cardEffectRules.test.ts` - Vitest-покрытие pure rules карт.
+- `tests/eventLogPolicy.test.ts` - Vitest-покрытие политики записи `gameEvents`.
 - `tests/interactionCardPicker.test.ts` - Vitest-покрытие B-Shop/Gambling picker.
+- `tests/legendaryHandlers.test.ts` - Vitest-покрытие определения легендарных/prize-карт.
+- `tests/taxHandlers.test.ts` - Vitest-покрытие pure-helper-ов налоговой очереди.
+- `tests/wheelHandlers.test.ts` - Vitest-покрытие pure-части механики колеса.

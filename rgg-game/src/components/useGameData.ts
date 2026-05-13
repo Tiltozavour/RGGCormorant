@@ -1,11 +1,10 @@
 /* eslint-disable react-hooks/purity, @typescript-eslint/no-explicit-any */
-import { useEffect, useCallback, useRef } from "react";
+import { useCallback } from "react";
 import { signOut } from "firebase/auth";
 import {
   collection,
   doc,
   getDocs,
-  getDoc,
   updateDoc,
   setDoc,
   arrayUnion,
@@ -38,55 +37,23 @@ import {
   removeOneCardFromInventory,
   shuffle,
 } from "./cardHandlers";
-import { getFinishedDuelCleanupUpdates } from "./duelHandlers";
+import { useFinishedDuelCleanup } from "./duelHandlers";
 import { getRandomInteractionCardIds } from "./interactionCardPicker";
+import { grantPrizeCardToPlayer, isLegendaryPrizeCard } from "./legendaryHandlers";
+import {
+  buildNextTaxInteraction,
+  getTaxResponseCardIds,
+  usePendingTaxPayout,
+} from "./taxHandlers";
 import { buildTurnState, getGoldenCardHolderIds, rollD6 } from "./turnHandlers";
+import {
+  cancelLastWheelCardWithFish,
+  rerollWheel,
+  validateWheelFishCancelAvailable,
+  validateWheelRerollAvailable,
+} from "./wheelHandlers";
 
 import type { GameEvent, ToastNotification } from "./useModalStates"; // Import new types
-
-type WheelCardStackEntry = {
-  cardId: "inv_017" | "inv_006";
-  playerId: string;
-  previousWinnerIndex: number;
-  resultWinnerIndex: number;
-  timestamp: number;
-};
-
-type WheelSettings = {
-  isSpinning?: boolean;
-  targetRotation?: number;
-  winnerIndex?: number | null;
-  previousWinnerIndex?: number | null;
-  previousTargetRotation?: number | null;
-  wheelCardStack?: WheelCardStackEntry[];
-  lastSpinSource?: string;
-};
-
-const buildWheelSpinPayload = (
-  itemCount: number,
-  currentRotation: number,
-  previousWinnerIndex: number | null,
-  source: "admin" | "participant_reroll" | "inv_017",
-  playerId?: string,
-) => {
-  const selectedIndex = Math.floor(Math.random() * itemCount);
-  const angleStep = 360 / itemCount;
-  const targetSegmentCenter = selectedIndex * angleStep + angleStep / 2;
-  const currentRotationDegrees = currentRotation % 360;
-  const extraDegrees = (270 - currentRotationDegrees - targetSegmentCenter + 1440) % 360;
-  const targetRotation = currentRotation + 1800 + extraDegrees;
-
-  return {
-    isSpinning: true,
-    targetRotation,
-    winnerIndex: selectedIndex,
-    previousWinnerIndex,
-    previousTargetRotation: currentRotation,
-    lastSpinSource: source,
-    rerollBy: playerId ?? null,
-    updatedAt: Date.now(),
-  };
-};
 
 const clearTemporaryStatus = {
   customStatus: null,
@@ -115,41 +82,7 @@ export function useGameData(
     allCards,
     gameEvents,
   } = useFirestoreSubscriptions(notify);
-  const lastAppliedTaxPayoutRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!user) return;
-    const payout = gameState.pendingTaxPayout;
-    if (!payout || payout.playerId !== user.uid || payout.amount <= 0) return;
-    if (lastAppliedTaxPayoutRef.current === payout.id) return;
-    lastAppliedTaxPayoutRef.current = payout.id;
-
-    void runTransaction(db, async (transaction) => {
-      const gameStateRef = doc(db, "gameState", "current");
-      const gsSnap = await transaction.get(gameStateRef);
-      if (!gsSnap.exists()) return;
-
-      const currentPayout = (gsSnap.data() as GameState).pendingTaxPayout;
-      if (!currentPayout || currentPayout.id !== payout.id || currentPayout.playerId !== user.uid) return;
-
-      transaction.update(doc(db, "players", user.uid), {
-        tiltCoins: increment(currentPayout.amount),
-        lastNotification: {
-          message: `Вы получили банк карты "Платите налоги!": ${currentPayout.amount} монет.`,
-          timestamp: Date.now(),
-          cardId: currentPayout.cardId || "inv_015",
-        },
-      });
-      transaction.update(gameStateRef, {
-        pendingTaxPayout: null,
-        hotCoinGain: makeHotCoinGain(user.uid, currentPayout.amount, currentPayout.cardId || "inv_015", "Платите налоги!"),
-      });
-    }).catch((error) => {
-      console.error(error);
-      lastAppliedTaxPayoutRef.current = null;
-      notify("Не удалось получить банк налогов.", 'error', payout.cardId || "inv_015");
-    });
-  }, [gameState.pendingTaxPayout, notify, user]);
+  usePendingTaxPayout(gameState.pendingTaxPayout, user, notify);
 
   const isAdmin = playerData?.role === "admin";
   const currentTurnPlayerId = gameState.turnOrder[gameState.currentTurnIndex] ?? null;
@@ -187,21 +120,7 @@ export function useGameData(
     },
     [],
   );
-  useEffect(() => {
-    // Текст восстановлен после сбоя кодировки.
-    if (!isAdmin || !gameState.activeDuels) return;
-
-    const updates = getFinishedDuelCleanupUpdates(gameState.activeDuels);
-    if (Object.keys(updates).length === 0) return;
-
-    // Текст восстановлен после сбоя кодировки.
-    const timer = setTimeout(async () => {
-      const gsRef = doc(db, "gameState", "current");
-      await updateDoc(gsRef, updates);
-    }, 15000);
-
-    return () => clearTimeout(timer);
-  }, [gameState.activeDuels, isAdmin]);
+  useFinishedDuelCleanup(gameState.activeDuels, isAdmin);
 
   // Текст восстановлен после сбоя кодировки.
   const applyMomentalCardEffect = useCallback(
@@ -384,92 +303,17 @@ export function useGameData(
     await updateDoc(doc(db, "players", user.uid), { avatar: url });
   };
 
-  const grantPrizeCard = async (playerId: string, cardId: string) => {
-    if (!isAdmin) return;
-    const playerRef = doc(db, "players", playerId);
-    const prizeRef = doc(db, "prizes", cardId);
-
-    try {
-      await runTransaction(db, async (transaction) => {
-        const prizeSnap = await transaction.get(prizeRef);
-        const playerSnap = await transaction.get(playerRef);
-        if (!prizeSnap.exists()) return;
-
-        const prizeData = prizeSnap.data() as GameCard;
-        if (prizeData.isWon) {
-          notify(`Легендарная карта "${prizeData.name}" уже была выдана в этой игре.`, 'warning', prizeData.id);
-          return;
-        }
-
-        transaction.update(playerRef, {
-          inventory: addOneCardToInventory((playerSnap.data() as Player | undefined)?.inventory, cardId),
-        });
-        transaction.update(prizeRef, { isUnique: true, isWon: true, winnerId: playerId });
-      });
-    } catch (e) {
-      console.error("Ошибка при выдаче легендарной карты:", e);
-    }
-  };
+  const grantPrizeCard = (playerId: string, cardId: string) =>
+    grantPrizeCardToPlayer({ isAdmin, playerId, cardId, notify });
 
   const handleRerollWheel = async (source: "participant_reroll" | "inv_017" = "participant_reroll") => {
     if (!user || !playerData) return;
-    if (!gameState.showWheel) {
-      notify("Колесо сейчас закрыто.", "warning");
-      return;
-    }
-
-    const wheelSettingsRef = doc(db, "game_settings", "wheel");
-    const wheelSettingsSnap = await getDoc(wheelSettingsRef);
-    const wheelSettings = wheelSettingsSnap.data() as WheelSettings | undefined;
-
-    if (wheelSettings?.isSpinning) {
-      notify("Дождитесь остановки колеса.", "info");
-      return;
-    }
-
-    if (typeof wheelSettings?.winnerIndex !== "number") {
-      notify("Сначала нужно запустить колесо и получить результат.", "warning");
-      return;
-    }
-
-    const gamesSnap = await getDocs(collection(db, "wheel"));
-    const activeGames = gamesSnap.docs
-      .filter((gameDoc) => gameDoc.data().active === true)
-      .sort((a, b) => a.id.localeCompare(b.id));
-
-    if (activeGames.length === 0) {
-      notify("В коллекции wheel нет активных игр для переброса.", "warning");
-      return;
-    }
-
-    const spinPayload = buildWheelSpinPayload(
-      activeGames.length,
-      Number(wheelSettings?.targetRotation ?? 0),
-      wheelSettings.winnerIndex,
+    await rerollWheel({
+      userId: user.uid,
+      showWheel: gameState.showWheel,
       source,
-      user.uid,
-    );
-    const wheelCardStack = [
-      ...(wheelSettings?.wheelCardStack ?? []),
-      {
-        cardId: "inv_017" as const,
-        playerId: user.uid,
-        previousWinnerIndex: wheelSettings.winnerIndex,
-        resultWinnerIndex: spinPayload.winnerIndex,
-        timestamp: Date.now(),
-      },
-    ];
-
-    await setDoc(
-      wheelSettingsRef,
-      {
-        ...spinPayload,
-        wheelCardStack,
-      },
-      { merge: true },
-    );
-
-    notify(source === "inv_017" ? "Колесо переброшено картой \"Подкрутка\"." : "Колесо переброшено.", "info", source === "inv_017" ? "inv_017" : undefined);
+      notify,
+    });
   };
 
   const handleUseCard = async (card: GameCard, targetPlayerId: string | null = null) => {
@@ -602,48 +446,11 @@ export function useGameData(
     const playerRef = doc(db, "players", user.uid);
 
     if (card.action === "spin_wheel") {
-      if (!gameState.showWheel) {
-        notify("Карту \"Подкрутка\" можно использовать только после первого результата колеса.", "warning", card.id);
-        return;
-      }
-
-      const wheelSettingsSnap = await getDoc(doc(db, "game_settings", "wheel"));
-      const wheelSettings = wheelSettingsSnap.data() as WheelSettings | undefined;
-      if (wheelSettings?.isSpinning) {
-        notify("Дождитесь остановки колеса.", "warning", card.id);
-        return;
-      }
-
-      if (typeof wheelSettings?.winnerIndex !== "number") {
-        notify("Сначала нужно запустить колесо и получить результат.", "warning", card.id);
-        return;
-      }
+      if (!(await validateWheelRerollAvailable(gameState.showWheel, notify, card.id))) return;
     }
 
     if (card.action === "fish_protection" && gameState.showWheel) {
-      const wheelSettingsSnap = await getDoc(doc(db, "game_settings", "wheel"));
-      const wheelSettings = wheelSettingsSnap.data() as WheelSettings | undefined;
-      const lastCard = wheelSettings?.wheelCardStack?.at(-1);
-
-      if (wheelSettings?.isSpinning) {
-        notify("Дождитесь остановки колеса.", "warning", card.id);
-        return;
-      }
-
-      if (typeof wheelSettings?.winnerIndex !== "number") {
-        notify("Сначала нужно запустить колесо и получить результат.", "warning", card.id);
-        return;
-      }
-
-      if (!lastCard) {
-        notify("No, no, no Mr.Fish отменяет только последнюю активную карту на колесе, а не само колесо.", "warning", card.id);
-        return;
-      }
-
-      if (lastCard.playerId === user.uid) {
-        notify("No, no, no Mr.Fish нельзя использовать на свою же последнюю карту.", "warning", card.id);
-        return;
-      }
+      if (!(await validateWheelFishCancelAvailable(user.uid, notify, card.id))) return;
     }
 
     try {
@@ -983,37 +790,7 @@ export function useGameData(
         
         case "fish_protection":
           if (gameState.showWheel) {
-            const wheelSettingsRef = doc(db, "game_settings", "wheel");
-            const wheelSettingsSnap = await getDoc(wheelSettingsRef);
-            const wheelSettings = wheelSettingsSnap.data() as WheelSettings | undefined;
-            const wheelCardStack = wheelSettings?.wheelCardStack ?? [];
-            const lastCard = wheelCardStack.at(-1);
-
-            if (!lastCard || lastCard.playerId === user.uid) {
-              notify("No, no, no Mr.Fish отменяет только последнюю чужую активную карту на колесе.", 'warning', card.id);
-              break;
-            }
-
-            const fishEntry: WheelCardStackEntry = {
-              cardId: "inv_006",
-              playerId: user.uid,
-              previousWinnerIndex: Number(wheelSettings?.winnerIndex ?? lastCard.resultWinnerIndex),
-              resultWinnerIndex: lastCard.previousWinnerIndex,
-              timestamp: Date.now(),
-            };
-
-            await setDoc(
-              wheelSettingsRef,
-              {
-                isSpinning: false,
-                winnerIndex: fishEntry.resultWinnerIndex,
-                lastSpinSource: "inv_006",
-                wheelCardStack: [...wheelCardStack, fishEntry],
-                updatedAt: Date.now(),
-              },
-              { merge: true },
-            );
-            notify("Вы отменили последнюю активную карту на колесе картой No, no, no Mr.Fish.", 'info', card.id);
+            await cancelLastWheelCardWithFish(user.uid, notify, card.id);
           } else {
             await updateDoc(playerRef, {
               customStatus: "fish_shield",
@@ -1470,11 +1247,7 @@ export function useGameData(
               taxCollectorName: playerData.login,
               taxBank: 0,
               taxQueue: taxTargetIds.slice(1),
-              cards: [
-                ...(firstTaxTarget?.inventory?.includes("inv_012") ? ["inv_012"] : []),
-                ...(firstTaxTarget?.inventory?.includes("inv_006") ? ["inv_006"] : []),
-                ...(firstTaxTarget?.inventory?.includes("inv_019") ? ["inv_019"] : []),
-              ],
+              cards: getTaxResponseCardIds(firstTaxTarget),
               actingCardId: card.id,
             },
             [`notifications.${firstTaxTargetId}`]: {
@@ -1664,7 +1437,7 @@ export function useGameData(
         finalRecipientName = recipientData?.login || finalRecipientName;
       }
 
-      const isLegendaryPrize = card.rarity === "legendary" || card.action === "prize";
+      const isLegendaryPrize = isLegendaryPrizeCard(card, card.id);
       const gameStateRef = doc(db, "gameState", "current");
       const prizeRef = isLegendaryPrize ? doc(db, "prizes", card.id) : null;
       const prizeSnap = prizeRef ? await transaction.get(prizeRef) : null;
@@ -2237,35 +2010,6 @@ export function useGameData(
     const gameStateRef = doc(db, "gameState", "current");
     const playerRef = doc(db, "players", user.uid);
 
-    const makeNextTaxInteraction = (
-      queue: string[] | undefined,
-      collectorId: string,
-      collectorName: string,
-      bank: number,
-    ) => {
-      const [nextPlayerId, ...restQueue] = queue ?? [];
-      if (!nextPlayerId) return null;
-
-      const nextPlayer = getPlayerById(nextPlayerId);
-      return {
-        playerId: nextPlayerId,
-        type: "tax_response" as const,
-        targetPlayerId: ownerId,
-        taxOwnerId: ownerId,
-        taxOwnerName: ownerName,
-        taxCollectorId: collectorId,
-        taxCollectorName: collectorName,
-        taxBank: bank,
-        taxQueue: restQueue,
-        cards: [
-          ...(nextPlayer?.inventory?.includes("inv_012") ? ["inv_012"] : []),
-          ...(nextPlayer?.inventory?.includes("inv_006") ? ["inv_006"] : []),
-          ...(nextPlayer?.inventory?.includes("inv_019") ? ["inv_019"] : []),
-        ],
-        actingCardId: taxCardId,
-      };
-    };
-
     let finalBank = 0;
     let finalCollectorName = ownerName;
     let queueFinished = false;
@@ -2373,7 +2117,16 @@ export function useGameData(
             },
           });
         } else {
-          const nextInteraction = makeNextTaxInteraction(queue, collectorId, collectorName, bank);
+          const nextInteraction = buildNextTaxInteraction({
+            queue,
+            collectorId,
+            collectorName,
+            bank,
+            ownerId,
+            ownerName,
+            taxCardId,
+            getPlayerById,
+          });
           if (nextInteraction) {
             updates.activeInteraction = nextInteraction;
             updates[`notifications.${nextInteraction.playerId}`] = {
@@ -3038,39 +2791,33 @@ export function useGameData(
         }
 
         if (activeInteraction?.fromTaxCard) {
-          const [nextPlayerId, ...restQueue] = activeInteraction.taxQueue ?? [];
-          const nextPlayer = nextPlayerId ? getPlayerById(nextPlayerId) : null;
           const collectorId = activeInteraction.taxCollectorId || activeInteraction.taxOwnerId;
           const collectorName = activeInteraction.taxCollectorName || activeInteraction.taxOwnerName || "игрок";
           const bank = activeInteraction.taxBank ?? 0;
           const timestamp = Date.now();
+          const taxOwnerId = activeInteraction.taxOwnerId || activeInteraction.targetPlayerId;
+          const taxCardId = activeInteraction.actingCardId || "inv_015";
+          const nextTaxInteraction = taxOwnerId
+            ? buildNextTaxInteraction({
+                queue: activeInteraction.taxQueue,
+                collectorId: collectorId || taxOwnerId,
+                collectorName,
+                bank,
+                ownerId: taxOwnerId,
+                ownerName: activeInteraction.taxOwnerName,
+                taxCardId,
+                getPlayerById,
+              })
+            : null;
           const updates: Record<string, unknown> = {
-            activeInteraction: nextPlayerId
-              ? {
-                  playerId: nextPlayerId,
-                  type: "tax_response",
-                  targetPlayerId: activeInteraction.taxOwnerId,
-                  taxOwnerId: activeInteraction.taxOwnerId,
-                  taxOwnerName: activeInteraction.taxOwnerName,
-                  taxCollectorId: collectorId,
-                  taxCollectorName: collectorName,
-                  taxBank: bank,
-                  taxQueue: restQueue,
-                  cards: [
-                    ...(nextPlayer?.inventory?.includes("inv_012") ? ["inv_012"] : []),
-                    ...(nextPlayer?.inventory?.includes("inv_006") ? ["inv_006"] : []),
-                    ...(nextPlayer?.inventory?.includes("inv_019") ? ["inv_019"] : []),
-                  ],
-                  actingCardId: activeInteraction.actingCardId,
-                }
-              : null,
+            activeInteraction: nextTaxInteraction,
           };
 
-          if (nextPlayerId) {
-            updates[`notifications.${nextPlayerId}`] = {
+          if (nextTaxInteraction) {
+            updates[`notifications.${nextTaxInteraction.playerId}`] = {
               message: `${collectorName} собирает банк налогов. Заплатите 2 монеты, используйте Промокодик или выберите gambling.`,
               timestamp,
-              cardId: activeInteraction.actingCardId || "inv_015",
+              cardId: taxCardId,
             };
           } else if (collectorId && bank > 0) {
             updates.pendingTaxPayout = {
@@ -3078,12 +2825,12 @@ export function useGameData(
               playerId: collectorId,
               playerName: collectorName,
               amount: bank,
-              cardId: activeInteraction.actingCardId || "inv_015",
+              cardId: taxCardId,
             };
             updates[`notifications.${collectorId}`] = {
               message: `Сбор налогов завершен. Банк ${bank} монет уходит вам.`,
               timestamp,
-              cardId: activeInteraction.actingCardId || "inv_015",
+              cardId: taxCardId,
             };
           }
 
@@ -3307,7 +3054,7 @@ export function useGameData(
         targetLogin = targetData?.login || targetLogin;
         const card = allCards[cardId];
 
-        if (card?.rarity === "legendary" || card?.action === "prize" || cardId.startsWith("leg_")) {
+        if (isLegendaryPrizeCard(card, cardId)) {
           const prizeRef = doc(db, "prizes", cardId);
           const prizeSnap = await transaction.get(prizeRef);
           const prizeData = prizeSnap.exists() ? (prizeSnap.data() as GameCard) : card;
