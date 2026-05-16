@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import type { DuelState, GameState, Player, GameHistoryEntry } from "../types/game";
 import {
   buildPlayerScoreRows,
@@ -13,7 +13,7 @@ interface PlayersSidebarProps {
   isOpen: boolean;
   players: Player[];
   totalScores: Record<string, number>;
-  gameState: GameState; // Добавляем gameState
+  gameState: GameState;
   allCards: Record<string, GameCard>;
   isAdmin: boolean;
   onUpdateCoins: (targetId: string, amount: number) => Promise<void>;
@@ -30,7 +30,7 @@ function PlayersSidebar({
   isOpen,
   players,
   totalScores,
-  gameState, // Принимаем gameState
+  gameState,
   allCards,
   isAdmin,
   onUpdateCoins,
@@ -48,7 +48,7 @@ function PlayersSidebar({
   const rows = buildPlayerScoreRows(players, totalScores, gameHistory);
   const latestGameName = gameHistory.length > 0 ? gameHistory[gameHistory.length - 1].gameName : null;
 
-  // Находим ID текущего лидера (игнорируя админа) для визуального выделения
+  // Находим ID текущего лидера для визуального выделения.
   const topPlayerId = [...players]
     .filter(isGameParticipant)
     .sort((a, b) => (b.tiltCoins ?? 0) - (a.tiltCoins ?? 0))[0]?.id;
@@ -57,6 +57,15 @@ function PlayersSidebar({
     (duel) => duel.status !== "finished"
   );
 
+  const handleGiveAllInventoryCards = async (playerId: string) => {
+    const inventoryCardIds = Object.values(allCards)
+      .filter((card) => card.deck === "inventory")
+      .map((card) => card.id);
+
+    for (const cardId of inventoryCardIds) {
+      await onAddCard(playerId, cardId);
+    }
+  };
 
   return (
     <>
@@ -111,7 +120,7 @@ function PlayersSidebar({
             <tbody>
               {rows.map((row) => {
                 const isCurrentUser = row.playerId === currentUserId;
-                // Находим игрока, чтобы взять актуальные данные из БД
+                // Берем актуальные данные игрока из Firestore.
                 const player = players.find(p => p.id === row.playerId);
                 const lastScore = player?.lastTiltoCoins ?? 0;
                 const bonusScore = player?.bonusPoints ?? 0;
@@ -165,7 +174,7 @@ function PlayersSidebar({
                                     onClick={() => void onRemoveCard(row.playerId, cardId)}
                                     className="ml-1 text-red-500 opacity-0 group-hover/card:opacity-100 transition-opacity hover:text-red-400"
                                   >
-                                    ✕
+                                    ×
                                   </button>
                                 </div>
                               ))}
@@ -174,6 +183,12 @@ function PlayersSidebar({
                                 className="px-1.5 py-0.5 bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 rounded text-[9px] hover:bg-yellow-500/20 transition-colors"
                               >
                                 + Карта
+                              </button>
+                              <button
+                                onClick={() => void handleGiveAllInventoryCards(row.playerId)}
+                                className="px-1.5 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/30 rounded text-[9px] hover:bg-blue-500/20 transition-colors"
+                              >
+                                Give All
                               </button>
                             </div>
                           )}
@@ -248,24 +263,24 @@ function PlayersSidebar({
                     break;
                   case "accepted":
                     statusText = "Выбор оружия";
-                    actionPlayerId = duel.targetId; // Цель выбирает оружие первой
+                    actionPlayerId = duel.targetId;
                     break;
                   case "betting":
                     statusText = "Размещение ставок";
-                    // Определяем, кто еще не сделал ставку
+                    // Определяем, кто еще не сделал ставку.
                     if (!duel.isReady[duel.challengerId]) actionPlayerId = duel.challengerId;
                     else if (!duel.isReady[duel.targetId]) actionPlayerId = duel.targetId;
                     break;
                   case "ready_to_roll":
                     statusText = "Готовность к броску";
-                    actionPlayerId = duel.challengerId; // Инициатор бросает кубики
+                    actionPlayerId = duel.challengerId;
                     break;
                   case "rolling":
                     statusText = "Бросок кубиков";
                     break;
                   case "admin_wait":
                     statusText = "Ожидание решения админа";
-                    actionPlayerId = "admin"; // Условно, чтобы показать, что админ должен действовать
+                    actionPlayerId = "admin";
                     break;
                   default:
                     statusText = "Неизвестный статус";

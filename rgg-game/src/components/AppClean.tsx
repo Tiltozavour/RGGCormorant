@@ -1248,6 +1248,43 @@ function AppClean() {
       />
 
       {/* ЭКРАН ОТВЕТА НА ВЫЗОВ НА ДУЭЛЬ */}
+      {gameState.activeInteraction?.type === 'reflect_response' && gameState.activeInteraction.playerId === user?.uid && (
+        <div className="fixed inset-0 bg-cyan-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
+          <div className="text-center mb-10 max-w-2xl">
+            <h2 className="text-5xl font-black text-cyan-300 uppercase italic tracking-tighter">А может тебя?</h2>
+            <p className="text-white/50 text-sm font-bold uppercase tracking-[0.3em] mt-4">
+              {getPlayerById(gameState.activeInteraction.targetPlayerId)?.login || 'Игрок'} сыграл против вас карту
+            </p>
+            <p className="mt-3 text-2xl font-black text-white">
+              "{allCards[gameState.activeInteraction.actingCardId || '']?.name || 'Игрок'}"
+            </p>
+          </div>
+
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-6 min-w-80">
+            <button
+              disabled={isInteractionPending}
+              onClick={() => {
+                if (isInteractionPending) return;
+                void runInteractionAction(() => handlers.handleReflectResponse(true));
+              }}
+              className="w-full bg-cyan-400 text-black px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-white transition-all disabled:opacity-50"
+            >
+              Отразить картой
+            </button>
+            <button
+              disabled={isInteractionPending}
+              onClick={() => {
+                if (isInteractionPending) return;
+                void runInteractionAction(() => handlers.handleReflectResponse(false));
+              }}
+              className="w-full bg-zinc-800 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-zinc-700 transition-all disabled:opacity-50"
+            >
+              Не отражать
+            </button>
+          </div>
+        </div>
+      )}
+
       {gameState.activeInteraction?.type === 'move_for_coins_selection' && gameState.activeInteraction.playerId === user?.uid && (
         <div className="fixed inset-0 bg-emerald-950/90 backdrop-blur-xl z-[10010] flex flex-col items-center justify-center p-10 animate-in fade-in duration-500">
           <div className="text-center mb-10">

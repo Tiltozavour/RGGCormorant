@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/purity, @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable react-hooks/purity, @typescript-eslint/no-explicit-any */
 import { useCallback } from "react";
 import { signOut } from "firebase/auth";
 import {
@@ -1436,6 +1436,14 @@ export function useGameData(
             await updateDoc(targetRef, clearTemporaryStatus);
           }
 
+          notify(
+            targetHasReflect
+              ? "Карта отражена. Выберите, сколько монет потратить, чтобы двигать свою фишку."
+              : `Выберите, сколько монет потратить, чтобы двигать фишку игрока ${targetPlayer?.login}.`,
+            "info",
+            card.id
+          );
+
           logEvent({
             id: `move_for_coins_start_${card.id}_${Date.now()}`,
             timestamp: Date.now(),
@@ -2185,6 +2193,7 @@ export function useGameData(
 
     const playerRef = doc(db, "players", user.uid);
     const gameStateRef = doc(db, "gameState", "current");
+    let availableCoins = playerData.tiltCoins ?? 0;
 
     try {
       await runTransaction(db, async (transaction) => {
@@ -2205,17 +2214,11 @@ export function useGameData(
 
         const currentPlayer = pSnap.data() as Player;
         const currentPlayerCoins = currentPlayer.tiltCoins || 0;
-        if (!currentPlayer.inventory?.includes(card.id)) throw new Error("Card is not in inventory.");
-
+        availableCoins = currentPlayerCoins;
         if (currentPlayerCoins < steps) {
-          throw new Error("Ошибка действия.");
+          throw new Error("INSUFFICIENT_CORRUPTION_COINS");
         }
-
-        // Deduct coins from the card user
         transaction.update(playerRef, { tiltCoins: increment(-steps) });
-        // Remove one copy of the card from the card user's inventory
-        transaction.update(playerRef, { inventory: removeOneCardFromInventory(currentPlayer.inventory, card.id) });
-        // Add the card to revealed cards
         transaction.update(gameStateRef, { revealedCards: arrayUnion(card.id) });
 
         const timestamp = Date.now();
@@ -2248,12 +2251,17 @@ export function useGameData(
         });
       });
     } catch (e) {
-      console.error("Ошибка действия.");
-      notify("Событие игры обновлено.", 'error');
+      if (e instanceof Error && e.message === "INSUFFICIENT_CORRUPTION_COINS") {
+        notify(`Не хватает монет для Коррупции: у вас ${availableCoins}, а выбрано ${steps}.`, "warning", actingCardId);
+        return;
+      }
+
+      console.error(e);
+      notify("Не удалось применить Коррупцию.", 'error', actingCardId);
       logEvent({
         id: `confirm_move_for_coins_error_${Date.now()}`,
         timestamp: Date.now(), type: 'error',
-        message: "Событие игры.",
+        message: "Не удалось подтвердить движение по карте Коррупция.",
         playerId: user.uid, targetPlayerId: targetPlayerId, cardId: actingCardId,
         details: { error: e }
       });
@@ -3401,6 +3409,9 @@ export function useGameData(
 
 
         if (cellType === "gambling" || cellType === "bshop") {
+          if (isCardMove) {
+            transaction.update(playerRef, { position, prevCell });
+          }
           transaction.update(gameStateRef, {
             activeInteraction: { 
               playerId: targetPlayerId,
@@ -3461,6 +3472,7 @@ export function useGameData(
   ) => {
     if (!user || !playerData || !gameState.activeInteraction) return;
 
+    const expectedInteraction = gameState.activeInteraction;
     const playerRef = doc(db, "players", user.uid);
     const gameStateRef = doc(db, "gameState", "current");
 
@@ -3472,10 +3484,25 @@ export function useGameData(
 
         const { turnOrder = [], currentTurnIndex = 0, activeInteraction } = gsSnap.data() as GameState;
         const player = { ...(pSnap.data() as Player), id: user.uid };
+        if (
+          !activeInteraction ||
+          activeInteraction.type !== expectedInteraction.type ||
+          activeInteraction.playerId !== expectedInteraction.playerId ||
+          activeInteraction.targetPlayerId !== expectedInteraction.targetPlayerId ||
+          activeInteraction.actingCardId !== expectedInteraction.actingCardId ||
+          !!activeInteraction.fromCardMove !== !!expectedInteraction.fromCardMove ||
+          !!activeInteraction.fromTaxCard !== !!expectedInteraction.fromTaxCard
+        ) {
+          return;
+        }
+        if (cardId && !activeInteraction.cards.includes(cardId)) {
+          return;
+        }
 
         let keepInteractionOpen = false;
 
         if (skipWithCardId) {
+          if (!player.inventory?.includes(skipWithCardId)) return;
           transaction.update(playerRef, { inventory: removeOneCardFromInventory(player.inventory, skipWithCardId) });
           transaction.update(gameStateRef, { revealedCards: arrayUnion(skipWithCardId) });
           notify("Событие игры обновлено.", 'info');

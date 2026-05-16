@@ -39,6 +39,10 @@ function ShopAndGamblingOverlays({
   handlers,
 }: ShopAndGamblingOverlaysProps) {
   const interaction = gameState.activeInteraction;
+  const interactionCardIds =
+    interaction?.cards.filter((cardId: string, idx: number, cards: string[]) =>
+      Boolean(allCards[cardId]) && cards.indexOf(cardId) === idx
+    ) ?? [];
 
   return (
     <>
@@ -50,7 +54,7 @@ function ShopAndGamblingOverlays({
           </div>
 
           <div className={`flex gap-10 ${isInteractionPending ? 'pointer-events-none' : ''}`}>
-            {interaction.cards.filter((cardId: string) => Boolean(allCards[cardId])).map((cardId: string, idx: number) => {
+            {interactionCardIds.map((cardId: string, idx: number) => {
               const card = allCards[cardId];
               const isRevealed = revealedGamblingCardId === cardId;
               const isDimmed = Boolean(revealedGamblingCardId && !isRevealed);
@@ -96,9 +100,9 @@ function ShopAndGamblingOverlays({
                 <p className="text-white/40 text-[9px] font-medium">{ru.gambling.protectionSubtitle}</p>
               </div>
               <div className="flex gap-4">
-                {protectionCardsInInv.map((card) => (
+                {protectionCardsInInv.map((card, idx) => (
                   <button
-                    key={card.id}
+                    key={`${card.id}-${idx}`}
                     disabled={isInteractionPending}
                     onClick={() => {
                       if (isInteractionPending) return;
@@ -128,7 +132,7 @@ function ShopAndGamblingOverlays({
           </div>
 
           <div className={`flex gap-8 items-start ${isInteractionPending ? 'pointer-events-none opacity-60' : ''}`}>
-            {interaction.cards.filter((cardId: string) => Boolean(allCards[cardId])).map((cardId: string, idx: number) => {
+            {interactionCardIds.map((cardId: string, idx: number) => {
               const card = allCards[cardId];
               const basePrice = getBaseCardPrice(card);
               const price = getCardPrice(card);

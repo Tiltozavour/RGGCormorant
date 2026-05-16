@@ -21,20 +21,33 @@ describe("interactionCardPicker", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns only priced inventory cards for b-shop", () => {
+  it("returns unique priced inventory cards for b-shop", () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
 
     const cards = {
-      inv_priced: makeCard({ id: "inv_priced", deck: "inventory", price: 3 }),
+      inv_priced_1: makeCard({ id: "inv_priced_1", deck: "inventory", price: 3 }),
+      inv_priced_2: makeCard({ id: "inv_priced_2", deck: "inventory", price: 4 }),
+      inv_priced_3: makeCard({ id: "inv_priced_3", deck: "inventory", price: 5 }),
       inv_free: makeCard({ id: "inv_free", deck: "inventory", price: null }),
       mom_priced: makeCard({ id: "mom_priced", deck: "momental", price: 3 }),
     };
 
     expect(getRandomInteractionCardIds("bshop", cards)).toEqual([
-      "inv_priced",
-      "inv_priced",
-      "inv_priced",
+      "inv_priced_1",
+      "inv_priced_2",
+      "inv_priced_3",
     ]);
+  });
+
+  it("returns fewer b-shop cards instead of duplicating when the pool is small", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+
+    const cards = {
+      inv_priced: makeCard({ id: "inv_priced", deck: "inventory", price: 3 }),
+      inv_free: makeCard({ id: "inv_free", deck: "inventory", price: null }),
+    };
+
+    expect(getRandomInteractionCardIds("bshop", cards)).toEqual(["inv_priced"]);
   });
 
   it("can place one available legendary card in gambling when legendary chance hits", () => {
@@ -43,7 +56,8 @@ describe("interactionCardPicker", () => {
     const cards = {
       leg_taken: makeCard({ id: "leg_taken", rarity: "legendary", isWon: true }),
       leg_available: makeCard({ id: "leg_available", rarity: "legendary", isWon: false }),
-      common_card: makeCard({ id: "common_card", rarity: "common" }),
+      common_card_1: makeCard({ id: "common_card_1", rarity: "common" }),
+      common_card_2: makeCard({ id: "common_card_2", rarity: "common" }),
     };
 
     const result = getRandomInteractionCardIds("gambling", cards);
@@ -61,10 +75,6 @@ describe("interactionCardPicker", () => {
       common_card: makeCard({ id: "common_card", rarity: "common" }),
     };
 
-    expect(getRandomInteractionCardIds("gambling", cards)).toEqual([
-      "common_card",
-      "common_card",
-      "common_card",
-    ]);
+    expect(getRandomInteractionCardIds("gambling", cards)).toEqual(["common_card"]);
   });
 });
