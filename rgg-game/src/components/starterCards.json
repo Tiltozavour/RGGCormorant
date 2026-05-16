@@ -331,7 +331,7 @@
     "deck": "momental",
     "rarity": "epic",
     "action": "teleport",
-    "value": 0,
+    "value": 6,
     "faceCard": "/cards/card_back.svg",
     "artCard": "/cards/faces/blackhole.webp",
     "price": null,

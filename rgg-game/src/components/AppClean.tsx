@@ -186,6 +186,12 @@ function AppClean() {
     ...(playerData?.inventory ?? []),
     ...(hasGoldenCard ? ["inv_018"] : []),
   ];
+  const activeInteraction = gameState.activeInteraction;
+  const isWaitingForTaxResponse = Boolean(
+    activeInteraction?.type === "tax_response" &&
+    activeInteraction.playerId !== user?.uid &&
+    (activeInteraction.taxOwnerId === user?.uid || activeInteraction.taxCollectorId === user?.uid),
+  );
   const canUseSelectedCard = Boolean(
     selectedCardPreviewMode === 'use' &&
     selectedCard &&
@@ -519,14 +525,18 @@ function AppClean() {
 
   // Блокировка прокрутки фона при открытых полноэкранных окнах (магазин, гемблинг, выбор карты)
   useEffect(() => {
-    const shouldLock = !!gameState.activeInteraction || isHandOpen || isCollectionOpen || isLegendsOpen;
+    const interactionShouldLock = Boolean(
+      gameState.activeInteraction &&
+      !(gameState.activeInteraction.type === "tax_response" && gameState.activeInteraction.playerId !== user?.uid),
+    );
+    const shouldLock = interactionShouldLock || isHandOpen || isCollectionOpen || isLegendsOpen;
     if (shouldLock) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
     }
     return () => { document.body.style.overflow = ''; };
-  }, [gameState.activeInteraction, isHandOpen, isCollectionOpen, isLegendsOpen]);
+  }, [gameState.activeInteraction, isHandOpen, isCollectionOpen, isLegendsOpen, user?.uid]);
 
   if (loading) {
     return <LoadingScreen message={ru.common.loadingAccess} />;
@@ -701,6 +711,18 @@ function AppClean() {
                 </span>
               </div>
             )}
+          </div>
+        )}
+
+        {isWaitingForTaxResponse && activeInteraction?.type === "tax_response" && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[57] pointer-events-none">
+            <div className="bg-amber-500/20 border border-amber-300/40 backdrop-blur-md px-6 py-2 rounded-full shadow-[0_0_20px_rgba(251,191,36,0.25)]">
+              <span className="text-amber-100 text-[10px] font-black uppercase tracking-widest">
+                Ожидаем ответ игрока{" "}
+                <b className="text-white">{players.find(p => p.id === activeInteraction.playerId)?.login || "игрок"}</b>
+                {" "}по карте "Платите налоги!"
+              </span>
+            </div>
           </div>
         )}
 

@@ -62,6 +62,28 @@ const clearTemporaryStatus = {
   statusDuration: 0,
 };
 
+const getBacktrackPosition = (currentPosition: number, prevCell: number | null | undefined, steps: number) => {
+  if (steps >= 0) return currentPosition + steps;
+
+  let position = currentPosition;
+  let previous = prevCell;
+
+  for (let i = 0; i < Math.abs(steps); i += 1) {
+    if (previous == null) {
+      position = Math.max(0, position - 1);
+      previous = null;
+      continue;
+    }
+
+    const nextPosition = previous;
+    const nextPrevious = gameMap.find((cell) => cell.id === nextPosition)?.next.find((id) => id !== position) ?? null;
+    position = nextPosition;
+    previous = nextPrevious;
+  }
+
+  return Math.max(0, position);
+};
+
 /*
 
  * Проверяет, находится ли игрок в пределах одной клетки (соседняя или та же).
@@ -212,7 +234,7 @@ export function useGameData(
       } else if (momentalCard.action === "move_steps") {
         // For move_steps, actualValue is already calculated considering promo code
         const currentPos = player.position || 0;
-        const finalPosition = Math.max(0, currentPos + actualValue);
+        const finalPosition = getBacktrackPosition(currentPos, player.prevCell, actualValue);
         transaction.update(playerDocRef, {
           position: finalPosition,
           prevCell: null,
@@ -825,7 +847,7 @@ export function useGameData(
             const subjectPlayer = targetPlayerId ? getPlayerById(targetPlayerId) : playerData;
             const currentPos = subjectPlayer?.position || 0;
             const subjectId = targetPlayerId || user.uid;
-            const nextPosition = Math.max(0, currentPos + card.value);
+            const nextPosition = getBacktrackPosition(currentPos, subjectPlayer?.prevCell, card.value);
             let cardWasSpent = false;
 
             await runTransaction(db, async (transaction) => {
@@ -1294,14 +1316,6 @@ export function useGameData(
           const selectableInventory = victim?.inventory?.filter((inventoryCardId) => inventoryCardId !== "inv_018") ?? [];
 
           if (!victim || selectableInventory.length === 0) {
-            if (!(await commitPlayedCardAndGameState({
-              playerRef,
-              cardId: card.id,
-              requireCardInInventory: !isAdmin,
-            }))) {
-              notify("Этой карты уже нет в руке.", "warning", card.id);
-              break;
-            }
             notify("У выбранного игрока нет карт, которые можно сбросить.", "info", card.id);
             break;
           }
@@ -1352,14 +1366,6 @@ export function useGameData(
           const selectableInventory = victim?.inventory?.filter((inventoryCardId) => inventoryCardId !== "inv_018") ?? [];
 
           if (!victim || selectableInventory.length === 0) {
-            if (!(await commitPlayedCardAndGameState({
-              playerRef,
-              cardId: card.id,
-              requireCardInInventory: !isAdmin,
-            }))) {
-              notify("Этой карты уже нет в руке.", "warning", card.id);
-              break;
-            }
             notify("У выбранного игрока нет карт, которые можно забрать.", "info", card.id);
             break;
           }
@@ -2064,6 +2070,7 @@ export function useGameData(
     console.log("Выбор карты соперника:", targetPlayerId, "карта:", cardId);
     const cardName = allCards[cardId]?.name || "неизвестная карта";
     const actingCardId = gameState.activeInteraction?.actingCardId;
+    const targetName = getPlayerById(targetPlayerId)?.login || "игрок";
 
     try {
       await runTransaction(db, async (transaction) => {
@@ -2113,13 +2120,25 @@ export function useGameData(
         if (isSteal && recipientId) {
           const recipientRef = doc(db, "players", recipientId);
           transaction.update(recipientRef, {
-            inventory: addOneCardToInventory(recipientInventory, cardId)
+            inventory: addOneCardToInventory(recipientInventory, cardId),
+            lastNotification: {
+              message: `Вы забрали у игрока ${targetName} карту "${cardName}".`,
+              timestamp: Date.now(),
+              cardId,
+            },
           });
         }
 
         // Текст восстановлен после сбоя кодировки.
         transaction.update(gsRef, {
-          activeInteraction: null
+          activeInteraction: null,
+          [`notifications.${user.uid}`]: {
+            message: isSteal
+              ? `Вы забрали у игрока ${targetName} карту "${cardName}".`
+              : `Вы сбросили у игрока ${targetName} карту "${cardName}".`,
+            timestamp: Date.now(),
+            cardId,
+          },
         });
 
         // Текст восстановлен после сбоя кодировки.
@@ -2560,6 +2579,11 @@ export function useGameData(
     };
     try {
       if (useReflect) {
+        if (card.id === "inv_013" && (defender.tiltCoins ?? 0) <= 0) {
+          notify('Нельзя отразить "Коррупцию": у вас нет монет для движения.', 'warning', REFLECT_CARD_ID);
+          return;
+        }
+
         let reflectWasSpent = false;
         await runTransaction(db, async (transaction) => {
           const defenderSnap = await transaction.get(defenderRef);
@@ -2707,9 +2731,12 @@ export function useGameData(
         const updates: Record<string, unknown> = {};
 
         if (response === "pay" || response === "promo") {
-          const currentInventory = (playerSnap.data() as Player).inventory;
+          const currentPlayer = playerSnap.data() as Player;
+          const currentInventory = currentPlayer.inventory;
           const usedPromo = response === "promo";
-          if (usedPromo && !currentInventory?.includes("inv_019")) {
+          const hasPromoInInventory = currentInventory?.includes("inv_019");
+          const hasActivePromo = currentPlayer.customStatus === "promo_code_active";
+          if (usedPromo && !hasPromoInInventory && !hasActivePromo) {
             throw new Error("promo_card_missing");
           }
 
@@ -2717,7 +2744,8 @@ export function useGameData(
           bank += actualPayment;
           transaction.update(playerRef, {
             tiltCoins: increment(-actualPayment),
-            ...(usedPromo ? { inventory: removeOneCardFromInventory(currentInventory, "inv_019") } : {}),
+            ...(usedPromo && hasPromoInInventory ? { inventory: removeOneCardFromInventory(currentInventory, "inv_019") } : {}),
+            ...(usedPromo && hasActivePromo ? clearTemporaryStatus : {}),
             lastNotification: {
               message: usedPromo
                 ? `Вы использовали Промокодик и внесли ${actualPayment} монету в банк карты "Платите налоги!".`

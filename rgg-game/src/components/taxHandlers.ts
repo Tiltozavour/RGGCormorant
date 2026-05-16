@@ -8,10 +8,10 @@ import type { ToastNotification } from "./useModalStates";
 
 type Notify = (message: string, type?: ToastNotification["type"], cardId?: string) => void;
 
-export const getTaxResponseCardIds = (player?: Pick<Player, "inventory"> | null) => [
+export const getTaxResponseCardIds = (player?: Pick<Player, "inventory" | "customStatus"> | null) => [
   ...(player?.inventory?.includes("inv_012") ? ["inv_012"] : []),
   ...(player?.inventory?.includes("inv_006") ? ["inv_006"] : []),
-  ...(player?.inventory?.includes("inv_019") ? ["inv_019"] : []),
+  ...(player?.inventory?.includes("inv_019") || player?.customStatus === "promo_code_active" ? ["inv_019"] : []),
 ];
 
 export const buildNextTaxInteraction = ({

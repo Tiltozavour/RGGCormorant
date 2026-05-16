@@ -39,10 +39,11 @@ function ShopAndGamblingOverlays({
   handlers,
 }: ShopAndGamblingOverlaysProps) {
   const interaction = gameState.activeInteraction;
+  const interactionCards = Array.isArray(interaction?.cards) ? interaction.cards : [];
   const interactionCardIds =
-    interaction?.cards.filter((cardId: string, idx: number, cards: string[]) =>
+    interactionCards.filter((cardId: string, idx: number, cards: string[]) =>
       Boolean(allCards[cardId]) && cards.indexOf(cardId) === idx
-    ) ?? [];
+    );
 
   return (
     <>

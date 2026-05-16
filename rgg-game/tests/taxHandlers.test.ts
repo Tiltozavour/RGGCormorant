@@ -19,6 +19,13 @@ describe("taxHandlers", () => {
     ]);
   });
 
+  it("offers promo response when promo code status is already active", () => {
+    expect(getTaxResponseCardIds({
+      ...makePlayer("target", []),
+      customStatus: "promo_code_active",
+    })).toEqual(["inv_019"]);
+  });
+
   it("builds next tax interaction from queue and carries tax bank state", () => {
     const interaction = buildNextTaxInteraction({
       queue: ["player-2", "player-3"],
