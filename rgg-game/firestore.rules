@@ -139,6 +139,64 @@ service cloud.firestore {
         );
     }
 
+    function isValidInviteClaim() {
+      return signedIn() &&
+        changedOnly(["used", "usedBy"]) &&
+        resource.data.used != true &&
+        request.resource.data.used == true &&
+        request.resource.data.usedBy == request.auth.uid;
+    }
+
+    function validGameEventTypes() {
+      return [
+        "card_play",
+        "coin_change",
+        "movement",
+        "status_effect",
+        "duel",
+        "info",
+        "success",
+        "warning",
+        "error"
+      ];
+    }
+
+    function isValidGameEventCreate() {
+      return signedIn() &&
+        request.resource.data.keys().hasOnly([
+          "id",
+          "timestamp",
+          "type",
+          "message",
+          "details",
+          "cardId",
+          "playerId",
+          "targetPlayerId"
+        ]) &&
+        request.resource.data.id is string &&
+        request.resource.data.id.size() <= 120 &&
+        request.resource.data.timestamp is int &&
+        request.resource.data.type in validGameEventTypes() &&
+        request.resource.data.message is string &&
+        request.resource.data.message.size() <= 800 &&
+        (
+          !("cardId" in request.resource.data) ||
+          (request.resource.data.cardId is string && request.resource.data.cardId.size() <= 80)
+        ) &&
+        (
+          !("playerId" in request.resource.data) ||
+          (request.resource.data.playerId is string && request.resource.data.playerId.size() <= 128)
+        ) &&
+        (
+          !("targetPlayerId" in request.resource.data) ||
+          (request.resource.data.targetPlayerId is string && request.resource.data.targetPlayerId.size() <= 128)
+        ) &&
+        (
+          !("details" in request.resource.data) ||
+          request.resource.data.details is map
+        );
+    }
+
     match /wheel/{gameId} {
       allow read: if signedIn();
       allow write: if isAdmin();
@@ -166,7 +224,7 @@ service cloud.firestore {
 
     match /invites/{inviteId} {
       allow read: if true;
-      allow update: if signedIn();
+      allow update: if isAdmin() || isValidInviteClaim();
       allow create, delete: if isAdmin();
     }
 
@@ -233,7 +291,7 @@ service cloud.firestore {
 
     match /gameEvents/{eventId} {
       allow read: if signedIn();
-      allow create: if signedIn();
+      allow create: if isValidGameEventCreate();
       allow update, delete: if isAdmin();
     }
 

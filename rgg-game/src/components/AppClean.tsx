@@ -26,6 +26,8 @@ import InteractionPendingOverlay from "./InteractionPendingOverlay";
 import ShopAndGamblingOverlays from "./ShopAndGamblingOverlays";
 import TaxResponseOverlay from "./TaxResponseOverlay";
 import ToastContainer from "./ToastContainer";
+import { evaluateCardUseGuard, getCardUseGuardAlert } from "./cardUseGuards";
+import { cardNeedsTarget, getSelectableCardTargets } from "./cardTargetRules";
 import type { ToastNotification } from "./useModalStates";
 import { ru } from "../i18n/ru";
 
@@ -92,6 +94,21 @@ const RARITY_ORDER: Record<string, number> = {
   epic: 3,
   legendary: 4,
 };
+
+const LoadingScreen = ({ message }: { message: string }) => (
+  <div className="h-screen flex flex-col items-center justify-center gap-6 bg-black text-white px-6 text-center">
+    <img
+      src={getPublicAssetUrl("/video/load.gif")}
+      alt=""
+      className="h-36 w-36 object-contain"
+      aria-hidden="true"
+    />
+    <div className="flex flex-col items-center gap-2">
+      <p className="text-lg font-bold tracking-wide">{message}</p>
+      <p className="text-xs uppercase tracking-[0.35em] text-white/40">Пожалуйста, подождите</p>
+    </div>
+  </div>
+);
 
 function AppClean() {
   const {
@@ -355,14 +372,20 @@ function AppClean() {
 
   useEffect(() => {
     const cardRoll = gameState.cardDiceRoll;
-    if (!cardRoll || cardRoll.cardId !== "inv_009") return;
+    if (!cardRoll) return;
     if (lastProcessedCardRollRef.current === cardRoll.id) return;
+
+    const cardRollTitle: Record<string, string> = {
+      inv_008: "Judge",
+      inv_009: "Mage",
+      inv_016: "Katjit",
+    };
 
     lastProcessedCardRollRef.current = cardRoll.id;
     setCardVisualRoll({
       value: cardRoll.value,
       rolling: true,
-      playerName: `${cardRoll.playerName} - Сделка с магом`,
+      playerName: `${cardRoll.playerName} - ${cardRollTitle[cardRoll.cardId] || cardRoll.cardId}`,
     });
 
     window.setTimeout(() => {
@@ -429,96 +452,30 @@ function AppClean() {
     }
   }, [gameState.activeDuels, handlers, players, getPlayerById]);
 
-  // Проверка: требует ли карта выбора цели?
-  const cardNeedsTarget = (card: GameCardType) => {
-    const targetActions = ['steal_coins', 'steal_card', 'discard_card', 'duel', 'judge_coins', 'freeze_player', 'move_target_for_coins', 'move_target_and_self', 'communism'];
-    return card.requiresTarget || targetActions.includes(card.action) || card.id === "inv_007";
-  };
-
   const protectionCardsInInv = playerData?.inventory
     ?.map((id: string) => allCards[id])
     .filter((c): c is GameCardType => !!c && (c.action === "protection" || c.action === "fish_protection")) || [];
 
-  const canTargetSelf = (card: GameCardType) => card.id === "inv_007";
-
-  const selectableTargets = players.filter((player) => {
-    if (!player.inGame || player.role === "admin") return false;
-    if (player.id === user?.uid) return !!pendingTargetCard && canTargetSelf(pendingTargetCard);
-    return true;
-  });
+  const selectableTargets = getSelectableCardTargets(players, user?.uid, pendingTargetCard);
 
   const handleCardClick = async (card: GameCardType) => {
     if (isInteractionPending) return;
 
-    if (card.action === 'reflect_debuff') {
-      setGameAlert({
-        title: "Ответная карта",
-        message: "Карта \"А может тебя?\" появляется отдельным выбором, когда на вас играют подходящую направленную карту.",
-        type: 'info',
-        cardId: card.id,
-      });
-      return;
-    }
+    const guard = evaluateCardUseGuard({
+      isAdmin,
+      card,
+      phase: gameState.phase,
+      currentRoll: gameState.currentRoll,
+      rollConfirmed: gameState.rollConfirmed,
+      showWheel: gameState.showWheel,
+      currentTurnPlayerId,
+      userId: user?.uid,
+      hasProtection: playerData?.hasProtection,
+    });
 
-    // Предварительная проверка правил использования (дублируем логику из хука для UI)
-    if (!isAdmin) {
-      const { phase, currentRoll, showWheel } = gameState;
-      const isProtection = card.action === 'protection';
-      const isFish = card.action === 'fish_protection';
-      const isWheelCard = card.action === 'spin_wheel';
-      const isExtraRoll = card.action === 'extra_roll';
-      const isMovement = card.action === 'move_steps' || card.action === 'move_target_for_coins' || card.action === 'move_target_and_self';
-      const isCommunism = card.action === 'communism';
-      const isPromoCode = card.action === 'promo_code_benefit';
-
-      if (phase === 'next_game' && !isWheelCard && !(isFish && showWheel)) {
-        setGameAlert({ title: "Стоп!", message: "В этой фазе можно использовать только карту 'Подкрутка'!", type: 'warning', cardId: card.id });
-        return;
-      }
-      
-      if (phase === 'turn') {
-        // Защиту, Отражение и Промокодик можно всегда. Остальное только в свой ход.
-        if (!isProtection && !isFish && !isCommunism && !isPromoCode && currentTurnPlayerId !== user?.uid) {
-          setGameAlert({ title: "Не твой ход", message: "Обычные карты можно использовать только в свою очередь.", type: 'info', cardId: card.id });
-          return;
-        }
-
-        if (isMovement && gameState.rollConfirmed) {
-          setGameAlert({ title: "Движение начато", message: "Использовать карту перемещения можно только до подтверждения хода.", type: 'warning', cardId: card.id });
-          return;
-        }
-
-        // Обычные карты (не движение, не защита, не переброс) только ДО броска
-        const isSpecialAction = isProtection || isFish || isExtraRoll || isMovement || isCommunism || isPromoCode;
-        const isMyRollDone = currentRoll !== null && gameState.currentRollPlayerId === user?.uid;
-        
-        if (card.id === 'inv_005' && isMyRollDone) {
-          setGameAlert({ title: "Кубик брошен", message: "Квантовый прыжок можно использовать только до броска кубика.", type: 'warning', cardId: card.id });
-          return;
-        }
-
-        if (!isSpecialAction && isMyRollDone) {
-          setGameAlert({ title: "Кубик брошен", message: "Обычные карты (не движение и не защита) используются ДО броска.", type: 'warning', cardId: card.id });
-          return;
-        }
-
-        if (isExtraRoll && currentRoll === null) {
-          setGameAlert({ title: "Рано!", message: "Сначала бросьте кубик, чтобы использовать переброс!", type: 'info' });
-          return;
-        }
-      } else if (phase !== 'next_game' && !isFish) {
-        setGameAlert({ title: "Заблокировано", message: "Использование карт в этой фазе запрещено.", type: 'warning', cardId: card.id });
-        return;
-      }
-    }
-
-    if (card.action === 'protection' && playerData?.hasProtection) {
-      setGameAlert({ title: "Уже защищен", message: "У вас уже активно Силовое поле! Не стоит тратить карту впустую.", type: 'info', cardId: card.id });
-      return;
-    }
-
-    if (card.action === 'passive_benefit') {
-      setGameAlert({ title: "Пассивная карта", message: "Эта карта работает автоматически и не тратится при нажатии.", type: 'info', cardId: card.id });
+    if (!guard.ok) {
+      const alert = getCardUseGuardAlert(guard.reason);
+      setGameAlert({ ...alert, cardId: card.id });
       return;
     }
 
@@ -528,13 +485,13 @@ function AppClean() {
     } else {
       try {
         const completed = await runInteractionAction(() => handlers.handleUseCard(card)); // Делаем вызов асинхронным
-        if (completed) setSelectedCard(null); 
+        if (completed) setSelectedCard(null);
       } catch {
         // Ошибка уже показана в runInteractionAction.
       }
     }
   };
-  
+
 
   // Автоматическое открытие панели при прокрутке вниз
   useEffect(() => {
@@ -572,12 +529,12 @@ function AppClean() {
   }, [gameState.activeInteraction, isHandOpen, isCollectionOpen, isLegendsOpen]);
 
   if (loading) {
-    return <div className="h-screen flex items-center justify-center bg-black text-white">{ru.common.loadingAccess}</div>;
+    return <LoadingScreen message={ru.common.loadingAccess} />;
   }
 
   if (!user) return <Auth onLogin={() => {}} />;
 
-  if (!playerData) return <div className="h-screen flex items-center justify-center bg-black text-white">{ru.common.loadingProfile}</div>;
+  if (!playerData) return <LoadingScreen message={ru.common.loadingProfile} />;
 
   if (isScoresDetailsOpen) {
     return (

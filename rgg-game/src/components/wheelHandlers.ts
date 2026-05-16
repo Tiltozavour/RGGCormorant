@@ -131,18 +131,18 @@ export const rerollWheel = async ({
 }) => {
   if (!showWheel) {
     notify("Колесо сейчас закрыто.", "warning");
-    return;
+    return false;
   }
 
   const { wheelSettingsRef, wheelSettings } = await getWheelSettings();
   if (wheelSettings?.isSpinning) {
     notify("Дождитесь остановки колеса.", "info");
-    return;
+    return false;
   }
 
   if (typeof wheelSettings?.winnerIndex !== "number") {
     notify("Сначала нужно запустить колесо и получить результат.", "warning");
-    return;
+    return false;
   }
 
   const gamesSnap = await getDocs(collection(db, "wheel"));
@@ -152,7 +152,7 @@ export const rerollWheel = async ({
 
   if (activeGames.length === 0) {
     notify("В коллекции wheel нет активных игр для переброса.", "warning");
-    return;
+    return false;
   }
 
   const spinPayload = buildWheelSpinPayload(
@@ -187,6 +187,7 @@ export const rerollWheel = async ({
     "info",
     source === "inv_017" ? "inv_017" : undefined,
   );
+  return true;
 };
 
 export const cancelLastWheelCardWithFish = async (

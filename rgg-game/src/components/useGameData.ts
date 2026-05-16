@@ -37,6 +37,8 @@ import {
   removeOneCardFromInventory,
   shuffle,
 } from "./cardHandlers";
+import { evaluateCardUseGuard, getCardUseGuardAlert } from "./cardUseGuards";
+import { commitPlayedCardAndGameState } from "./cardPlayTransactions";
 import { useFinishedDuelCleanup } from "./duelHandlers";
 import { getRandomInteractionCardIds } from "./interactionCardPicker";
 import { grantPrizeCardToPlayer, isLegendaryPrizeCard } from "./legendaryHandlers";
@@ -307,8 +309,8 @@ export function useGameData(
     grantPrizeCardToPlayer({ isAdmin, playerId, cardId, notify });
 
   const handleRerollWheel = async (source: "participant_reroll" | "inv_017" = "participant_reroll") => {
-    if (!user || !playerData) return;
-    await rerollWheel({
+    if (!user || !playerData) return false;
+    return rerollWheel({
       userId: user.uid,
       showWheel: gameState.showWheel,
       source,
@@ -319,64 +321,21 @@ export function useGameData(
   const handleUseCard = async (card: GameCard, targetPlayerId: string | null = null) => {
     if (!user || !playerData) return;
 
-    if (!isAdmin) {
-      const { phase, currentRoll } = gameState;
+    const guard = evaluateCardUseGuard({
+      isAdmin,
+      card,
+      phase: gameState.phase,
+      currentRoll: gameState.currentRoll,
+      rollConfirmed: gameState.rollConfirmed,
+      showWheel: gameState.showWheel,
+      currentTurnPlayerId,
+      userId: user.uid,
+      hasProtection: playerData.hasProtection,
+    });
 
-      if (phase === "next_game") {
-        if (card.action !== "spin_wheel" && !(card.action === "fish_protection" && gameState.showWheel)) {
-          notify("В этой фазе можно использовать только карту 'Подкрутка'!", 'warning');
-          return;
-        }
-      } else if (phase === "turn") {
-        const isProtection = card.action === "protection";
-        const isFish = card.action === "fish_protection";
-        const isReflect = card.action === "reflect_debuff";
-        const isExtraRoll = card.action === "extra_roll";
-        const isMovement = card.action === "move_steps";
-        const isCommunism = card.action === "communism";
-        const isPromoCode = card.action === "promo_code_benefit";
-
-        if (!isProtection && !isFish && !isReflect && !isCommunism && !isPromoCode) {
-          if (!isCurrentPlayersTurn) {
-            notify("Сейчас не ваш ход!", 'warning');
-            return;
-          }
-
-          if (card.id === "inv_005" && currentRoll !== null) {
-            notify("Карту \"Квантовый прыжок\" можно использовать только до броска кубика.", 'warning', card.id);
-            return;
-          }
-
-          if (!isMovement && !isExtraRoll && currentRoll !== null) {
-            notify("Кубик уже брошен. Обычные карты используются ДО броска.", 'warning');
-            return;
-          }
-        }
-
-        if (isExtraRoll && currentRoll === null) {
-          notify("Сначала бросьте кубик!", 'warning');
-          return;
-        }
-      } else {
-        if (card.action !== "fish_protection") {
-          notify("Использование карт в этой фазе запрещено.", 'warning');
-          return;
-        }
-      }
-    }
-
-    if (card.action === "protection" && playerData.hasProtection) {
-      notify("У вас уже активно Силовое поле!", 'info');
-      return;
-    }
-
-    if (card.action === "passive_benefit") {
-      notify("Эта карта работает автоматически и не тратится при нажатии.", 'info');
-      return;
-    }
-
-    if (card.action === "reflect_debuff") {
-      notify('Карта "А может тебя?" используется только как ответ на направленную карту.', 'info', card.id);
+    if (!guard.ok) {
+      const alert = getCardUseGuardAlert(guard.reason);
+      notify(alert.message, alert.type, card.id);
       return;
     }
 
@@ -456,6 +415,26 @@ export function useGameData(
     try {
       const targetHasReflect = false;
       const targetHasFish = targetPlayer?.customStatus === "fish_shield";
+      const spendCardAndClearTargetStatus = async () => {
+        if (!targetRef) return false;
+
+        return runTransaction(db, async (transaction) => {
+          const actorSnap = await transaction.get(playerRef);
+          const inventory = (actorSnap.data() as Player | undefined)?.inventory ?? [];
+          const hasCard = inventory.includes(card.id);
+
+          if (!isAdmin && !hasCard) return false;
+
+          if (hasCard) {
+            transaction.update(playerRef, {
+              inventory: removeOneCardFromInventory(inventory, card.id),
+            });
+          }
+          transaction.update(targetRef, clearTemporaryStatus);
+          transaction.update(doc(db, "gameState", "current"), { revealedCards: arrayUnion(card.id) });
+          return true;
+        });
+      };
       const canOfferReflect = canOfferReflectResponse({
         cardId: card.id,
         currentPlayerId: user.uid,
@@ -476,11 +455,10 @@ export function useGameData(
           targetPlayerId: targetPlayerId ?? undefined
         });
 
-        await commitPlayerAndGameState(
+        const cardWasSpent = await commitPlayedCardAndGameState({
           playerRef,
-          { inventory: removeOneCardFromInventory(playerData.inventory, card.id) },
-          {
-            revealedCards: arrayUnion(card.id),
+          cardId: card.id,
+          gameStatePatch: {
             activeInteraction: {
               playerId: targetPlayerId,
               type: "reflect_response",
@@ -494,7 +472,13 @@ export function useGameData(
               cardId: card.id,
             },
           },
-        );
+          requireCardInInventory: !isAdmin,
+        });
+
+        if (!cardWasSpent) {
+          notify("Этой карты уже нет в руке.", "warning", card.id);
+          return;
+        }
         notify(`${targetPlayer?.login} может отразить карту "${displayCardName}".`, 'info', card.id);
         return;
       }
@@ -510,21 +494,60 @@ export function useGameData(
         targetPlayerId: targetPlayerId ?? undefined
       });
 
-      await commitPlayerAndGameState(
-        playerRef,
-        { inventory: removeOneCardFromInventory(playerData.inventory, card.id) },
-        { revealedCards: arrayUnion(card.id) },
-      );
+      const shouldSpendBeforeEffect =
+        card.action !== "move_steps" &&
+        card.action !== "add_coins" &&
+        card.action !== "steal_coins" &&
+        card.action !== "discard_card" &&
+        card.action !== "steal_card" &&
+        card.action !== "move_target_for_coins" &&
+        card.action !== "discard_next_drawn" &&
+        card.action !== "deal_with_mage" &&
+        card.action !== "duel" &&
+        card.action !== "judge_coins" &&
+        card.action !== "move_target_and_self" &&
+        card.action !== "pay_or_move_back" &&
+        card.action !== "take_next_card" &&
+        card.action !== "give_next_card" &&
+        card.action !== "communism" &&
+        card.action !== "extra_roll" &&
+        card.action !== "protection" &&
+        card.action !== "spin_wheel" &&
+        card.action !== "fish_protection" &&
+        card.action !== "promo_code_benefit" &&
+        card.action !== "teleport" &&
+        card.action !== "teleport_to_type";
+
+      if (shouldSpendBeforeEffect) {
+        const cardWasSpent = await commitPlayedCardAndGameState({
+          playerRef,
+          cardId: card.id,
+          requireCardInInventory: !isAdmin,
+        });
+
+        if (!cardWasSpent) {
+          notify("Этой карты уже нет в руке.", "warning", card.id);
+          return;
+        }
+      }
 
       switch (card.action) {
         case "extra_roll": {
           const activeBonus = (gameState.currentRoll ?? 0) - (gameState.lastBaseRoll ?? 0);
-          await updateDoc(doc(db, "gameState", "current"), {
-            currentRoll: null,
-            rollConfirmed: false,
-            lastBaseRoll: null,
-            rollBonus: activeBonus,
-          });
+          if (!(await commitPlayedCardAndGameState({
+            playerRef,
+            cardId: card.id,
+            gameStatePatch: {
+              currentRoll: null,
+              rollConfirmed: false,
+              lastBaseRoll: null,
+              rollBonus: activeBonus,
+            },
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
           notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `extra_roll_activated_${Date.now()}`,
@@ -538,11 +561,16 @@ export function useGameData(
         }
 
         case "add_coins":
-          await commitPlayerAndGameState(
+          if (!(await commitPlayedCardAndGameState({
             playerRef,
-            { tiltCoins: increment(card.value) },
-            card.value > 0 ? { hotCoinGain: makeHotCoinGain(user.uid, card.value, card.id, card.name) } : {},
-          );
+            cardId: card.id,
+            playerPatch: { tiltCoins: increment(card.value) },
+            gameStatePatch: card.value > 0 ? { hotCoinGain: makeHotCoinGain(user.uid, card.value, card.id, card.name) } : {},
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
           notify("Событие игры обновлено.", 'success');
           logEvent({
             id: `coin_gain_${card.id}_${Date.now()}`,
@@ -562,6 +590,14 @@ export function useGameData(
             if (card.id === "inv_016") {
               const roll = rollD6();
               const timestamp = Date.now();
+              const visualDiceRoll = {
+                id: `${card.id}_${user.uid}_${timestamp}`,
+                playerId: user.uid,
+                playerName: playerData.login,
+                cardId: card.id,
+                value: roll,
+                timestamp,
+              };
 
               if (roll >= 4) {
                 const {
@@ -571,7 +607,14 @@ export function useGameData(
                   amount: card.value,
                   hasPromoCode: targetPlayer.customStatus === "promo_code_active",
                 });
+                let cardWasSpent = false;
                 await runTransaction(db, async (transaction) => {
+                  const playerSnap = await transaction.get(playerRef);
+                  const inventory = (playerSnap.data() as Player | undefined)?.inventory ?? [];
+                  const hasCard = inventory.includes(card.id);
+
+                  if (!isAdmin && !hasCard) return;
+
                   transaction.update(targetRef, {
                     tiltCoins: increment(-actualVictimLoss),
                     ...(promoCodeReduced ? clearTemporaryStatus : {}),
@@ -581,10 +624,23 @@ export function useGameData(
                       cardId: card.id,
                     },
                   });
-                  transaction.update(playerRef, { tiltCoins: increment(actualVictimLoss) });
+                  transaction.update(playerRef, {
+                    ...(hasCard ? { inventory: removeOneCardFromInventory(inventory, card.id) } : {}),
+                    tiltCoins: increment(actualVictimLoss),
+                  });
+                  transaction.update(doc(db, "gameState", "current"), {
+                    revealedCards: arrayUnion(card.id),
+                    cardDiceRoll: visualDiceRoll,
+                  });
+                  cardWasSpent = true;
                 });
 
                 const resultMessage = `Катжит: бросок ${roll}. Успех! Вы украли ${actualVictimLoss} монет у ${targetPlayer.login}.`;
+                if (!cardWasSpent) {
+                  notify("Этой карты уже нет в руке.", "warning", card.id);
+                  break;
+                }
+
                 notify(resultMessage, actualVictimLoss > 0 ? 'success' : 'info', card.id);
                 logEvent({
                   id: `katjit_success_${card.id}_${timestamp}`,
@@ -597,7 +653,29 @@ export function useGameData(
                   details: { roll, success: true, amount: actualVictimLoss }
                 });
               } else {
-                await updateDoc(playerRef, { tiltCoins: increment(-card.value) });
+                let cardWasSpent = false;
+                await runTransaction(db, async (transaction) => {
+                  const playerSnap = await transaction.get(playerRef);
+                  const inventory = (playerSnap.data() as Player | undefined)?.inventory ?? [];
+                  const hasCard = inventory.includes(card.id);
+
+                  if (!isAdmin && !hasCard) return;
+
+                  transaction.update(playerRef, {
+                    ...(hasCard ? { inventory: removeOneCardFromInventory(inventory, card.id) } : {}),
+                    tiltCoins: increment(-card.value),
+                  });
+                  transaction.update(doc(db, "gameState", "current"), {
+                    revealedCards: arrayUnion(card.id),
+                    cardDiceRoll: visualDiceRoll,
+                  });
+                  cardWasSpent = true;
+                });
+
+                if (!cardWasSpent) {
+                  notify("Этой карты уже нет в руке.", "warning", card.id);
+                  break;
+                }
                 notify(`Катжит: бросок ${roll}. Провал! Вас заметили, вы теряете ${card.value} монет.`, 'error', card.id);
                 logEvent({
                   id: `katjit_fail_${card.id}_${timestamp}`,
@@ -611,20 +689,38 @@ export function useGameData(
                 });
               }
             } else {
+              let stealAmount = 0;
+              let cardWasSpent = false;
               await runTransaction(db, async (transaction) => {
+                const playerSnap = await transaction.get(playerRef);
                 const targetSnap = await transaction.get(targetRef);
+                const inventory = (playerSnap.data() as Player | undefined)?.inventory ?? [];
+                const hasCard = inventory.includes(card.id);
+
+                if (!isAdmin && !hasCard) return;
+
                 const currentTargetCoins = targetSnap.data()?.tiltCoins || 0;
-                const stealAmount = Math.min(Math.max(0, currentTargetCoins), card.value);
+                stealAmount = Math.min(Math.max(0, currentTargetCoins), card.value);
                 transaction.update(targetRef, { tiltCoins: increment(-stealAmount) });
-                transaction.update(playerRef, { tiltCoins: increment(stealAmount) });
+                transaction.update(playerRef, {
+                  ...(hasCard ? { inventory: removeOneCardFromInventory(inventory, card.id) } : {}),
+                  tiltCoins: increment(stealAmount),
+                });
+                transaction.update(doc(db, "gameState", "current"), { revealedCards: arrayUnion(card.id) });
+                cardWasSpent = true;
               });
+              if (!cardWasSpent) {
+                notify("Этой карты уже нет в руке.", "warning", card.id);
+                break;
+              }
+
               notify("Событие игры обновлено.", 'success');
               logEvent({
                 id: `steal_other_card_${card.id}_${Date.now()}`,
                 timestamp: Date.now(), type: 'coin_change',
                 message: "Событие игры.",
                 playerId: user.uid, targetPlayerId: targetPlayer.id, cardId: card.id,
-                details: { amount: card.value, cardName: card.name }
+                details: { amount: stealAmount, cardName: card.name }
               });
             }
           }
@@ -638,7 +734,10 @@ export function useGameData(
           if (isForward && gameState.phase === "turn") {
             if (card.id === "inv_007" && isHostile) {
               if (targetHasFish) {
-                await updateDoc(targetRef!, clearTemporaryStatus);
+                if (!(await spendCardAndClearTargetStatus())) {
+                  notify("Этой карты уже нет в руке.", "warning", card.id);
+                  break;
+                }
                 notify(`${targetPlayer?.login} защитился картой "No, no, no Mr.Fish".`, 'warning', card.id);
                 logEvent({
                   id: `move_blocked_${card.id}_${Date.now()}`,
@@ -654,21 +753,29 @@ export function useGameData(
               }
 
               const timestamp = Date.now();
-              await updateDoc(doc(db, "gameState", "current"), {
-                cardMove: {
-                  id: `${card.id}_${timestamp}`,
-                  controllerId: user.uid,
-                  controllerName: playerData.login,
-                  targetId,
-                  steps: card.value,
-                  cardId: card.id,
-                  cardName: card.name,
+              if (!(await commitPlayedCardAndGameState({
+                playerRef,
+                cardId: card.id,
+                gameStatePatch: {
+                  cardMove: {
+                    id: `${card.id}_${timestamp}`,
+                    controllerId: user.uid,
+                    controllerName: playerData.login,
+                    targetId,
+                    steps: card.value,
+                    cardId: card.id,
+                    cardName: card.name,
+                  },
+                  forcedMovePlayerId: null,
+                  currentRoll: null,
+                  currentRollPlayerId: null,
+                  rollConfirmed: false,
                 },
-                forcedMovePlayerId: null,
-                currentRoll: null,
-                currentRollPlayerId: null,
-                rollConfirmed: false,
-              });
+                requireCardInInventory: !isAdmin,
+              }))) {
+                notify("Этой карты уже нет в руке.", "warning", card.id);
+                break;
+              }
               notify(`Вы управляете фишкой игрока ${targetPlayer?.login} на ${card.value} клетки.`, 'info', card.id);
               logEvent({
                 id: `card_move_start_${card.id}_${timestamp}`,
@@ -685,26 +792,74 @@ export function useGameData(
 
             const isMyRollActive = gameState.currentRoll !== null && gameState.currentRollPlayerId === user.uid;
             if (isMyRollActive) {
-              await updateDoc(doc(db, "gameState", "current"), {
-                currentRoll: increment(card.value),
-                currentRollPlayerId: targetId,
-                rollConfirmed: false,
-              });
+              if (!(await commitPlayedCardAndGameState({
+                playerRef,
+                cardId: card.id,
+                gameStatePatch: {
+                  currentRoll: increment(card.value),
+                  currentRollPlayerId: targetId,
+                  rollConfirmed: false,
+                },
+                requireCardInInventory: !isAdmin,
+              }))) {
+                notify("Этой карты уже нет в руке.", "warning", card.id);
+                break;
+              }
               notify(`Ваш текущий ход увеличен на ${card.value} (итого: ${(gameState.currentRoll || 0) + card.value}).`, 'info', card.id);
             } else {
-              await updateDoc(doc(db, "gameState", "current"), {
-                rollBonus: increment(card.value),
-              });
+              if (!(await commitPlayedCardAndGameState({
+                playerRef,
+                cardId: card.id,
+                gameStatePatch: {
+                  rollBonus: increment(card.value),
+                },
+                requireCardInInventory: !isAdmin,
+              }))) {
+                notify("Этой карты уже нет в руке.", "warning", card.id);
+                break;
+              }
               notify(`Следующий бросок получит бонус +${card.value}.`, 'info', card.id);
             }
           } else {
             const subjectRef = targetRef || playerRef;
             const subjectPlayer = targetPlayerId ? getPlayerById(targetPlayerId) : playerData;
             const currentPos = subjectPlayer?.position || 0;
-            await updateDoc(subjectRef, {
-              position: Math.max(0, currentPos + card.value),
-              prevCell: null,
+            const subjectId = targetPlayerId || user.uid;
+            const nextPosition = Math.max(0, currentPos + card.value);
+            let cardWasSpent = false;
+
+            await runTransaction(db, async (transaction) => {
+              const actorSnap = await transaction.get(playerRef);
+              const inventory = (actorSnap.data() as Player | undefined)?.inventory ?? [];
+              const hasCard = inventory.includes(card.id);
+
+              if (!isAdmin && !hasCard) return;
+
+              if (subjectId === user.uid) {
+                transaction.update(playerRef, {
+                  ...(hasCard ? { inventory: removeOneCardFromInventory(inventory, card.id) } : {}),
+                  position: nextPosition,
+                  prevCell: null,
+                });
+              } else {
+                if (hasCard) {
+                  transaction.update(playerRef, {
+                    inventory: removeOneCardFromInventory(inventory, card.id),
+                  });
+                }
+                transaction.update(subjectRef, {
+                  position: nextPosition,
+                  prevCell: null,
+                });
+              }
+              transaction.update(doc(db, "gameState", "current"), { revealedCards: arrayUnion(card.id) });
+              cardWasSpent = true;
             });
+
+            if (!cardWasSpent) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
+              break;
+            }
             notify(`${subjectPlayer?.login || playerData.login} переместился на ${card.value} клеток по карте "${card.name}".`, 'info', card.id);
             logEvent({
               id: `player_moved_${card.id}_${Date.now()}`,
@@ -720,7 +875,15 @@ export function useGameData(
         }
 
         case "teleport":
-          await updateDoc(playerRef, { position: card.value, prevCell: null });
+          if (!(await commitPlayedCardAndGameState({
+            playerRef,
+            cardId: card.id,
+            playerPatch: { position: card.value, prevCell: null },
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
           notify(`Вы телепортировались на клетку ${card.value}.`, 'info', card.id);
           logEvent({
             id: `teleport_${card.id}_${Date.now()}`,
@@ -743,10 +906,11 @@ export function useGameData(
             break;
           }
 
-          await commitPlayerAndGameState(
+          if (!(await commitPlayedCardAndGameState({
             playerRef,
-            { position: targetPosition, prevCell: null },
-            {
+            cardId: card.id,
+            playerPatch: { position: targetPosition, prevCell: null },
+            gameStatePatch: {
               currentRoll: null,
               currentRollPlayerId: null,
               lastBaseRoll: null,
@@ -760,7 +924,11 @@ export function useGameData(
                 cards: getRandomInteractionCardIds("bshop", allCards),
               },
             },
-          );
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
           notify(`Вы телепортировались в B-Shop на клетку ${targetPosition}.`, 'info', card.id);
           logEvent({
             id: `teleport_to_bshop_${card.id}_${Date.now()}`,
@@ -776,26 +944,70 @@ export function useGameData(
 
         case "spin_wheel":
           if (gameState.showWheel) {
-            await handleRerollWheel("inv_017");
+            const wheelWasRerolled = await handleRerollWheel("inv_017");
+            if (!wheelWasRerolled) break;
+
+            if (!(await commitPlayedCardAndGameState({
+              playerRef,
+              cardId: card.id,
+              requireCardInInventory: !isAdmin,
+            }))) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
+              break;
+            }
           } else {
-            await updateDoc(doc(db, "gameState", "current"), { showWheel: true });
+            if (!(await commitPlayedCardAndGameState({
+              playerRef,
+              cardId: card.id,
+              gameStatePatch: { showWheel: true },
+              requireCardInInventory: !isAdmin,
+            }))) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
+              break;
+            }
             notify("Колесо открыто. Дождитесь результата, чтобы использовать переброс.", "info", card.id);
           }
           break;
 
         case "protection":
-          await updateDoc(playerRef, { hasProtection: true });
+          if (!(await commitPlayedCardAndGameState({
+            playerRef,
+            cardId: card.id,
+            playerPatch: { hasProtection: true },
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
           notify("Силовое поле активно.", 'info', card.id);
           break;
         
         case "fish_protection":
           if (gameState.showWheel) {
-            await cancelLastWheelCardWithFish(user.uid, notify, card.id);
+            const wheelCardWasCancelled = await cancelLastWheelCardWithFish(user.uid, notify, card.id);
+            if (!wheelCardWasCancelled) break;
+
+            if (!(await commitPlayedCardAndGameState({
+              playerRef,
+              cardId: card.id,
+              requireCardInInventory: !isAdmin,
+            }))) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
+              break;
+            }
           } else {
-            await updateDoc(playerRef, {
-              customStatus: "fish_shield",
-              statusDuration: 1,
-            });
+            if (!(await commitPlayedCardAndGameState({
+              playerRef,
+              cardId: card.id,
+              playerPatch: {
+                customStatus: "fish_shield",
+                statusDuration: 1,
+              },
+              requireCardInInventory: !isAdmin,
+            }))) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
+              break;
+            }
             notify("Защита No, no, no Mr.Fish активна.", 'info', card.id);
           }
           break;
@@ -804,82 +1016,148 @@ export function useGameData(
           notify("Легендарная карта активирована.", 'success', card.id);
           break;
 
-        case "judge_coins":
-          if (targetPlayerId && targetRef) {
-            const isHostile = targetPlayerId !== user.uid;
-            if (isHostile && targetHasFish) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-              notify(`${targetPlayer?.login} защитился картой "No, no, no Mr.Fish".`, 'warning', card.id);
-              logEvent({
-                id: `judge_blocked_${card.id}_${Date.now()}`,
-                timestamp: Date.now(),
-                type: 'status_effect',
-                message: `${targetPlayer?.login} заблокировал карту "Судья душ".`,
-                playerId: targetPlayerId,
-                targetPlayerId: user.uid,
-                cardId: card.id
-              });
+        case "judge_coins": {
+          if (!targetPlayerId || !targetRef) {
+            notify("Выберите игрока для карты \"Судья душ\".", "warning", card.id);
+            break;
+          }
+
+          const isHostile = targetPlayerId !== user.uid;
+          const reflected = isHostile && targetHasReflect;
+
+          if (isHostile && targetHasFish) {
+            let cardWasSpent = false;
+            await runTransaction(db, async (transaction) => {
+              const actorSnap = await transaction.get(playerRef);
+              const inventory = (actorSnap.data() as Player | undefined)?.inventory ?? [];
+              const hasCard = inventory.includes(card.id);
+
+              if (!isAdmin && !hasCard) return;
+
+              if (hasCard) {
+                transaction.update(playerRef, {
+                  inventory: removeOneCardFromInventory(inventory, card.id),
+                });
+              }
+              transaction.update(targetRef, clearTemporaryStatus);
+              transaction.update(doc(db, "gameState", "current"), { revealedCards: arrayUnion(card.id) });
+              cardWasSpent = true;
+            });
+
+            if (!cardWasSpent) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
               break;
             }
 
-            const targetDoc = (isHostile && targetHasReflect) ? playerRef : targetRef;
-            const affectedPlayerId = (isHostile && targetHasReflect) ? user.uid : targetPlayerId;
-            const affectedPlayerName = (isHostile && targetHasReflect) ? playerData.login : (targetPlayer?.login || "игрок");
-            const originalTargetName = targetPlayer?.login || "игрок";
-            
-            if (isHostile && targetHasReflect) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-              notify(`${originalTargetName} отразил карту "Судья душ". Эффект вернулся к вам.`, 'warning', card.id);
+            notify(`${targetPlayer?.login} защитился картой "No, no, no Mr.Fish".`, "warning", card.id);
+            logEvent({
+              id: `judge_blocked_${card.id}_${Date.now()}`,
+              timestamp: Date.now(),
+              type: "status_effect",
+              message: `${targetPlayer?.login} заблокировал карту "Судья душ".`,
+              playerId: targetPlayerId,
+              targetPlayerId: user.uid,
+              cardId: card.id,
+            });
+            break;
+          }
+
+          const affectedPlayerId = reflected ? user.uid : targetPlayerId;
+          const affectedPlayerName = reflected ? playerData.login : (targetPlayer?.login || "игрок");
+          const affectedPlayer = reflected ? playerData : targetPlayer;
+          const affectedRef = affectedPlayerId === user.uid ? playerRef : targetRef;
+          const originalTargetName = targetPlayer?.login || "игрок";
+          const roll = rollD6();
+          const timestamp = Date.now();
+          const visualDiceRoll = {
+            id: `${card.id}_${affectedPlayerId}_${timestamp}`,
+            playerId: user.uid,
+            playerName: affectedPlayerName,
+            cardId: card.id,
+            value: roll,
+            timestamp,
+          };
+          const { baseDelta, delta, amount, promoCodeReduced } = calculateJudgeCoinsOutcome({
+            roll,
+            cardValue: card.value,
+            hasPromoCode: affectedPlayer?.customStatus === "promo_code_active",
+          });
+          const promoText = promoCodeReduced ? " Промокодик смягчил потерю." : "";
+          const resultText = delta >= 0 ? `получает ${amount} монет` : `теряет ${amount} монет`;
+          const resultMsg = `Судья душ: бросок ${roll}. ${affectedPlayerName} ${resultText}.`;
+
+          const judgeGameStatePatch: Record<string, unknown> = {
+            revealedCards: arrayUnion(card.id),
+            cardDiceRoll: visualDiceRoll,
+          };
+          if (delta > 0) {
+            judgeGameStatePatch.hotCoinGain = makeHotCoinGain(affectedPlayerId, delta, card.id, displayCardName);
+          }
+          if (affectedPlayerId !== user.uid) {
+            judgeGameStatePatch[`notifications.${affectedPlayerId}`] = {
+              message: `${playerData.login} использовал карту "Судья душ" против вас: бросок ${roll}, вы ${delta >= 0 ? `получаете ${amount} монет` : `теряете ${amount} монет`}.`,
+              type: delta >= 0 ? "success" : "warning",
+              cardId: card.id,
+              timestamp: Date.now(),
+            };
+          }
+
+          let cardWasSpent = false;
+          await runTransaction(db, async (transaction) => {
+            const actorSnap = await transaction.get(playerRef);
+            const inventory = (actorSnap.data() as Player | undefined)?.inventory ?? [];
+            const hasCard = inventory.includes(card.id);
+
+            if (!isAdmin && !hasCard) return;
+
+            const actorPatch: Record<string, unknown> = {};
+            if (hasCard) {
+              actorPatch.inventory = removeOneCardFromInventory(inventory, card.id);
+            }
+            if (affectedPlayerId === user.uid) {
+              actorPatch.tiltCoins = increment(delta);
+              if (promoCodeReduced) Object.assign(actorPatch, clearTemporaryStatus);
+            }
+            if (Object.keys(actorPatch).length > 0) {
+              transaction.update(playerRef, actorPatch);
             }
 
-            const roll = rollD6();
-            const affectedPlayer = (isHostile && targetHasReflect) ? playerData : targetPlayer;
-            const { baseDelta, delta, amount, promoCodeReduced } = calculateJudgeCoinsOutcome({
-              roll,
-              cardValue: card.value,
-              hasPromoCode: affectedPlayer?.customStatus === "promo_code_active",
-            });
-            const promoText = promoCodeReduced ? " Промокодик смягчил потерю." : "";
-            const resultText = delta >= 0 ? `получает ${amount} монет` : `теряет ${amount} монет`;
-            const resultMsg = `Судья душ: бросок ${roll}. ${affectedPlayerName} ${resultText}.`;
-            
-            const judgeGameStatePatch: Record<string, unknown> = {};
-            if (delta > 0) {
-              judgeGameStatePatch.hotCoinGain = makeHotCoinGain(affectedPlayerId, delta, card.id, displayCardName);
-            }
             if (affectedPlayerId !== user.uid) {
-              judgeGameStatePatch[`notifications.${affectedPlayerId}`] = {
-                message: `${playerData.login} использовал карту "Судья душ" против вас: бросок ${roll}, вы ${delta >= 0 ? `получаете ${amount} монет` : `теряете ${amount} монет`}.`,
-                type: delta >= 0 ? 'success' : 'warning',
-                cardId: card.id,
-                timestamp: Date.now(),
-              };
-            }
-            await commitPlayerAndGameState(
-              targetDoc,
-              {
+              transaction.update(affectedRef, {
                 tiltCoins: increment(delta),
                 ...(promoCodeReduced ? clearTemporaryStatus : {}),
-              },
-              judgeGameStatePatch,
-            );
+              });
+            }
 
-            notify(`${resultMsg}${promoText}`, delta >= 0 ? 'success' : 'warning', card.id);
-            logEvent({
-              id: `judge_coins_result_${card.id}_${Date.now()}`,
-              timestamp: Date.now(),
-              type: 'coin_change',
-              message: `${playerData.login} использовал "Судья душ": бросок ${roll}, ${affectedPlayerName} ${resultText}.`,
-              playerId: user.uid,
-              targetPlayerId: affectedPlayerId,
-              cardId: card.id,
-              details: { roll, delta, baseDelta, target: affectedPlayerName, reflected: isHostile && targetHasReflect, promoCodeReduced }
-            });
-          } else {
-            notify("Выберите игрока для карты \"Судья душ\".", 'warning', card.id);
+            if (reflected) {
+              transaction.update(targetRef, clearTemporaryStatus);
+            }
+
+            transaction.update(doc(db, "gameState", "current"), judgeGameStatePatch);
+            cardWasSpent = true;
+          });
+
+          if (!cardWasSpent) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
           }
+
+          if (reflected) {
+            notify(`${originalTargetName} отразил карту "Судья душ". Эффект вернулся к вам.`, "warning", card.id);
+          }
+          notify(`${resultMsg}${promoText}`, delta >= 0 ? "success" : "warning", card.id);
+          logEvent({
+            id: `judge_coins_result_${card.id}_${Date.now()}`,
+            timestamp: Date.now(),
+            type: "coin_change",
+            message: `${playerData.login} использовал "Судья душ": бросок ${roll}, ${affectedPlayerName} ${resultText}.`,
+            playerId: user.uid,
+            targetPlayerId: affectedPlayerId,
+            cardId: card.id,
+            details: { roll, delta, baseDelta, target: affectedPlayerName, reflected, promoCodeReduced },
+          });
           break;
-        case "deal_with_mage": {
+        }        case "deal_with_mage": {
           const roll = rollD6();
           const timestamp = Date.now();
           const mageCardName = "Сделка с магом";
@@ -894,10 +1172,18 @@ export function useGameData(
 
           const resolveMageAfterVisualRoll = true;
           if (resolveMageAfterVisualRoll) {
-            await updateDoc(doc(db, "gameState", "current"), {
-              cardDiceRoll: mageDiceRoll,
-              activeInteraction: null,
-            });
+            if (!(await commitPlayedCardAndGameState({
+              playerRef,
+              cardId: card.id,
+              gameStatePatch: {
+                cardDiceRoll: mageDiceRoll,
+                activeInteraction: null,
+              },
+              requireCardInInventory: !isAdmin,
+            }))) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
+              break;
+            }
             notify("Сделка с магом: бросаем кубик...", 'info', card.id);
             logEvent({
               id: `mage_deal_roll_${card.id}_${timestamp}`,
@@ -988,109 +1274,150 @@ export function useGameData(
           }
           break;
         }
-        case "discard_card":
-          if (targetRef && targetPlayerId) {
-            if (targetHasFish) {
-              await updateDoc(targetRef, clearTemporaryStatus); // Clear fish shield
-              notify("Событие игры обновлено.", 'warning');
-              break;
-            }
-
-            const victimId = targetHasReflect ? user.uid : targetPlayerId;
-            const victim = getPlayerById(victimId);
-
-            const selectableInventory = victim?.inventory?.filter((inventoryCardId) => inventoryCardId !== "inv_018") ?? [];
-            if (!victim || selectableInventory.length === 0) {
-              notify("Событие игры обновлено.", 'info');
-              break;
-            }
-
-            if (targetHasReflect) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-            }
-
-            // Текст восстановлен после сбоя кодировки.
-            await updateDoc(doc(db, "gameState", "current"), {
-              activeInteraction: {
-                playerId: user.uid,
-                type: "discard_selection",
-                targetPlayerId: victimId,
-                // Текст восстановлен после сбоя кодировки.
-                cards: shuffle(selectableInventory),
-                actingCardId: card.id,
-              }
-            });
-            if (targetHasReflect) notify("Событие игры обновлено.", 'info');
-          }
-          break;
-
-        case "steal_card":
-          if (targetRef && targetPlayerId) {
-            if (targetHasFish) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-              notify("Событие игры обновлено.", 'warning');
-              break;
-            }
-
-            const victimId = targetHasReflect ? user.uid : targetPlayerId;
-            const victim = getPlayerById(victimId);
-            const recipientId = targetHasReflect ? targetPlayerId : user.uid;
-
-            const selectableInventory = victim?.inventory?.filter((inventoryCardId) => inventoryCardId !== "inv_018") ?? [];
-            if (!victim || selectableInventory.length === 0) {
-              notify("Событие игры обновлено.", 'info');
-              break;
-            }
-
-            if (targetHasReflect) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-            }
-
-            // Текст восстановлен после сбоя кодировки.
-            await updateDoc(doc(db, "gameState", "current"), {
-              activeInteraction: {
-                playerId: user.uid,
-                type: "discard_selection",
-                targetPlayerId: victimId,
-                recipientId: recipientId,
-                // Текст восстановлен после сбоя кодировки.
-                cards: shuffle(selectableInventory),
-                actingCardId: card.id,
-              }
-            });
-            notify("Событие игры обновлено.", 'warning');
-          }
-          break;
-
-        case "move_target_for_coins": {
+        case "discard_card": {
           if (!targetRef || !targetPlayerId) {
-            notify("Событие игры обновлено.", 'warning');
+            notify("Выберите игрока для этой карты.", "warning", card.id);
             break;
           }
 
-            if (targetHasFish) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-              notify("Событие игры обновлено.", 'warning');
+          if (targetHasFish) {
+            if (!(await spendCardAndClearTargetStatus())) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
               break;
             }
-            const steps = Math.min(playerData.tiltCoins ?? 0, 6);
-            if (steps <= 0) {
-              // This alert will be handled by AppClean.tsx
-              // Текст восстановлен после сбоя кодировки.
-              await updateDoc(playerRef, { inventory: playerData.inventory ?? [card.id] }); // Return card if no coins
-              await updateDoc(doc(db, "gameState", "current"), { revealedCards: arrayRemove(card.id) });
+            notify("Карта заблокирована No, no, no Mr.Fish.", "warning", card.id);
+            break;
+          }
+
+          const victimId = targetHasReflect ? user.uid : targetPlayerId;
+          const victim = getPlayerById(victimId);
+          const selectableInventory = victim?.inventory?.filter((inventoryCardId) => inventoryCardId !== "inv_018") ?? [];
+
+          if (!victim || selectableInventory.length === 0) {
+            if (!(await commitPlayedCardAndGameState({
+              playerRef,
+              cardId: card.id,
+              requireCardInInventory: !isAdmin,
+            }))) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
               break;
             }
-            const actualTargetId = targetHasReflect ? user.uid : targetPlayerId;
-            // const actualTargetRef = doc(db, "players", actualTargetId); // Not needed here, will be used in handleConfirmMoveForCoins
-            // const actualTarget = getPlayerById(actualTargetId); // Not needed here
+            notify("У выбранного игрока нет карт, которые можно сбросить.", "info", card.id);
+            break;
+          }
 
-            if (targetHasReflect) {
-              await updateDoc(targetRef, clearTemporaryStatus);
+          if (!(await commitPlayedCardAndGameState({
+            playerRef,
+            cardId: card.id,
+            gameStatePatch: {
+              activeInteraction: {
+                playerId: user.uid,
+                type: "discard_selection",
+                targetPlayerId: victimId,
+                cards: shuffle(selectableInventory),
+                actingCardId: card.id,
+              },
+            },
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
+
+          if (targetHasReflect) {
+            await updateDoc(targetRef, clearTemporaryStatus);
+            notify("Карта отражена. Вы выбираете карту у себя.", "info", card.id);
+          }
+          break;
+        }
+
+        case "steal_card": {
+          if (!targetRef || !targetPlayerId) {
+            notify("Выберите игрока для этой карты.", "warning", card.id);
+            break;
+          }
+
+          if (targetHasFish) {
+            if (!(await spendCardAndClearTargetStatus())) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
+              break;
             }
+            notify("Карта заблокирована No, no, no Mr.Fish.", "warning", card.id);
+            break;
+          }
 
-            // Trigger interaction to ask for coins
-            await updateDoc(doc(db, "gameState", "current"), {
+          const victimId = targetHasReflect ? user.uid : targetPlayerId;
+          const victim = getPlayerById(victimId);
+          const recipientId = targetHasReflect ? targetPlayerId : user.uid;
+          const selectableInventory = victim?.inventory?.filter((inventoryCardId) => inventoryCardId !== "inv_018") ?? [];
+
+          if (!victim || selectableInventory.length === 0) {
+            if (!(await commitPlayedCardAndGameState({
+              playerRef,
+              cardId: card.id,
+              requireCardInInventory: !isAdmin,
+            }))) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
+              break;
+            }
+            notify("У выбранного игрока нет карт, которые можно забрать.", "info", card.id);
+            break;
+          }
+
+          if (!(await commitPlayedCardAndGameState({
+            playerRef,
+            cardId: card.id,
+            gameStatePatch: {
+              activeInteraction: {
+                playerId: user.uid,
+                type: "discard_selection",
+                targetPlayerId: victimId,
+                recipientId,
+                cards: shuffle(selectableInventory),
+                actingCardId: card.id,
+              },
+            },
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
+
+          if (targetHasReflect) {
+            await updateDoc(targetRef, clearTemporaryStatus);
+            notify("Карта отражена. Противник заберет выбранную карту у вас.", "info", card.id);
+          } else {
+            notify("Выберите карту вслепую.", "warning", card.id);
+          }
+          break;
+        }
+
+        case "move_target_for_coins": {
+          if (!targetRef || !targetPlayerId) {
+            notify("Выберите игрока для этой карты.", "warning", card.id);
+            break;
+          }
+
+          if (targetHasFish) {
+            if (!(await spendCardAndClearTargetStatus())) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
+              break;
+            }
+            notify("Карта заблокирована No, no, no Mr.Fish.", "warning", card.id);
+            break;
+          }
+
+          const steps = Math.min(playerData.tiltCoins ?? 0, 6);
+          if (steps <= 0) {
+            notify("Для этой карты нужны монеты.", "warning", card.id);
+            break;
+          }
+
+          const actualTargetId = targetHasReflect ? user.uid : targetPlayerId;
+          if (!(await commitPlayedCardAndGameState({
+            playerRef,
+            cardId: card.id,
+            gameStatePatch: {
               activeInteraction: {
                 playerId: user.uid,
                 type: "move_for_coins_selection",
@@ -1098,19 +1425,39 @@ export function useGameData(
                 targetPlayerId: actualTargetId,
                 actingCardId: card.id,
               },
-            });
-            logEvent({
-              id: `move_for_coins_start_${card.id}_${Date.now()}`,
-              timestamp: Date.now(), type: 'card_play',
-              message: "Событие игры.",
-              playerId: user.uid, targetPlayerId: targetPlayer?.id, cardId: card.id,
-              details: { reflected: targetHasReflect }
-            });
+            },
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
             break;
-        }
+          }
 
+          if (targetHasReflect) {
+            await updateDoc(targetRef, clearTemporaryStatus);
+          }
+
+          logEvent({
+            id: `move_for_coins_start_${card.id}_${Date.now()}`,
+            timestamp: Date.now(),
+            type: "card_play",
+            message: "Событие игры.",
+            playerId: user.uid,
+            targetPlayerId: targetPlayer?.id,
+            cardId: card.id,
+            details: { reflected: targetHasReflect },
+          });
+          break;
+        }
         case "discard_next_drawn":
-          await updateDoc(playerRef, { discardNextDrawn: true });
+          if (!(await commitPlayedCardAndGameState({
+            playerRef,
+            cardId: card.id,
+            playerPatch: { discardNextDrawn: true },
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
           notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `discard_next_drawn_${card.id}_${Date.now()}`,
@@ -1159,25 +1506,32 @@ export function useGameData(
             }
           };
 
-          await updateDoc(doc(db, "gameState", "current"), {
-            [`activeDuels.${newDuelId}`]: initialDuelState,
-            activeInteraction: {
-              playerId: duelTargetId,
-              type: "duel_challenge_response",
-              duelId: newDuelId,
-              cards: targetHasFishProtection ? ["inv_006"] : [],
-              actingCardId: duelCardId,
-              targetPlayerId: duelChallengerId,
+          if (!(await commitPlayedCardAndGameState({
+            playerRef,
+            cardId: card.id,
+            playerPatch: {
+              lastNotification: {
+                message: challengerWaitMessage,
+                timestamp: Date.now(),
+                cardId: duelCardId,
+              },
             },
-          });
-
-          await updateDoc(playerRef, {
-            lastNotification: {
-              message: challengerWaitMessage,
-              timestamp: Date.now(),
-              cardId: duelCardId,
+            gameStatePatch: {
+              [`activeDuels.${newDuelId}`]: initialDuelState,
+              activeInteraction: {
+                playerId: duelTargetId,
+                type: "duel_challenge_response",
+                duelId: newDuelId,
+                cards: targetHasFishProtection ? ["inv_006"] : [],
+                actingCardId: duelCardId,
+                targetPlayerId: duelChallengerId,
+              },
             },
-          });
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
 
           logEvent({
             id: `duel_challenge_${card.id}_${Date.now()}`,
@@ -1189,39 +1543,89 @@ export function useGameData(
           break;
         }
 
-        case "move_target_and_self":
-          if (targetRef && targetPlayerId) {
-            if (targetHasFish) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-              notify("Событие игры обновлено.", 'warning');
-              logEvent({
-                id: `move_and_self_blocked_${card.id}_${Date.now()}`,
-                timestamp: Date.now(), type: 'status_effect',
-                message: "Событие игры.",
-                playerId: targetPlayer?.id, targetPlayerId: user.uid, cardId: card.id,
-                details: { protectionCard: 'inv_006' }
-              });
+        case "move_target_and_self": {
+          if (!targetRef || !targetPlayerId || !targetPlayer) {
+            notify("Выберите игрока для этой карты.", "warning", card.id);
+            break;
+          }
+
+          if (targetHasFish) {
+            let cardWasSpent = false;
+            await runTransaction(db, async (transaction) => {
+              const actorSnap = await transaction.get(playerRef);
+              const inventory = (actorSnap.data() as Player | undefined)?.inventory ?? [];
+              const hasCard = inventory.includes(card.id);
+
+              if (!isAdmin && !hasCard) return;
+
+              if (hasCard) {
+                transaction.update(playerRef, {
+                  inventory: removeOneCardFromInventory(inventory, card.id),
+                });
+              }
+              transaction.update(targetRef, clearTemporaryStatus);
+              transaction.update(doc(db, "gameState", "current"), { revealedCards: arrayUnion(card.id) });
+              cardWasSpent = true;
+            });
+
+            if (!cardWasSpent) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
               break;
             }
-            await updateDoc(targetRef, {
-              position: (targetPlayer?.position ?? 0) + 2,
-              prevCell: null,
+
+            notify("Карта заблокирована No, no, no Mr.Fish.", "warning", card.id);
+            logEvent({
+              id: `move_and_self_blocked_${card.id}_${Date.now()}`,
+              timestamp: Date.now(),
+              type: "status_effect",
+              message: "Событие игры.",
+              playerId: targetPlayer.id,
+              targetPlayerId: user.uid,
+              cardId: card.id,
+              details: { protectionCard: "inv_006" },
             });
-            await updateDoc(playerRef, {
+            break;
+          }
+
+          let cardWasSpent = false;
+          await runTransaction(db, async (transaction) => {
+            const actorSnap = await transaction.get(playerRef);
+            const inventory = (actorSnap.data() as Player | undefined)?.inventory ?? [];
+            const hasCard = inventory.includes(card.id);
+
+            if (!isAdmin && !hasCard) return;
+
+            transaction.update(playerRef, {
+              ...(hasCard ? { inventory: removeOneCardFromInventory(inventory, card.id) } : {}),
               position: Math.max(0, (playerData.position ?? 0) - 1),
               prevCell: null,
             });
-            notify("Событие игры обновлено.", 'info');
-            logEvent({
-              id: `move_and_self_${card.id}_${Date.now()}`,
-              timestamp: Date.now(), type: 'movement',
-              message: "Событие игры.",
-              playerId: user.uid, targetPlayerId: targetPlayer?.id, cardId: card.id,
-              details: { selfMove: -1, targetMove: 2 }
+            transaction.update(targetRef, {
+              position: (targetPlayer.position ?? 0) + 2,
+              prevCell: null,
             });
-          }
-          break;
+            transaction.update(doc(db, "gameState", "current"), { revealedCards: arrayUnion(card.id) });
+            cardWasSpent = true;
+          });
 
+          if (!cardWasSpent) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
+
+          notify("Событие игры обновлено.", "info", card.id);
+          logEvent({
+            id: `move_and_self_${card.id}_${Date.now()}`,
+            timestamp: Date.now(),
+            type: "movement",
+            message: "Событие игры.",
+            playerId: user.uid,
+            targetPlayerId: targetPlayer.id,
+            cardId: card.id,
+            details: { selfMove: -1, targetMove: 2 },
+          });
+          break;
+        }
         case "pay_or_move_back": {
           const roundPlayerIds = gameState.turnOrder.length > 0
             ? gameState.turnOrder
@@ -1236,26 +1640,34 @@ export function useGameData(
 
           const firstTaxTarget = getPlayerById(firstTaxTargetId);
           const timestamp = Date.now();
-          await updateDoc(doc(db, "gameState", "current"), {
-            activeInteraction: {
-              playerId: firstTaxTargetId,
-              type: "tax_response",
-              targetPlayerId: user.uid,
-              taxOwnerId: user.uid,
-              taxOwnerName: playerData.login,
-              taxCollectorId: user.uid,
-              taxCollectorName: playerData.login,
-              taxBank: 0,
-              taxQueue: taxTargetIds.slice(1),
-              cards: getTaxResponseCardIds(firstTaxTarget),
-              actingCardId: card.id,
+          if (!(await commitPlayedCardAndGameState({
+            playerRef,
+            cardId: card.id,
+            gameStatePatch: {
+              activeInteraction: {
+                playerId: firstTaxTargetId,
+                type: "tax_response",
+                targetPlayerId: user.uid,
+                taxOwnerId: user.uid,
+                taxOwnerName: playerData.login,
+                taxCollectorId: user.uid,
+                taxCollectorName: playerData.login,
+                taxBank: 0,
+                taxQueue: taxTargetIds.slice(1),
+                cards: getTaxResponseCardIds(firstTaxTarget),
+                actingCardId: card.id,
+              },
+              [`notifications.${firstTaxTargetId}`]: {
+                message: `${playerData.login} собирает банк налогов. Заплатите 2 монеты, используйте Промокодик или выберите gambling.`,
+                timestamp,
+                cardId: card.id,
+              },
             },
-            [`notifications.${firstTaxTargetId}`]: {
-              message: `${playerData.login} собирает банк налогов. Заплатите 2 монеты, используйте Промокодик или выберите gambling.`,
-              timestamp,
-              cardId: card.id,
-            },
-          });
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
           notify(`Карта "Платите налоги!" запущена. Ожидаем ответ игрока ${firstTaxTarget?.login || "игрок"}.`, 'info', card.id);
           logEvent({
             id: `taxes_started_${card.id}_${timestamp}`,
@@ -1281,9 +1693,30 @@ export function useGameData(
             });
             break;
           }
-          await updateDoc(doc(db, "players", nextPlayerId), {
-            redirectNextDrawnToPlayerId: user.uid,
+          let cardWasSpent = false;
+          await runTransaction(db, async (transaction) => {
+            const actorSnap = await transaction.get(playerRef);
+            const inventory = (actorSnap.data() as Player | undefined)?.inventory ?? [];
+            const hasCard = inventory.includes(card.id);
+
+            if (!isAdmin && !hasCard) return;
+
+            if (hasCard) {
+              transaction.update(playerRef, {
+                inventory: removeOneCardFromInventory(inventory, card.id),
+              });
+            }
+            transaction.update(doc(db, "players", nextPlayerId), {
+              redirectNextDrawnToPlayerId: user.uid,
+            });
+            transaction.update(doc(db, "gameState", "current"), { revealedCards: arrayUnion(card.id) });
+            cardWasSpent = true;
           });
+
+          if (!cardWasSpent) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
           notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `take_next_card_${card.id}_${Date.now()}`,
@@ -1308,7 +1741,15 @@ export function useGameData(
             });
             break;
           }
-          await updateDoc(playerRef, { giveNextDrawnToPlayerId: nextPlayerId });
+          if (!(await commitPlayedCardAndGameState({
+            playerRef,
+            cardId: card.id,
+            playerPatch: { giveNextDrawnToPlayerId: nextPlayerId },
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
           notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `give_next_card_${card.id}_${Date.now()}`,
@@ -1320,68 +1761,132 @@ export function useGameData(
           break;
         }
 
-        case "communism":
-          if (targetRef && targetPlayerId && targetPlayer) {
-            if (targetHasFish) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-              notify("Событие игры обновлено.", 'warning');
+        case "communism": {
+          if (!targetRef || !targetPlayerId || !targetPlayer) {
+            notify("Выберите игрока для этой карты.", "warning", card.id);
+            break;
+          }
+
+          if (targetHasFish) {
+            let cardWasSpent = false;
+            await runTransaction(db, async (transaction) => {
+              const actorSnap = await transaction.get(playerRef);
+              const inventory = (actorSnap.data() as Player | undefined)?.inventory ?? [];
+              const hasCard = inventory.includes(card.id);
+
+              if (!isAdmin && !hasCard) return;
+
+              if (hasCard) {
+                transaction.update(playerRef, {
+                  inventory: removeOneCardFromInventory(inventory, card.id),
+                });
+              }
+              transaction.update(targetRef, clearTemporaryStatus);
+              transaction.update(doc(db, "gameState", "current"), { revealedCards: arrayUnion(card.id) });
+              cardWasSpent = true;
+            });
+
+            if (!cardWasSpent) {
+              notify("Этой карты уже нет в руке.", "warning", card.id);
               break;
             }
 
-            const actualTargetRef = targetHasReflect ? playerRef : targetRef;
-            const actualRecipientRef = targetHasReflect ? targetRef : playerRef;
-            const victimData = targetHasReflect ? playerData : targetPlayer;
-            
-            if (targetHasReflect) {
-              await updateDoc(targetRef, clearTemporaryStatus);
-              notify("Событие игры обновлено.", 'warning');
-            }
-
-            // Текст восстановлен после сбоя кодировки.
-            // Текст восстановлен после сбоя кодировки.
-            // Текст восстановлен после сбоя кодировки.
-            const hotCoinGain = gameState.hotCoinGain;
-            const hotAmount = hotCoinGain?.playerId === victimData.id ? hotCoinGain.amount : 0;
-            const baseStealAmount = Math.ceil(Math.max(0, hotAmount) / 2);
-            const actualVictimHasPromoCode = victimData.customStatus === "promo_code_active";
-            const { amount: stealAmount, promoCodeReduced } = calculatePromoAdjustedLoss({
-              amount: baseStealAmount,
-              hasPromoCode: actualVictimHasPromoCode,
-            });
-
-            if (baseStealAmount > 0) {
-              await runTransaction(db, async (transaction) => {
-                transaction.update(actualTargetRef, {
-                  tiltCoins: increment(-stealAmount),
-                  ...(promoCodeReduced ? clearTemporaryStatus : {}),
-                });
-                transaction.update(actualRecipientRef, { tiltCoins: increment(stealAmount) });
-                transaction.update(doc(db, "gameState", "current"), { hotCoinGain: null });
-              });
-              
-              const victimName = targetHasReflect ? "цель" : targetPlayer.login;
-              const getterName = targetHasReflect ? targetPlayer.login : "цель";
-              const promoText = promoCodeReduced ? " Промокодик снизил потерю вдвое." : "";
-              notify(`${getterName} получил ${stealAmount} монет от ${victimName}.${promoText}`, 'success', card.id);
-              
-              logEvent({
-                id: `communism_${card.id}_${Date.now()}`,
-                timestamp: Date.now(), type: 'coin_change',
-                message: `${getterName} получил ${stealAmount} монет от ${victimName}.${promoText}`,
-                playerId: user.uid, targetPlayerId: targetPlayerId ?? undefined, cardId: card.id,
-                details: { amount: stealAmount, baseAmount: baseStealAmount, reflected: targetHasReflect, promoCodeReduced }
-              });
-            } else {
-              notify("Событие игры обновлено.", 'info');
-            }
+            notify("Карта заблокирована No, no, no Mr.Fish.", "warning", card.id);
+            break;
           }
-          break;
-        
-        case "promo_code_benefit":
-          await updateDoc(playerRef, {
-            customStatus: "promo_code_active",
-            statusDuration: 1, // Lasts for one "event"
+
+          const reflected = targetHasReflect;
+          const actualTargetRef = reflected ? playerRef : targetRef;
+          const actualRecipientRef = reflected ? targetRef : playerRef;
+          const victimData = reflected ? playerData : targetPlayer;
+          const hotCoinGain = gameState.hotCoinGain;
+          const hotAmount = hotCoinGain?.playerId === victimData.id ? hotCoinGain.amount : 0;
+          const baseStealAmount = Math.ceil(Math.max(0, hotAmount) / 2);
+
+          if (baseStealAmount <= 0) {
+            notify("Нет актуальной горячей суммы для Коммунизма.", "info", card.id);
+            break;
+          }
+
+          const { amount: stealAmount, promoCodeReduced } = calculatePromoAdjustedLoss({
+            amount: baseStealAmount,
+            hasPromoCode: victimData.customStatus === "promo_code_active",
           });
+
+          let cardWasSpent = false;
+          await runTransaction(db, async (transaction) => {
+            const actorSnap = await transaction.get(playerRef);
+            const inventory = (actorSnap.data() as Player | undefined)?.inventory ?? [];
+            const hasCard = inventory.includes(card.id);
+
+            if (!isAdmin && !hasCard) return;
+
+            if (hasCard || actualRecipientRef === playerRef || actualTargetRef === playerRef) {
+              const actorPatch: Record<string, unknown> = {};
+              if (hasCard) actorPatch.inventory = removeOneCardFromInventory(inventory, card.id);
+              if (actualTargetRef === playerRef) {
+                actorPatch.tiltCoins = increment(-stealAmount);
+                if (promoCodeReduced) Object.assign(actorPatch, clearTemporaryStatus);
+              }
+              if (actualRecipientRef === playerRef) {
+                actorPatch.tiltCoins = increment(stealAmount);
+              }
+              if (Object.keys(actorPatch).length > 0) transaction.update(playerRef, actorPatch);
+            }
+
+            if (actualTargetRef !== playerRef) {
+              transaction.update(actualTargetRef, {
+                tiltCoins: increment(-stealAmount),
+                ...(promoCodeReduced ? clearTemporaryStatus : {}),
+              });
+            }
+            if (actualRecipientRef !== playerRef) {
+              transaction.update(actualRecipientRef, { tiltCoins: increment(stealAmount) });
+            }
+            if (reflected) {
+              transaction.update(targetRef, clearTemporaryStatus);
+            }
+            transaction.update(doc(db, "gameState", "current"), {
+              hotCoinGain: null,
+              revealedCards: arrayUnion(card.id),
+            });
+            cardWasSpent = true;
+          });
+
+          if (!cardWasSpent) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
+
+          const victimName = reflected ? playerData.login : targetPlayer.login;
+          const getterName = reflected ? targetPlayer.login : playerData.login;
+          const promoText = promoCodeReduced ? " Промокодик снизил потерю вдвое." : "";
+          notify(`${getterName} получил ${stealAmount} монет от ${victimName}.${promoText}`, "success", card.id);
+          logEvent({
+            id: `communism_${card.id}_${Date.now()}`,
+            timestamp: Date.now(),
+            type: "coin_change",
+            message: `${getterName} получил ${stealAmount} монет от ${victimName}.${promoText}`,
+            playerId: user.uid,
+            targetPlayerId,
+            cardId: card.id,
+            details: { amount: stealAmount, baseAmount: baseStealAmount, reflected, promoCodeReduced },
+          });
+          break;
+        }
+        case "promo_code_benefit":
+          if (!(await commitPlayedCardAndGameState({
+            playerRef,
+            cardId: card.id,
+            playerPatch: {
+              customStatus: "promo_code_active",
+              statusDuration: 1,
+            },
+            requireCardInInventory: !isAdmin,
+          }))) {
+            notify("Этой карты уже нет в руке.", "warning", card.id);
+            break;
+          }
           notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `promo_code_activated_${card.id}_${Date.now()}`,
@@ -1516,6 +2021,8 @@ export function useGameData(
   const handleSelectOpponentCard = async (targetPlayerId: string, cardId: string) => {
     if (!user || !playerData) return;
 
+    const gsRef = doc(db, "gameState", "current");
+
     // --- START: Golden Card Protection (inv_018) ---
     if (cardId === "inv_018") {
       notify("Событие игры обновлено.", 'warning');
@@ -1526,7 +2033,20 @@ export function useGameData(
         playerId: user.uid, targetPlayerId: targetPlayerId, cardId: cardId,
         details: { action: 'steal_or_discard', outcome: 'blocked' }
       });
-      await updateDoc(doc(db, "gameState", "current"), { activeInteraction: null });
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gsRef);
+        if (!gsSnap.exists()) return;
+
+        const interaction = (gsSnap.data() as GameState).activeInteraction;
+        if (
+          interaction?.type === "discard_selection" &&
+          interaction.playerId === user.uid &&
+          interaction.targetPlayerId === targetPlayerId &&
+          interaction.cards.includes(cardId)
+        ) {
+          transaction.update(gsRef, { activeInteraction: null });
+        }
+      });
       return;
     }
     // --- END: Golden Card Protection ---
@@ -1539,7 +2059,6 @@ export function useGameData(
 
     try {
       await runTransaction(db, async (transaction) => {
-        const gsRef = doc(db, "gameState", "current");
         const gsSnap = await transaction.get(gsRef);
         if (!gsSnap.exists()) return;
 
@@ -1603,12 +2122,29 @@ export function useGameData(
     } catch (e) {
       console.error("Ошибка действия.");
       if (actingCardId) {
-        await updateDoc(doc(db, "players", user.uid), { inventory: addOneCardToInventory(playerData.inventory, actingCardId) }).catch(() => {
-          console.error("Ошибка действия.");
-        });
-        await updateDoc(doc(db, "gameState", "current"), {
-          activeInteraction: null,
-          revealedCards: arrayRemove(actingCardId),
+        await runTransaction(db, async (transaction) => {
+          const gsSnap = await transaction.get(gsRef);
+          const playerRef = doc(db, "players", user.uid);
+          const playerSnap = await transaction.get(playerRef);
+          if (!gsSnap.exists() || !playerSnap.exists()) return;
+
+          const interaction = (gsSnap.data() as GameState).activeInteraction;
+          if (
+            !interaction ||
+            interaction.type !== "discard_selection" ||
+            interaction.playerId !== user.uid ||
+            interaction.targetPlayerId !== targetPlayerId ||
+            interaction.actingCardId !== actingCardId
+          ) {
+            return;
+          }
+
+          const currentInventory = (playerSnap.data() as Player).inventory;
+          transaction.update(playerRef, { inventory: addOneCardToInventory(currentInventory, actingCardId) });
+          transaction.update(gsRef, {
+            activeInteraction: null,
+            revealedCards: arrayRemove(actingCardId),
+          });
         }).catch(() => {
           console.error("Ошибка действия.");
         });
@@ -1652,9 +2188,24 @@ export function useGameData(
 
     try {
       await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
         const pSnap = await transaction.get(playerRef);
+        if (!gsSnap.exists()) throw new Error("Game state not found");
         if (!pSnap.exists()) throw new Error("Player data not found");
-        const currentPlayerCoins = pSnap.data()?.tiltCoins || 0;
+        const currentInteraction = (gsSnap.data() as GameState).activeInteraction;
+        if (
+          !currentInteraction ||
+          currentInteraction.type !== "move_for_coins_selection" ||
+          currentInteraction.playerId !== user.uid ||
+          currentInteraction.targetPlayerId !== targetPlayerId ||
+          currentInteraction.actingCardId !== actingCardId
+        ) {
+          throw new Error("Invalid move-for-coins state.");
+        }
+
+        const currentPlayer = pSnap.data() as Player;
+        const currentPlayerCoins = currentPlayer.tiltCoins || 0;
+        if (!currentPlayer.inventory?.includes(card.id)) throw new Error("Card is not in inventory.");
 
         if (currentPlayerCoins < steps) {
           throw new Error("Ошибка действия.");
@@ -1663,7 +2214,7 @@ export function useGameData(
         // Deduct coins from the card user
         transaction.update(playerRef, { tiltCoins: increment(-steps) });
         // Remove one copy of the card from the card user's inventory
-        transaction.update(playerRef, { inventory: removeOneCardFromInventory((pSnap.data() as Player).inventory, card.id) });
+        transaction.update(playerRef, { inventory: removeOneCardFromInventory(currentPlayer.inventory, card.id) });
         // Add the card to revealed cards
         transaction.update(gameStateRef, { revealedCards: arrayUnion(card.id) });
 
@@ -1698,15 +2249,6 @@ export function useGameData(
       });
     } catch (e) {
       console.error("Ошибка действия.");
-      await updateDoc(playerRef, { inventory: addOneCardToInventory(playerData.inventory, card.id) }).catch(() => {
-        console.error("Ошибка действия.");
-      });
-      await updateDoc(gameStateRef, {
-        activeInteraction: null,
-        revealedCards: arrayRemove(card.id),
-      }).catch(() => {
-        console.error("Ошибка действия.");
-      });
       notify("Событие игры обновлено.", 'error');
       logEvent({
         id: `confirm_move_for_coins_error_${Date.now()}`,
@@ -1727,53 +2269,94 @@ export function useGameData(
 
     const defenderId = user.uid;
     const attackerId = interaction.targetPlayerId;
-    const card = allCards[interaction.actingCardId];
+    const actingCardId = interaction.actingCardId;
+    const card = allCards[actingCardId];
     const attacker = getPlayerById(attackerId);
     const defender = playerData;
     const gameStateRef = doc(db, "gameState", "current");
     const defenderRef = doc(db, "players", defenderId);
 
+    const isCurrentReflectInteraction = (currentInteraction: GameState["activeInteraction"] | undefined) =>
+      currentInteraction?.type === "reflect_response" &&
+      currentInteraction.playerId === defenderId &&
+      currentInteraction.targetPlayerId === attackerId &&
+      currentInteraction.actingCardId === actingCardId;
+
+    const closeCurrentReflectInteraction = async () => {
+      let interactionClosed = false;
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        const currentInteraction = (gsSnap.data() as GameState | undefined)?.activeInteraction;
+        if (!isCurrentReflectInteraction(currentInteraction)) return;
+
+        transaction.update(gameStateRef, { activeInteraction: null });
+        interactionClosed = true;
+      });
+      return interactionClosed;
+    };
+
     if (!card || !attacker) {
-      await updateDoc(gameStateRef, { activeInteraction: null });
+      await closeCurrentReflectInteraction();
       return;
     }
 
     const openMoveForCoins = async (controllerId: string, targetId: string, reflected: boolean) => {
       const controller = getPlayerById(controllerId);
-      await updateDoc(gameStateRef, {
-        activeInteraction: {
-          playerId: controllerId,
-          type: "move_for_coins_selection",
-          cards: [],
-          targetPlayerId: targetId,
-          actingCardId: card.id,
-          reflected,
-        },
+      let interactionOpened = false;
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        const currentInteraction = (gsSnap.data() as GameState | undefined)?.activeInteraction;
+        if (!isCurrentReflectInteraction(currentInteraction)) return;
+
+        transaction.update(gameStateRef, {
+          activeInteraction: {
+            playerId: controllerId,
+            type: "move_for_coins_selection",
+            cards: [],
+            targetPlayerId: targetId,
+            actingCardId: card.id,
+            reflected,
+          },
+        });
+        interactionOpened = true;
       });
-      notify(`${controller?.login || "Игрок"} выбирает, сколько монет потратить на коррупцию.`, 'info', card.id);
+      if (interactionOpened) {
+        notify(`${controller?.login || "Игрок"} выбирает, сколько монет потратить на коррупцию.`, 'info', card.id);
+      }
     };
 
     const openDiscardSelection = async (selectorId: string, victimId: string, recipientId?: string) => {
       const victim = getPlayerById(victimId);
       const selectableInventory = victim?.inventory?.filter((inventoryCardId) => inventoryCardId !== "inv_018") ?? [];
       if (selectableInventory.length === 0) {
-        await updateDoc(gameStateRef, { activeInteraction: null });
+        await runTransaction(db, async (transaction) => {
+          const gsSnap = await transaction.get(gameStateRef);
+          const currentInteraction = (gsSnap.data() as GameState | undefined)?.activeInteraction;
+          if (isCurrentReflectInteraction(currentInteraction)) {
+            transaction.update(gameStateRef, { activeInteraction: null });
+          }
+        });
         notify("У цели нет карт для выбора.", 'info', card.id);
         return;
       }
 
-      await updateDoc(gameStateRef, {
-        activeInteraction: {
-          playerId: selectorId,
-          type: "discard_selection",
-          targetPlayerId: victimId,
-          ...(recipientId ? { recipientId } : {}),
-          cards: shuffle(selectableInventory),
-          actingCardId: card.id,
-        },
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        const currentInteraction = (gsSnap.data() as GameState | undefined)?.activeInteraction;
+        if (!isCurrentReflectInteraction(currentInteraction)) return;
+
+        transaction.update(gameStateRef, {
+          activeInteraction: {
+            playerId: selectorId,
+            type: "discard_selection",
+            targetPlayerId: victimId,
+            ...(recipientId ? { recipientId } : {}),
+            cards: shuffle(selectableInventory),
+            actingCardId: card.id,
+          },
+        });
       });
     };
-
     const applyJudge = async (targetId: string, targetName: string, reflected: boolean) => {
       const roll = rollD6();
       const affectedPlayer = getPlayerById(targetId);
@@ -1785,15 +2368,24 @@ export function useGameData(
       const promoText = promoCodeReduced ? " Промокодик смягчил потерю." : "";
       const message = `Судья душ: бросок ${roll}. ${targetName} ${delta >= 0 ? `получает ${amount} монет` : `теряет ${amount} монет`}.${promoText}`;
 
-      await updateDoc(doc(db, "players", targetId), {
-        tiltCoins: increment(delta),
-        ...(promoCodeReduced ? clearTemporaryStatus : {}),
-        lastNotification: { message, timestamp: Date.now(), cardId: card.id },
+      let effectApplied = false;
+      await runTransaction(db, async (transaction) => {
+        const gsSnap = await transaction.get(gameStateRef);
+        const currentInteraction = (gsSnap.data() as GameState | undefined)?.activeInteraction;
+        if (!isCurrentReflectInteraction(currentInteraction)) return;
+
+        transaction.update(doc(db, "players", targetId), {
+          tiltCoins: increment(delta),
+          ...(promoCodeReduced ? clearTemporaryStatus : {}),
+          lastNotification: { message, timestamp: Date.now(), cardId: card.id },
+        });
+        transaction.update(gameStateRef, {
+          activeInteraction: null,
+          ...(delta > 0 ? { hotCoinGain: makeHotCoinGain(targetId, delta, card.id, card.name) } : {}),
+        });
+        effectApplied = true;
       });
-      await updateDoc(gameStateRef, {
-        activeInteraction: null,
-        ...(delta > 0 ? { hotCoinGain: makeHotCoinGain(targetId, delta, card.id, card.name) } : {}),
-      });
+      if (!effectApplied) return;
       notify(reflected ? `Карта отражена. ${message}` : message, delta >= 0 ? 'success' : 'warning', card.id);
     };
 
@@ -1811,11 +2403,21 @@ export function useGameData(
 
       const resolveMageAfterVisualRoll = true;
       if (resolveMageAfterVisualRoll) {
-        await updateDoc(gameStateRef, {
-          cardDiceRoll: mageDiceRoll,
-          activeInteraction: null,
+        let effectApplied = false;
+        await runTransaction(db, async (transaction) => {
+          const gsSnap = await transaction.get(gameStateRef);
+          const currentInteraction = (gsSnap.data() as GameState | undefined)?.activeInteraction;
+          if (!isCurrentReflectInteraction(currentInteraction)) return;
+
+          transaction.update(gameStateRef, {
+            cardDiceRoll: mageDiceRoll,
+            activeInteraction: null,
+          });
+          effectApplied = true;
         });
+        if (!effectApplied) return;
         notify(reflected ? `Карта отражена. ${target.login} бросает кубик для "Сделки с магом".` : `${target.login} бросает кубик для "Сделки с магом".`, 'info', card.id);
+        return;
         return;
       }
 
@@ -1862,7 +2464,12 @@ export function useGameData(
           amount: card.value,
           hasPromoCode,
         });
+        let effectApplied = false;
         await runTransaction(db, async (transaction) => {
+          const gsSnap = await transaction.get(gameStateRef);
+          const currentInteraction = (gsSnap.data() as GameState | undefined)?.activeInteraction;
+          if (!isCurrentReflectInteraction(currentInteraction)) return;
+
           transaction.update(doc(db, "players", target.id), {
             tiltCoins: increment(-victimLoss),
             lastNotification: {
@@ -1874,63 +2481,104 @@ export function useGameData(
           });
           transaction.update(doc(db, "players", thief.id), { tiltCoins: increment(victimLoss) });
           transaction.update(gameStateRef, { activeInteraction: null });
+          effectApplied = true;
         });
+        if (!effectApplied) return;
+
         notify(`Катжит: бросок ${roll}. ${thief.login} украл ${victimLoss} монет у ${target.login}.`, 'success', card.id);
       } else {
-        await updateDoc(doc(db, "players", thief.id), {
-          tiltCoins: increment(-card.value),
-          lastNotification: {
-            message: `Катжит: бросок ${roll}. Провал, вы теряете ${card.value} монет.`,
-            timestamp,
-            cardId: card.id,
-          },
+        let effectApplied = false;
+        await runTransaction(db, async (transaction) => {
+          const gsSnap = await transaction.get(gameStateRef);
+          const currentInteraction = (gsSnap.data() as GameState | undefined)?.activeInteraction;
+          if (!isCurrentReflectInteraction(currentInteraction)) return;
+
+          transaction.update(doc(db, "players", thief.id), {
+            tiltCoins: increment(-card.value),
+            lastNotification: {
+              message: `Катжит: бросок ${roll}. Провал, вы теряете ${card.value} монет.`,
+              timestamp,
+              cardId: card.id,
+            },
+          });
+          transaction.update(gameStateRef, { activeInteraction: null });
+          effectApplied = true;
         });
-        await updateDoc(gameStateRef, { activeInteraction: null });
+        if (!effectApplied) return;
+
         notify(`Катжит: бросок ${roll}. Провал, ${thief.login} теряет ${card.value} монет.`, 'warning', card.id);
       }
     };
-
     const applyTaxToOne = async (victim: Player, recipient: Player) => {
       const paymentAmount = card.value || 2;
       const victimCoins = victim.tiltCoins ?? 0;
 
       if (victimCoins >= paymentAmount) {
+        let effectApplied = false;
         await runTransaction(db, async (transaction) => {
+          const gsSnap = await transaction.get(gameStateRef);
+          const currentInteraction = (gsSnap.data() as GameState | undefined)?.activeInteraction;
+          if (!isCurrentReflectInteraction(currentInteraction)) return;
+
           transaction.update(doc(db, "players", victim.id), { tiltCoins: increment(-paymentAmount) });
           transaction.update(doc(db, "players", recipient.id), { tiltCoins: increment(paymentAmount) });
           transaction.update(gameStateRef, { activeInteraction: null });
+          effectApplied = true;
         });
+        if (!effectApplied) return;
+
         notify(`${victim.login} заплатил ${paymentAmount} монет игроку ${recipient.login}.`, 'info', card.id);
       } else {
-        await updateDoc(gameStateRef, {
-          activeInteraction: {
-            playerId: victim.id,
-            type: "gambling",
-            cards: getRandomInteractionCardIds("gambling", allCards),
-            actingCardId: card.id,
-          },
+        let effectApplied = false;
+        await runTransaction(db, async (transaction) => {
+          const gsSnap = await transaction.get(gameStateRef);
+          const currentInteraction = (gsSnap.data() as GameState | undefined)?.activeInteraction;
+          if (!isCurrentReflectInteraction(currentInteraction)) return;
+
+          transaction.update(gameStateRef, {
+            activeInteraction: {
+              playerId: victim.id,
+              type: "gambling",
+              cards: getRandomInteractionCardIds("gambling", allCards),
+              actingCardId: card.id,
+            },
+          });
+          effectApplied = true;
         });
+        if (!effectApplied) return;
+
         notify(`${victim.login} не смог заплатить налог и тянет gambling.`, 'warning', card.id);
       }
     };
-
     try {
       if (useReflect) {
-        if (!defender.inventory?.includes(REFLECT_CARD_ID)) {
+        let reflectWasSpent = false;
+        await runTransaction(db, async (transaction) => {
+          const defenderSnap = await transaction.get(defenderRef);
+          const defenderInventory = (defenderSnap.data() as Player | undefined)?.inventory ?? [];
+
+          if (!defenderInventory.includes(REFLECT_CARD_ID)) return;
+
+          transaction.update(defenderRef, {
+            inventory: removeOneCardFromInventory(defenderInventory, REFLECT_CARD_ID),
+          });
+          transaction.update(gameStateRef, {
+            revealedCards: arrayUnion(REFLECT_CARD_ID),
+            ...(card.id === REFLECT_CARD_ID ? { activeInteraction: null } : {}),
+          });
+          reflectWasSpent = true;
+        });
+
+        if (!reflectWasSpent) {
           notify('У вас нет карты "А может тебя?".', 'warning', REFLECT_CARD_ID);
           return;
         }
 
-        await updateDoc(defenderRef, { inventory: removeOneCardFromInventory(defender.inventory, REFLECT_CARD_ID) });
-        await updateDoc(gameStateRef, { revealedCards: arrayUnion(REFLECT_CARD_ID) });
-
         if (card.id === REFLECT_CARD_ID) {
-          await updateDoc(gameStateRef, { activeInteraction: null });
           notify("Отражение отменило отражение. Карта не сработала.", 'info', REFLECT_CARD_ID);
           return;
         }
       }
-
       const reflected = useReflect;
       const target = reflected ? attacker : defender;
       const controller = reflected ? defender : attacker;
@@ -1938,26 +2586,35 @@ export function useGameData(
       switch (card.id) {
         case "inv_007": {
           const timestamp = Date.now();
-          await updateDoc(gameStateRef, {
-            cardMove: {
-              id: `${card.id}_${timestamp}`,
-              controllerId: controller.id,
-              controllerName: controller.login,
-              targetId: target.id,
-              steps: card.value,
-              cardId: card.id,
-              cardName: card.name,
-            },
-            forcedMovePlayerId: null,
-            currentRoll: null,
-            currentRollPlayerId: null,
-            rollConfirmed: false,
-            activeInteraction: null,
+          let effectApplied = false;
+          await runTransaction(db, async (transaction) => {
+            const gsSnap = await transaction.get(gameStateRef);
+            const currentInteraction = (gsSnap.data() as GameState | undefined)?.activeInteraction;
+            if (!isCurrentReflectInteraction(currentInteraction)) return;
+
+            transaction.update(gameStateRef, {
+              cardMove: {
+                id: `${card.id}_${timestamp}`,
+                controllerId: controller.id,
+                controllerName: controller.login,
+                targetId: target.id,
+                steps: card.value,
+                cardId: card.id,
+                cardName: card.name,
+              },
+              forcedMovePlayerId: null,
+              currentRoll: null,
+              currentRollPlayerId: null,
+              rollConfirmed: false,
+              activeInteraction: null,
+            });
+            effectApplied = true;
           });
+          if (!effectApplied) break;
+
           notify(reflected ? `Карта отражена. Теперь ${defender.login} управляет фишкой ${attacker.login}.` : `${attacker.login} управляет фишкой ${defender.login}.`, 'info', card.id);
           break;
-        }
-        case "inv_008":
+        }        case "inv_008":
           await applyJudge(target.id, target.login, reflected);
           break;
         case "inv_009":
@@ -1974,7 +2631,7 @@ export function useGameData(
           break;
         case "inv_015":
           if (reflected) {
-            await updateDoc(gameStateRef, { activeInteraction: null });
+            if (!(await closeCurrentReflectInteraction())) break;
             notify("Карта отражена. Вы не платите монеты и не тянете gambling.", 'info', card.id);
           } else {
             await applyTaxToOne(defender, attacker);
@@ -1984,7 +2641,7 @@ export function useGameData(
           await applyKatjit(defender, attacker, reflected);
           break;
         default:
-          await updateDoc(gameStateRef, { activeInteraction: null });
+          if (!(await closeCurrentReflectInteraction())) break;
           notify("Эту карту нельзя отразить.", 'warning', REFLECT_CARD_ID);
       }
     } catch (e) {
@@ -2013,6 +2670,7 @@ export function useGameData(
     let finalBank = 0;
     let finalCollectorName = ownerName;
     let queueFinished = false;
+    let responseApplied = false;
 
     try {
       await runTransaction(db, async (transaction) => {
@@ -2021,7 +2679,15 @@ export function useGameData(
         if (!gsSnap.exists() || !playerSnap.exists()) return;
 
         const currentInteraction = (gsSnap.data() as GameState).activeInteraction;
-        if (!currentInteraction || currentInteraction.type !== "tax_response" || currentInteraction.playerId !== user.uid) {
+        const currentTaxCardId = currentInteraction?.actingCardId || "inv_015";
+        const currentOwnerId = currentInteraction?.taxOwnerId || currentInteraction?.targetPlayerId;
+        if (
+          !currentInteraction ||
+          currentInteraction.type !== "tax_response" ||
+          currentInteraction.playerId !== user.uid ||
+          currentTaxCardId !== taxCardId ||
+          currentOwnerId !== ownerId
+        ) {
           return;
         }
 
@@ -2157,7 +2823,10 @@ export function useGameData(
         }
 
         transaction.update(gameStateRef, updates);
+        responseApplied = true;
       });
+
+      if (!responseApplied) return;
 
       if (response === "pay") {
         notify(`Вы внесли ${paymentAmount} монеты в банк налогов.`, 'info', taxCardId);
@@ -2182,16 +2851,34 @@ export function useGameData(
   const handleCancelInteraction = async () => {
     if (!user || !playerData || !gameState.activeInteraction) return;
 
-    const { actingCardId } = gameState.activeInteraction;
+    const expectedInteraction = gameState.activeInteraction;
+    const { actingCardId } = expectedInteraction;
     const playerRef = doc(db, "players", user.uid);
     const gsRef = doc(db, "gameState", "current");
 
     try {
       await runTransaction(db, async (transaction) => {
         // Текст восстановлен после сбоя кодировки.
-        if (actingCardId) {
-          transaction.update(playerRef, { inventory: addOneCardToInventory(playerData.inventory, actingCardId) });
-          transaction.update(gsRef, { revealedCards: arrayRemove(actingCardId) });
+        const gsSnap = await transaction.get(gsRef);
+        const playerSnap = await transaction.get(playerRef);
+        if (!gsSnap.exists() || !playerSnap.exists()) return;
+
+        const currentInteraction = (gsSnap.data() as GameState).activeInteraction;
+        if (
+          !currentInteraction ||
+          currentInteraction.type !== expectedInteraction.type ||
+          currentInteraction.playerId !== user.uid ||
+          currentInteraction.actingCardId !== actingCardId
+        ) {
+          return;
+        }
+
+        if (currentInteraction.actingCardId) {
+          const currentInventory = (playerSnap.data() as Player).inventory;
+          transaction.update(playerRef, {
+            inventory: addOneCardToInventory(currentInventory, currentInteraction.actingCardId),
+          });
+          transaction.update(gsRef, { revealedCards: arrayRemove(currentInteraction.actingCardId) });
         }
         // Текст восстановлен после сбоя кодировки.
         transaction.update(gsRef, { activeInteraction: null });
@@ -2227,10 +2914,22 @@ export function useGameData(
 
     try {
       await runTransaction(db, async (transaction) => {
-        const currentGameState = (await transaction.get(gameStateRef)).data() as GameState;
-        const currentDuelState = currentGameState.activeDuels[duelId];
+        const gameStateSnap = await transaction.get(gameStateRef);
+        const playerSnap = await transaction.get(playerRef);
+        if (!gameStateSnap.exists() || !playerSnap.exists()) return;
 
-        if (!currentDuelState) {
+        const currentGameState = gameStateSnap.data() as GameState;
+        const currentDuelState = currentGameState.activeDuels[duelId];
+        const currentInteraction = currentGameState.activeInteraction;
+
+        if (
+          !currentDuelState ||
+          currentDuelState.targetId !== user.uid ||
+          currentDuelState.status !== 'pending' ||
+          currentInteraction?.type !== "duel_challenge_response" ||
+          currentInteraction.playerId !== user.uid ||
+          currentInteraction.duelId !== duelId
+        ) {
           throw new Error("Ошибка действия.");
         }
 
@@ -2275,12 +2974,13 @@ export function useGameData(
           const protectionCardId = "inv_006";
           const targetMessage = `Вы сбросили дуэль картой "No, no, no mr. Fish".`;
           const challengerMessage = `Дуэль сброшена картой "No, no, no mr. Fish", вы возвращаетесь ни с чем.`;
-          if (!playerData.inventory?.includes(protectionCardId)) {
+          const currentInventory = (playerSnap.data() as Player).inventory;
+          if (!currentInventory?.includes(protectionCardId)) {
             throw new Error("Ошибка действия.");
           }
 
           // Текст восстановлен после сбоя кодировки.
-          transaction.update(playerRef, { inventory: removeOneCardFromInventory(playerData.inventory, protectionCardId) });
+          transaction.update(playerRef, { inventory: removeOneCardFromInventory(currentInventory, protectionCardId) });
           // Текст восстановлен после сбоя кодировки.
           transaction.update(gameStateRef, { revealedCards: arrayUnion(protectionCardId) });
 
@@ -2364,10 +3064,20 @@ export function useGameData(
 
         const gs = gsSnap.data() as GameState;
         const duel = gs.activeDuels?.[duelId];
+        const currentInteraction = gs.activeInteraction;
         const normalizedBet = Math.floor(Number(betAmount));
 
         if (!duel) throw new Error("Ошибка действия.");
         if (duel.status !== 'betting') throw new Error("Ошибка действия.");
+        if (duel.challengerId !== user.uid && duel.targetId !== user.uid) throw new Error("Invalid duel state.");
+        if (duel.isReady?.[user.uid]) throw new Error("Invalid duel state.");
+        if (
+          currentInteraction?.type !== 'duel_betting' ||
+          currentInteraction.playerId !== user.uid ||
+          currentInteraction.duelId !== duelId
+        ) {
+          throw new Error("Invalid duel state.");
+        }
         if (normalizedBet <= 0) throw new Error("Ошибка действия.");
 
         transaction.update(playerRef, { tiltCoins: increment(-normalizedBet) });
@@ -2429,10 +3139,19 @@ export function useGameData(
 
         const gs = gsSnap.data() as GameState;
         const duel = gs.activeDuels?.[duelId];
+        const currentInteraction = gs.activeInteraction;
 
         if (!duel) throw new Error("Ошибка действия.");
         if (duel.status !== 'ready_to_roll') throw new Error("Ошибка действия.");
         if (duel.challengerId !== user.uid) throw new Error("Ошибка действия.");
+        if (
+          currentInteraction?.type !== 'duel_ready_to_roll' ||
+          currentInteraction.playerId !== user.uid ||
+          currentInteraction.duelId !== duelId
+        ) {
+          throw new Error("Invalid duel state.");
+        }
+        if (duel.weapon !== 'dice' && duel.weapon !== 'game') throw new Error("Invalid duel state.");
 
         if (duel.weapon === 'dice') {
           const challengerRoll = rollD6();
@@ -2476,8 +3195,19 @@ export function useGameData(
 
         const gs = gsSnap.data() as GameState;
         const duel = gs.activeDuels?.[duelId];
+        const currentInteraction = gs.activeInteraction;
 
         if (!duel) throw new Error("Ошибка действия.");
+        if (duel.status !== 'accepted') throw new Error("Invalid duel state.");
+        if (duel.targetId !== user.uid) throw new Error("Invalid duel state.");
+        if (weapon !== 'dice' && weapon !== 'game') throw new Error("Invalid duel state.");
+        if (
+          currentInteraction?.type !== 'duel_weapon_selection' ||
+          currentInteraction.playerId !== user.uid ||
+          currentInteraction.duelId !== duelId
+        ) {
+          throw new Error("Invalid duel state.");
+        }
 
         // Текст восстановлен после сбоя кодировки.
         transaction.update(gameStateRef, {
@@ -2519,7 +3249,18 @@ export function useGameData(
         const duel = gs.activeDuels?.[duelId];
 
         if (!duel) throw new Error("Ошибка действия.");
-        if (duel.status === 'finished' || (duel.weapon === 'game' && !manualWinnerId)) return;
+        if (duel.status === 'finished') return;
+        if (duel.weapon !== 'dice' && duel.weapon !== 'game') throw new Error("Invalid duel state.");
+        if (duel.weapon === 'dice' && (duel.status !== 'rolling' || manualWinnerId)) throw new Error("Invalid duel state.");
+        if (duel.weapon === 'game' && (duel.status !== 'admin_wait' || !manualWinnerId)) return;
+        if (
+          manualWinnerId &&
+          manualWinnerId !== 'draw' &&
+          manualWinnerId !== duel.challengerId &&
+          manualWinnerId !== duel.targetId
+        ) {
+          throw new Error("Invalid duel winner.");
+        }
 
         let winnerId: string | 'draw' = 'draw';
         let challengerRoll = 0;
@@ -2866,40 +3607,43 @@ export function useGameData(
     if (!user || !playerData) return;
 
     const gameStateRef = doc(db, "gameState", "current");
-    const card = allCards["inv_009"];
-    if (!card) {
-      notify('Карта "Сделка с магом" не найдена. Попробуйте обновить страницу.', 'error', "inv_009");
-      return;
-    }
-
-    let resolvedMessage: string | null = null;
-    let resolvedType: ToastNotification['type'] = 'info';
-    let resolvedRoll: number | null = null;
+    const displayOnlyCardIds = new Set(["inv_008", "inv_016"]);
 
     try {
-      await runTransaction(db, async (transaction) => {
+      const resolution = await runTransaction(db, async (transaction) => {
         const gsSnap = await transaction.get(gameStateRef);
-        if (!gsSnap.exists()) return;
+        if (!gsSnap.exists()) return null;
 
         const gs = gsSnap.data() as GameState;
         const pendingRoll = gs.cardDiceRoll;
         if (
           !pendingRoll ||
           pendingRoll.id !== rollId ||
-          pendingRoll.cardId !== "inv_009" ||
           pendingRoll.playerId !== user.uid
         ) {
-          return;
+          return null;
         }
 
-        resolvedRoll = pendingRoll.value;
+        if (displayOnlyCardIds.has(pendingRoll.cardId)) {
+          transaction.update(gameStateRef, { cardDiceRoll: null });
+          return null;
+        }
+
+        if (pendingRoll.cardId !== "inv_009") return null;
+
+        const card = allCards[pendingRoll.cardId];
+        if (!card) {
+          throw new Error("Card for dice roll not found.");
+        }
+
+        const resolvedRoll = pendingRoll.value;
         const playerRef = doc(db, "players", pendingRoll.playerId);
         const timestamp = Date.now();
         const shouldOpenGambling = pendingRoll.value <= 4;
         const shouldGiveCoins = pendingRoll.value > 1;
         const coinText = shouldGiveCoins ? `+${card.value} монет${shouldOpenGambling ? " и " : ""}` : "монет нет, ";
-        resolvedMessage = `Сделка с магом: бросок ${pendingRoll.value}. ${coinText}${shouldOpenGambling ? "открыт gambling." : "gambling не открывается."}`;
-        resolvedType = pendingRoll.value === 1 ? 'warning' : pendingRoll.value <= 4 ? 'info' : 'success';
+        const resolvedMessage = `Сделка с магом: бросок ${pendingRoll.value}. ${coinText}${shouldOpenGambling ? "открыт gambling." : "gambling не открывается."}`;
+        const resolvedType: ToastNotification['type'] = pendingRoll.value === 1 ? 'warning' : pendingRoll.value <= 4 ? 'info' : 'success';
 
         transaction.update(playerRef, {
           ...(shouldGiveCoins ? { tiltCoins: increment(card.value) } : {}),
@@ -2921,27 +3665,36 @@ export function useGameData(
               }
             : null,
         });
+
+        return {
+          cardId: card.id,
+          cardName: card.name,
+          coinValue: card.value,
+          message: resolvedMessage,
+          roll: resolvedRoll,
+          type: resolvedType,
+        };
       });
 
-      if (resolvedMessage && resolvedRoll !== null) {
-        notify(resolvedMessage, resolvedType, card.id);
+      if (resolution) {
+        notify(resolution.message, resolution.type, resolution.cardId);
         logEvent({
-          id: `mage_deal_result_${card.id}_${rollId}_${Date.now()}`,
+          id: `mage_deal_result_${resolution.cardId}_${rollId}_${Date.now()}`,
           timestamp: Date.now(),
-          type: resolvedRoll > 1 ? 'coin_change' : 'card_play',
-          message: `${playerData.login} завершил "${card.name}": бросок ${resolvedRoll}.`,
+          type: resolution.roll > 1 ? 'coin_change' : 'card_play',
+          message: `${playerData.login} завершил "${resolution.cardName}": бросок ${resolution.roll}.`,
           playerId: user.uid,
-          cardId: card.id,
+          cardId: resolution.cardId,
           details: {
-            roll: resolvedRoll,
-            coins: resolvedRoll > 1 ? card.value : 0,
-            gambling: resolvedRoll <= 4,
+            roll: resolution.roll,
+            coins: resolution.roll > 1 ? resolution.coinValue : 0,
+            gambling: resolution.roll <= 4,
           },
         });
       }
     } catch (e) {
       console.error(e);
-      notify("Не удалось применить результат броска карты.", 'error', card.id);
+      notify("Не удалось применить результат броска карты.", 'error', "inv_009");
     }
   };
 

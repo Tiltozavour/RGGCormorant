@@ -16,7 +16,7 @@ interface EventLogProps {
 }
 
 function EventLog({ gameEvents, allCards, players, onClear, isClearing, canClear }: EventLogProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [previewCardId, setPreviewCardId] = useState<string | null>(null);
   void players;
 
