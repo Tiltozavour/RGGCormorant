@@ -101,6 +101,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const [isAnimating, setIsAnimating] = useState(false);
   const [isTeleporting, setIsTeleporting] = useState(false);
   const [choice, setChoice] = useState<number[] | null>(null);
+  const [isChoiceCollapsed, setIsChoiceCollapsed] = useState(false);
   const choiceResolveRef = useRef<((value: number) => void) | null>(null);
   const startPosRef = useRef<number>(0);
   const startPrevRef = useRef<number | null>(null);
@@ -125,6 +126,10 @@ const GameBoard: React.FC<GameBoardProps> = ({
   useEffect(() => {
     onMoveCompleteRef.current = onMoveComplete;
   }, [onMoveComplete]);
+
+  useEffect(() => {
+    setIsChoiceCollapsed(false);
+  }, [choice]);
 
   const getCell = (id: number) => map.find((cell) => cell.id === id);
 
@@ -359,6 +364,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   }
 
   const handleChoice = (nextId: number) => {
+    setIsChoiceCollapsed(false);
     setChoice(null);
     if (choiceResolveRef.current) {
       choiceResolveRef.current(nextId);
@@ -576,29 +582,39 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
       {choice && (
         <div className="pointer-events-none absolute bottom-48 left-1/2 -translate-x-1/2 flex w-[min(92vw,560px)] flex-col items-center gap-2 z-[10015] animate-in fade-in zoom-in duration-300">
-          <div className="bg-black/30 backdrop-blur-sm border border-white/10 px-3 py-1 rounded-full shadow-xl">
+          <div className="pointer-events-auto flex items-center gap-2 bg-black/30 backdrop-blur-sm border border-white/10 px-3 py-1 rounded-full shadow-xl">
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white">
               {isControllingOther 
                 ? `Управление игроком: ${players.find(p => p.id === controlledTargetId)?.login}` 
                 : "Выберите направление"}
             </span>
+            <button
+              type="button"
+              onClick={() => setIsChoiceCollapsed((value) => !value)}
+              className="rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/80 transition hover:bg-white/20 hover:text-white"
+              style={{ fontFamily: "'Comfortaa', sans-serif" }}
+            >
+              {isChoiceCollapsed ? "Показать" : "Скрыть"}
+            </button>
           </div>
-          <div className="pointer-events-auto flex flex-wrap justify-center gap-2">
-            {choice.map((id) => (
-              <button
-                key={id}
-                onClick={() => handleChoice(id)}
-                className={`${
-                  isControllingOther 
-                    ? "bg-red-600/45 hover:bg-red-500/85 shadow-red-500/20 animate-pulse" 
-                    : "bg-purple-600/45 hover:bg-purple-500/85 shadow-purple-500/15"
-                } hover:scale-105 active:scale-95 transition-all px-4 py-2 rounded-xl font-black uppercase text-xs sm:text-sm shadow-xl border border-white/15 text-white backdrop-blur-sm`}
-                style={{ fontFamily: "'Comfortaa', sans-serif" }}
-              >
-                В сторону {id}
-              </button>
-            ))}
-          </div>
+          {!isChoiceCollapsed && (
+            <div className="pointer-events-auto flex flex-wrap justify-center gap-2">
+              {choice.map((id) => (
+                <button
+                  key={id}
+                  onClick={() => handleChoice(id)}
+                  className={`${
+                    isControllingOther 
+                      ? "bg-red-600/45 hover:bg-red-500/85 shadow-red-500/20 animate-pulse" 
+                      : "bg-purple-600/45 hover:bg-purple-500/85 shadow-purple-500/15"
+                  } hover:scale-105 active:scale-95 transition-all px-4 py-2 rounded-xl font-black uppercase text-xs sm:text-sm shadow-xl border border-white/15 text-white backdrop-blur-sm`}
+                  style={{ fontFamily: "'Comfortaa', sans-serif" }}
+                >
+                  В сторону {id}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
