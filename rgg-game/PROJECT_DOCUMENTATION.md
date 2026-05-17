@@ -1,44 +1,37 @@
 # RGG Game / Cormorant Society: документация проекта
 
+Дата актуализации: 2026-05-17.
+
 ## 1. Назначение
 
 `rgg-game` - браузерное React SPA для синхронной party-игры Cormorant Society.
 
-Отдельное описание актуальных правил и игровых механик лежит в `GAME_MECHANICS.md`.
-
 Приложение покрывает:
 
-- регистрацию и вход игроков через Firebase Auth;
-- приглашения через Firestore collection `invites`;
+- регистрацию и вход через Firebase Auth;
+- инвайты через Firestore collection `invites`;
 - общую карту с фишками игроков;
 - фазы партии, результаты, голосование и очередь ходов;
 - броски кубика и анимированное движение;
 - колесо выбора мини-игры;
-- карточную систему с инвентарем, B-Shop, gambling, защитами, налогами, отражением, дуэлями и легендарными призами;
-- админские действия: фазы, результаты, карты, монеты, reset, лог событий, кастомные дуэли;
-- синхронизацию между участниками через Cloud Firestore.
+- карточную систему с рукой, B-Shop, Gambling, защитами, отражением, налогами, дуэлями и легендарными призами;
+- галерею артефактов и коллекцию легенд;
+- админские действия: фазы, результаты, карты, монеты, reset, event log, кастомные дуэли;
+- синхронизацию состояния между игроками через Cloud Firestore.
 
-Серверной части в репозитории нет. Firebase выступает как backend, поэтому Firestore rules и аккуратные клиентские write-сценарии критичны.
+Отдельное описание правил лежит в `GAME_MECHANICS.md`.
 
 ## 2. Стек
 
 - React `19.2.4`
 - TypeScript `~5.9.3`
 - Vite `8.0.1`
-- Tailwind CSS `4.2.2` через `@tailwindcss/vite`
+- Tailwind CSS `4.2.2`
 - Firebase `12.11.0`
 - ESLint `9.39.4`
 - Vitest `4.1.6`
 
-Основные конфиги:
-
-- `vite.config.ts`
-- `tsconfig.json`
-- `tsconfig.app.json`
-- `tsconfig.node.json`
-- `eslint.config.js`
-- `firebase.json`
-- `firestore.rules`
+Серверной части в репозитории пока нет. Firebase выступает как backend, поэтому Firestore rules и аккуратные клиентские транзакции критичны.
 
 ## 3. Запуск
 
@@ -66,7 +59,7 @@ VITE_FIREBASE_APP_ID=...
 VITE_FIREBASE_ENV=development
 ```
 
-Запуск dev-сервера:
+Dev server:
 
 ```bash
 npm run dev
@@ -80,42 +73,42 @@ npm run lint
 npm run build
 ```
 
-Preview production-сборки:
+Production preview:
 
 ```bash
 npm run preview
 ```
 
-## 4. NPM-Скрипты
+## 4. Скрипты
 
 - `npm run dev` - Vite dev server.
-- `npm run build` - `tsc -b`, затем production build Vite.
+- `npm run build` - TypeScript build и production build Vite.
 - `npm run lint` - ESLint.
-- `npm test` - Vitest unit tests для pure business logic.
+- `npm test` - Vitest unit tests.
 - `npm run preview` - preview production build.
-- `npm run assets:check-external` - проверка, что карточные/аватарные ассеты не ссылаются на внешний CDN.
+- `npm run assets:check-external` - проверка внешних URL у карточных/аватарных ассетов.
 - `npm run seed:cards` - upsert стартовых `cards` и `prizes`.
-- `npm run seed:cards:reset` - очистить `cards`/`prizes`, затем seed. Требует dev-предохранители.
-- `npm run reset:dev` - полный dev reset состояния Firestore. Требует dev-предохранители.
+- `npm run seed:cards:reset` - очистить `cards`/`prizes`, затем seed.
+- `npm run reset:dev` - полный dev reset Firestore с предохранителями.
 - `npm run predeploy` - production build перед публикацией.
 - `npm run deploy` - публикация `dist` на GitHub Pages через `gh-pages`.
 
-Старый вход `node scripts/resetFirebaseState.mjs` оставлен для совместимости и вызывает защищенный `reset:dev`.
+## 5. Firebase
 
-## 5. Firebase Env
+Основные коллекции:
 
-Firebase config вынесен в env и читается в `src/firebase.ts` через `import.meta.env.VITE_FIREBASE_*`.
+- `players` - профили игроков и runtime-поля.
+- `gameState/current` - состояние партии.
+- `gameEvents` - лог событий.
+- `cards` - обычные карты.
+- `prizes` - легендарные карты.
+- `wheel` - список игр для колеса.
+- `game_settings/wheel` - runtime-состояние колеса.
+- `invites` - инвайты.
 
-Node-скрипты читают те же значения из `.env` и `.env.local` через `scripts/firebaseScriptUtils.mjs`.
+Поле `wheel/{gameId}.url` опционально. Если оно задано, строка игры в списке колеса открывает ссылку в новой вкладке.
 
-Файлы:
-
-- `.env.example` - шаблон без реальных ключей.
-- `.env.local` - локальные значения, не коммитить.
-
-Firebase client config не является полноценным секретом для frontend-приложения, но нельзя полагаться на скрытие ключей. Безопасность обеспечивается Auth, ролями и Firestore rules.
-
-## 6. Firestore Rules
+## 6. Firestore rules
 
 Правила лежат в:
 
@@ -131,77 +124,20 @@ Firebase client config не является полноценным секрет
 firebase deploy --only firestore:rules
 ```
 
-Текущая модель:
+На первом живом запуске используются более мягкие правила, где `gameState` открыт для записи авторизованным пользователям. Это сделано как рабочий компромисс, потому что большая часть логики пока исполняется на клиенте.
 
-- читать игровые данные могут авторизованные пользователи;
-- `cards`, `wheel`, destructive operations доступны админам;
-- игрок не может сам менять `role`, `id`, `createdAt`;
-- `gameState/current` больше не открыт через полный `allow write`;
-- для текущей клиентской архитектуры оставлены разрешенные runtime-поля `gameState`, которые нужны картам, броскам, дуэлям, уведомлениям и active interactions.
+Долгосрочная цель:
 
-Ограничение: карточная бизнес-логика все еще исполняется на клиенте. Для более строгой безопасности часть операций нужно переносить в Cloud Functions или другой доверенный backend.
+- перенести критичные операции в callable/backend handlers;
+- сузить Firestore rules после переноса каждого slice.
 
-## 7. Seed И Reset
+Кандидаты на перенос:
 
-### Seed cards/prizes
+1. `playCard`
+2. `respondToCard`
+3. `resolveInteraction`
 
-```bash
-npm run seed:cards
-```
-
-Команда upsert-ит карты из `src/components/starterCards.json`:
-
-- обычные карты в `cards`;
-- легендарные карты в `prizes`.
-
-### Reset cards/prizes
-
-```bash
-npm run seed:cards:reset
-```
-
-Команда удаляет `cards` и `prizes`, затем заново seed-ит карты. Это reset-операция, поэтому требует предохранители.
-
-### Dev reset
-
-```bash
-npm run reset:dev
-```
-
-Сбрасывает:
-
-- `gameState/current`;
-- игроковые runtime-поля;
-- `gameEvents`;
-- `cards`;
-- `prizes`.
-
-Не сбрасывает:
-
-- Firebase Auth users;
-- `login`, `avatar`, `role` игроков;
-- `invites`;
-- `wheel`;
-- `game_settings/wheel`.
-
-### Защита Reset
-
-В `.env.local` нужно явно выставить:
-
-```env
-VITE_FIREBASE_ENV=development
-FIREBASE_ALLOW_DEV_RESET=true
-FIREBASE_RESET_CONFIRM_PROJECT_ID=your-dev-project-id
-```
-
-Reset откажется запускаться, если:
-
-- нет `FIREBASE_ALLOW_DEV_RESET=true`;
-- `FIREBASE_RESET_CONFIRM_PROJECT_ID` не совпадает с текущим project id;
-- `VITE_FIREBASE_ENV=production`;
-- project id выглядит как production.
-
-## 8. Структура Проекта
+## 7. Структура проекта
 
 ```text
 src/
@@ -237,6 +173,10 @@ src/
     adminHandlers.ts
     cardHandlers.ts
     cardEffectRules.ts
+    cardPlayPatches.ts
+    cardPlayTransactions.ts
+    cardTargetRules.ts
+    cardUseGuards.ts
     duelHandlers.ts
     eventLogPolicy.ts
     interactionCardPicker.ts
@@ -251,753 +191,112 @@ src/
     starterCards.json
   services/
     gameStateService.ts
+  shared/
+    playCardContract.ts
   types/
     card.ts
     cardService.ts
     duel.ts
     game.ts
-scripts/
-  firebaseScriptUtils.mjs
-  seedCards.mjs
-  resetDevState.mjs
-  resetFirebaseState.mjs
 tests/
-  cardEffectRules.test.ts
-  eventLogPolicy.test.ts
-  interactionCardPicker.test.ts
-  legendaryHandlers.test.ts
-  taxHandlers.test.ts
-  wheelHandlers.test.ts
-public/
-  map.jpg
-  cards/
-  video/
+scripts/
 ```
 
-## 9. Точка Входа
+## 8. Основные модули
 
-- `src/main.tsx` подключает `src/index.css`, создает React root и рендерит `App`.
-- `src/AppClean.tsx` - re-export корневого компонента из `src/components/AppClean.tsx`.
-- `src/components/AppClean.tsx` - основной экран приложения.
+- `useGameData.ts` - главный hook игровой логики. Все еще крупный, постепенно дробится.
+- `AppClean.tsx` - основной layout и overlay. Все еще крупный, постепенно дробится.
+- `GameBoard.tsx` - поле, фишки, движение, колесо.
+- `GameWheel.tsx` - колесо и список игр; поддерживает read-only режим.
+- `ShopAndGamblingOverlays.tsx` - B-Shop и Gambling overlay.
+- `TaxResponseOverlay.tsx` - ответ на налоги.
+- `cardUseGuards.ts` - проверка возможности использовать карту.
+- `cardTargetRules.ts` - выбор целей для карт.
+- `cardEffectRules.ts` - правила отражения и расчет отдельных эффектов.
+- `interactionCardPicker.ts` - общий выбор карт для B-Shop/Gambling.
+- `taxHandlers.ts` - helper-логика налогов.
+- `turnHandlers.ts` - очередь ходов и золотая карта.
+- `legendaryHandlers.ts` - выдача и уникальность легендарок.
+- `wheelHandlers.ts` - логика прокрутки/Fish для колеса.
+- `eventLogPolicy.ts` - дедупликация и политика записи событий.
 
-## 10. Основные Firestore Коллекции
+## 9. UI-состояние
 
-### `players/{uid}`
+Правый сайдбар содержит:
 
-Документ игрока. ID равен Firebase Auth `user.uid`.
+- профиль игрока;
+- коллекцию легенд;
+- галерею артефактов;
+- информационное колесо;
+- админские действия, если роль `admin`.
 
-Важно: зарегистрированный пользователь не считается участником текущей партии, пока не выберет стартовую клетку. При регистрации создается `inGame: false`; после выбора клетки 6 или 15 `chooseStart` выставляет `inGame: true`. Игровые механики, результаты, голосование, очередь ходов и таблицы должны учитывать только участников партии: `inGame === true && role !== "admin"`.
+Галереи:
 
-Основные поля:
+- не показывают кнопку использования карты;
+- админ видит актуальное состояние, а не все раскрытые карты;
+- длинные описания легенд должны помещаться через внутреннюю прокрутку карточки.
 
-- `id`
-- `login`
-- `avatar`
-- `role`
-- `position`
-- `prevCell`
-- `inGame`
-- `tiltCoins`
-- `lastTiltoCoins`
-- `bonusPoints`
-- `inventory`
-- `hasProtection`
-- `customStatus`
-- `statusDuration`
-- `discardNextDrawn`
-- `redirectNextDrawnToPlayerId`
-- `giveNextDrawnToPlayerId`
-- `borderColor`
-- `lastNotification`
-- `createdAt`
+Колесо:
 
-### `gameState/current`
+- в игровом режиме может крутиться админом;
+- у игроков могут появляться карточки `inv_017` / `inv_006` около колеса, если они доступны;
+- в read-only режиме показывает только колесо и список игр.
 
-Центральное состояние партии.
+## 10. Уведомления и логи
 
-Ключевые поля:
+Уведомления показываются через:
 
-- `phase`
-- `round`
-- `currentGame`
-- `nextGame`
-- `turnOrder`
-- `currentTurnIndex`
-- `votes`
-- `scores`
-- `currentResults`
-- `gameHistory`
-- `goldenCardHolderIds`
-- `hotCoinGain`
-- `showWheel`
-- `currentRoll`
-- `currentRollPlayerId`
-- `lastBaseRoll`
-- `forcedMovePlayerId`
-- `cardMove`
-- `cardDiceRoll`
-- `pendingTaxPayout`
-- `rollBonus`
-- `rollConfirmed`
-- `revealedCards`
-- `activeInteraction`
-- `activeDuels`
-- `notifications`
+- `player.lastNotification`;
+- `gameState.notifications[userId]`;
+- локальные toast-уведомления.
 
-### `cards`
+Повторный показ после обновления страницы предотвращается локальным `localStorage`-списком просмотренных notification keys.
 
-Обычные карты из `starterCards.json`.
+`gameEvents` остаются в Firestore и могут расходовать quota. Очистка event log доступна админу.
 
-### `prizes`
+## 11. Тесты
 
-Легендарные карты. Имеют дополнительные поля:
+Покрыты pure/business helpers:
 
-- `isUnique`
-- `isWon`
-- `winnerId`
+- `cardUseGuards`
+- `cardTargetRules`
+- `cardPlayPatches`
+- `playCardContract`
+- `interactionCardPicker`
+- `taxHandlers`
+- `turnHandlers`
+- `legendaryHandlers`
 
-Визуально легендарные карты используют отдельную тему в `GameCard.tsx`: космический фон, мягкие nebula-блики, звездный слой, отдельный нижний фон и `card_face_light.svg` как текстурный слой. Общие цвета редкостей задаются в `gameConstants.ts`.
+Актуальный статус:
 
-`useFirestoreSubscriptions.ts` подписывается на `cards` и `prizes` отдельно и пересобирает `allCards` из двух актуальных snapshot-карт. Это важно для легендарных карт: удаление или reset документа в `prizes` не должен оставлять в памяти старые поля вроде `isWon: true`.
+- 10 test files.
+- 33 tests.
 
-### `gameEvents`
+## 12. Известные технические долги
 
-Лог событий. Последние события показываются в `EventLog`.
+- `useGameData.ts` все еще слишком большой.
+- `AppClean.tsx` все еще перегружен overlay-логикой.
+- Часть UI-текстов еще hardcoded и не вынесена в `src/i18n/ru.ts`.
+- Firestore rules пока компромиссные для клиентской архитектуры.
+- `gameEvents` и уведомления продолжают писать в Firestore.
+- Мобильная адаптация не завершена.
+- Медиа еще можно оптимизировать.
 
-Типы:
+## 13. Перед запуском
 
-- `card_play`
-- `coin_change`
-- `movement`
-- `status_effect`
-- `duel`
-- `info`
-- `success`
-- `warning`
-- `error`
-
-### `wheel`
-
-Список игр для колеса:
-
-- `name`
-- `image`
-- `active`
-
-### `game_settings/wheel`
-
-Синхронное состояние колеса:
-
-- `isSpinning`
-- `targetRotation`
-- `winnerIndex`
-- `previousWinnerIndex`
-- `previousTargetRotation`
-- `wheelCardStack`
-- `lastSpinSource`
-- `rerollBy`
-- `updatedAt`
-
-### `invites`
-
-Invite-коды для регистрации:
-
-- `code`
-- `used`
-- `usedBy`
-
-## 11. Авторизация
-
-Компонент:
-
-- `src/components/Auth.tsx`
-
-Логин преобразуется в псевдо-email:
-
-```ts
-`${login.trim().toLowerCase()}@cormorant.dev`
-```
-
-Регистрация:
-
-1. Игрок вводит логин, пароль, invite code.
-2. Клиент ищет invite в `invites`.
-3. Если invite существует и не использован, создается Firebase Auth user.
-4. Создается `players/{uid}`.
-5. Invite помечается как использованный.
-
-Вход:
-
-1. Игрок вводит логин и пароль.
-2. Логин превращается в псевдо-email.
-3. Firebase Auth выполняет sign in.
-
-Если Firebase Auth-сессия осталась в браузере, но документ `players/{uid}` был удален из Firestore, `useFirestoreSubscriptions` не оставляет приложение на вечной загрузке профиля. Пользователь получает уведомление, клиент выполняет `signOut(auth)` и возвращает экран входа/регистрации. Это важно после ручной чистки тестовых пользователей в Firestore.
-
-## 12. Игровые Фазы
-
-Тип:
-
-- `GamePhase` в `src/types/game.ts`
-
-Порядок:
-
-```text
-waiting_game -> playing -> results -> voting -> turn -> next_game
-```
-
-Назначение:
-
-- `waiting_game` - подготовка мини-игры.
-- `playing` - мини-игра идет.
-- `results` - админ вводит результаты.
-- `voting` - игроки голосуют за бонус.
-- `turn` - движение по карте и карты.
-- `next_game` - переход к следующей игре и колесо.
-
-Логика фаз находится в `useGameData.ts` и частично в `BottomPanel.tsx`.
-
-## 13. Карта И Движение
-
-Карта:
-
-- `src/components/gameMap.ts`
-
-Каждая клетка:
-
-```ts
-{
-  id: number;
-  x: number;
-  y: number;
-  next: number[];
-  type: "neutral" | "b-shop" | "gambling";
-}
-```
-
-Компонент карты:
-
-- `src/components/GameBoard.tsx`
-
-Движение использует:
-
-- `currentRoll`
-- `currentRollPlayerId`
-- `rollConfirmed`
-- `forcedMovePlayerId`
-- `cardMove`
-
-После окончания движения `handleMoveComplete` может открыть:
-
-- `activeInteraction.type = "bshop"`;
-- `activeInteraction.type = "gambling"`.
-
-## 14. Колесо
-
-Компонент:
-
-- `src/components/GameWheel.tsx`
-
-Данные:
-
-- Firestore `wheel`
-- fallback из `src/components/gameList.ts`
-
-Синхронное состояние:
-
-- `game_settings/wheel`
-
-Открытие:
-
-- `gameState/current.showWheel`
-
-Подтверждение результата колеса сейчас выполняется через `writeBatch`:
-
-- выбранная игра становится `active: false`;
-- сбрасывается `game_settings/wheel`;
-- `gameState/current` переводится в `waiting_game`;
-- `currentGame` получает название выбранной игры.
-
-Карточные эффекты колеса:
-
-- `inv_017` - reroll.
-- `inv_006` - отмена последней активной карты на колесе.
-
-## 15. Карточная Система
-
-Типы:
-
-- `src/types/card.ts`
-
-Исходные данные:
-
-- `src/components/starterCards.json`
-
-Колоды:
-
-- `inventory`
-- `momental`
-
-Редкости:
-
-- `common`
-- `rare`
-- `epic`
-- `legendary`
-
-Действия карт описаны в `CardAction`.
-
-Ключевые группы действий:
-
-- изменение монет;
-- движение;
-- телепорт;
-- защита;
-- отражение;
-- кража монет;
-- кража/сброс карты;
-- B-Shop/Gambling;
-- дуэли;
-- налоги;
-- призовые легендарные карты;
-- пассивные бонусы.
-
-Основная логика применения карт остается в `useGameData.ts`, но часть helper-логики вынесена в:
-
-- `cardHandlers.ts`
-- `cardEffectRules.ts`
-- `turnHandlers.ts`
-- `duelHandlers.ts`
-- `adminHandlers.ts`
-- `interactionCardPicker.ts`
-- `legendaryHandlers.ts`
-- `taxHandlers.ts`
-- `wheelHandlers.ts`
-
-`cardEffectRules.ts` содержит тестируемые pure functions для правил карт: список отражаемых карт, проверку возможности ответной карты "А может тебя?", расчет "Судьи душ" и промокодное снижение потерь.
-
-`interactionCardPicker.ts` отвечает за генерацию трех карт для B-Shop и Gambling:
-
-- B-Shop выбирает карты из `inventory` с заданной ценой;
-- Gambling выбирает карты по весам редкости `common`/`rare`/`epic`;
-- momental-карты в Gambling имеют повышенный вес;
-- легендарная карта может попасть в Gambling с небольшим шансом, если она еще не выиграна.
-
-`legendaryHandlers.ts` содержит helper-логику легендарных карт: определение легендарной/призовой карты и админскую выдачу prize-карты игроку.
-
-`wheelHandlers.ts` содержит клиентскую механику колеса: расчет payload вращения, переброс картой "Подкрутка", проверки доступности переброса и отмену последней активной карты на колесе через No, no, no Mr.Fish.
-
-`taxHandlers.ts` содержит вынесенные части налоговой механики: применение `pendingTaxPayout`, расчет доступных ответных карт и построение следующего `tax_response` из очереди.
-
-## 16. Active Interactions
-
-Тип:
-
-- `ActiveInteraction` в `src/types/game.ts`
-
-Варианты:
-
-- `gambling`
-- `bshop`
-- `discard_selection`
-- `reflect_response`
-- `tax_response`
-- `move_for_coins_selection`
-- `duel_challenge_response`
-- `duel_weapon_selection`
-- `duel_betting`
-- `duel_ready_to_roll`
-
-UI вынесен частично:
-
-- `ShopAndGamblingOverlays.tsx`
-- `TaxResponseOverlay.tsx`
-- `InteractionPendingOverlay.tsx`
-- часть дуэльных overlay пока остается в `AppClean.tsx`.
-
-Карты для `bshop` и `gambling` больше не собираются локальными функциями внутри `useGameData.ts`; для этого используется общий helper `getRandomInteractionCardIds` из `interactionCardPicker.ts`.
-
-## 17. Дуэли
-
-Единый источник типов:
-
-- `src/types/duel.ts`
-
-Реэкспорт для совместимости:
-
-- `src/types/game.ts`
-- `src/types/card.ts`
-
-Типы:
-
-- `DuelWeapon = "dice" | "game"`
-- `DuelStatus`
-- `DuelState`
-
-Статусы:
-
-- `pending`
-- `accepted`
-- `betting`
-- `ready_to_roll`
-- `rolling`
-- `admin_wait`
-- `finished`
-
-`ready_to_roll` - единый актуальный статус. Старый конфликтующий `ready` удален из карточного типа.
-
-## 18. UI И Модалки
-
-Основные компоненты:
-
-- `AppClean.tsx` - главный экран.
-- `BottomPanel.tsx` - нижняя панель.
-- `PlayersSidebar.tsx` - таблица игроков и админские действия.
-- `EventLog.tsx` - лог событий.
-- `ToastContainer.tsx` - toast-уведомления.
-- `GameAlertOverlay.tsx` - игровое alert-окно.
-- `AdminDialog.tsx` - собственная модалка вместо browser `alert`, `confirm`, `prompt`.
-- `ShopAndGamblingOverlays.tsx` - B-Shop и Gambling.
-- `TaxResponseOverlay.tsx` - налоговый ответ.
-- `InteractionPendingOverlay.tsx` - глобальный индикатор ожидания.
-
-Browser dialogs удалены из `src`: `alert`, `confirm`, `prompt` больше не используются.
-
-Игровые уведомления из `players/{uid}.lastNotification` и `gameState/current.notifications[uid]` показываются через `GameAlertOverlay`. Чтобы одно и то же уведомление не всплывало повторно после перезагрузки страницы, `AppClean.tsx` хранит ограниченный список уже показанных ключей в `localStorage`:
-
-```text
-rgg-shown-notifications:{uid}
-```
-
-Старый формат `rgg-shown-notification:{key}` тоже учитывается для совместимости. Клиент больше не очищает `lastNotification` и `notifications[uid]` сразу после показа, поэтому источник состояния остается в Firestore, а повторный показ гасится на стороне конкретного браузера.
-
-## 19. Локализация
-
-Русские UI-тексты постепенно переносятся в:
-
-- `src/i18n/ru.ts`
-
-Уже вынесены:
-
-- базовые loading-сообщения;
-- event log;
-- pending overlay;
-- BottomPanel;
-- B-Shop/Gambling;
-- Tax overlay;
-- часть `AppClean` alert/notification;
-- тексты `AdminDialog`.
-
-Осталось вынести:
-
-- большую часть игровых логов и notifications из `useGameData.ts`;
-- часть текстов `AppClean.tsx`;
-- часть текстов `PlayersSidebar.tsx`;
-- некоторые подписи в `GameBoard`, `GameWheel`, `GameCard`.
-
-Правило для новых текстов: добавлять в `ru.ts`, в компонентах использовать `ru.<section>.<key>`.
-
-## 20. Событийный Лог
-
-Логирование:
-
-- `src/components/useEventLogger.ts`
-- `src/components/eventLogPolicy.ts`
-
-UI:
-
-- `src/components/EventLog.tsx`
-
-Админ может очищать лог через `AppClean.tsx`, используется batch delete по чанкам.
-
-Чтобы не расходовать Firestore quota на шумные события, `useEventLogger.ts` пропускает запись части низкоприоритетных событий в `gameEvents` по политике из `eventLogPolicy.ts`. По умолчанию не пишутся `coin_change`, `movement`, `status_effect` и `info`; важные `card_play`, `duel`, `success`, `warning`, `error` остаются. Также есть dedupe одинаковых событий на 3 секунды и клиентский лимит 80 записей в минуту.
-
-Для временной отладки подробного Firestore-лога в браузере:
-
-```js
-localStorage.setItem("rgg-verbose-firestore-events", "1")
-```
-
-Отключить:
-
-```js
-localStorage.removeItem("rgg-verbose-firestore-events")
-```
-
-## 21. Записи В Firestore
-
-Часть связанных операций переведена на `writeBatch` или `runTransaction`.
-
-Уже улучшено:
-
-- результат колеса;
-- сохранение результатов раунда;
-- завершение голосования;
-- списание карты и добавление в `revealedCards`;
-- reflect-offer;
-- часть карточных эффектов по монетам и `gameState`;
-- часть `deal_with_mage`;
-- `judge_coins`.
-
-Дуэли в основном уже используют `runTransaction`.
-
-Остаточный риск: `useGameData.ts` все еще содержит много отдельных `updateDoc` в сложных карточных сценариях. Это лучше продолжать чистить постепенно, сценарий за сценарием.
-
-## 22. Admin Возможности
-
-Админ определяется по:
-
-```ts
-playerData?.role === "admin"
-```
-
-Основные действия:
-
-- переключение фаз;
-- ввод результатов;
-- завершение голосования;
-- открытие колеса;
-- seed/init карт из UI;
-- reset состояния;
-- добавление/удаление карт игрокам;
-- изменение монет;
-- очистка event log;
-- решение кастомных дуэлей.
-
-UI админских prompt/confirm заменен на `AdminDialog`.
-
-## 23. Ассеты И Стили
-
-Стили:
-
-- `src/index.css`
-- `src/App.css`
-- `src/components/GameWheel.css`
-- `src/components/DiceVisual.css`
-
-Глобальные анимации и классы карточек (`animate-holo`, `animate-float`, `animate-shimmer-fast`, `animate-legendary-glow`, tooltip номера карты) находятся в `src/index.css`. Раньше часть этих стилей инлайнилась внутри `GameCard.tsx`; теперь компонент не вставляет собственный `<style>` при каждом рендере.
-
-Шрифт:
-
-- `src/assets/fonts/citricacyrillic.ttf`
-
-Публичные ассеты:
-
-- `public/map.jpg`
-- `public/cards`
-- `public/avatars`
-- `public/video/bg.webm`
-
-Карточные медиа хранятся локально:
-
-- обычные карты: `public/cards/faces`, сейчас WebP;
-- легендарные карты: `public/cards/legend`, сейчас WebP;
-- fallback-аватар: `public/avatars/fallback.jpg`
-
-В `src/components/starterCards.json` поле `artCard` должно ссылаться на локальный путь вида `/cards/faces/inv_001.webp` или `/cards/legend/name.webp`, а не на `giphy.com`, `tenor.com` или другой внешний CDN. Для проверки:
+Минимальный checklist:
 
 ```bash
+npm test
+npm run build
+npm run lint
 npm run assets:check-external
 ```
 
-Видео `public/video/bg.webm` используется на экранах авторизации и основного приложения. GitHub не принимает обычные git-файлы больше `100 MB`, поэтому при замене фонового видео нужно держать размер ниже лимита или заранее переводить видео в Git LFS. Старые тяжелые версии файла в истории тоже блокируют push, даже если текущий файл уже сжат.
+Также проверить:
 
-## 24. Как Добавить Карту
-
-1. Добавить запись в `src/components/starterCards.json`.
-2. Выбрать уникальный `id`.
-3. Заполнить:
-   - `name`
-   - `description`
-   - `deck`
-   - `rarity`
-   - `action`
-   - `value`
-   - `faceCard`
-   - `artCard`
-   - `price`
-   - `number`
-   - `howtowork`
-   - `requiresTarget`
-4. Если `action` новый, добавить его в `CardAction`.
-5. Добавить обработку в карточную логику.
-6. Запустить:
-
-```bash
-npm run seed:cards
-```
-
-Если нужно полностью пересоздать карты в dev:
-
-```bash
-npm run seed:cards:reset
-```
-
-## 25. Как Добавить Игру В Колесо
-
-Добавить документ в Firestore collection `wheel`:
-
-```json
-{
-  "name": "Название игры",
-  "image": "https://...",
-  "active": true
-}
-```
-
-`id` документа используется для сортировки/обновления. После подтверждения результата выбранная игра становится `active: false`.
-
-## 26. Как Изменить Карту Поля
-
-Файл:
-
-- `src/components/gameMap.ts`
-
-Шаги:
-
-1. Добавить или изменить клетку.
-2. Проверить уникальность `id`.
-3. Обновить координаты `x`, `y`.
-4. Обновить `next` у связанных клеток.
-5. Выбрать `type`.
-6. Проверить движение, линии, развилки и попадание на `b-shop`/`gambling`.
-
-## 27. Выполненный Техдолг
-
-Уже сделано:
-
-1. Восстановлена UTF-8 кодировка русских строк.
-2. Убран runtime `fixMojibake`.
-3. Firebase config вынесен в env.
-4. Добавлен `.env.example`.
-5. Добавлены Firestore rules и `firebase.json`.
-6. README обновлен под запуск, Firebase, rules, seed/reset.
-7. `useGameData.ts` частично разделен:
-   - `useFirestoreSubscriptions`
-   - `useEventLogger`
-   - `cardHandlers`
-   - `turnHandlers`
-   - `duelHandlers`
-   - `adminHandlers`
-   - `cardEffectRules`
-   - `interactionCardPicker`
-   - `legendaryHandlers`
-   - `taxHandlers`
-   - `wheelHandlers`
-8. `AppClean.tsx` частично разделен:
-   - event log
-   - toast container
-   - game alert overlay
-   - interaction pending overlay
-   - B-Shop/Gambling overlay
-   - Tax overlay
-   - profile sidebar
-9. Типы дуэлей унифицированы в `src/types/duel.ts`.
-10. Часть последовательных Firestore writes заменена на `writeBatch`/`runTransaction`.
-11. Добавлены отдельные seed/reset скрипты с защитой от production reset.
-12. Добавлен `src/i18n/ru.ts`.
-13. Browser `alert`, `confirm`, `prompt` заменены на собственные модалки/notify.
-14. Внешние карточные медиа и fallback-аватар сохранены локально в `public/cards` и `public/avatars`.
-15. Добавлена проверка `npm run assets:check-external`.
-16. Обработан сценарий удаленного `players/{uid}`: приложение выходит из старой Auth-сессии вместо вечной загрузки профиля.
-17. Обновлена визуальная тема легендарных карт: космический стиль, отдельная нижняя часть и `card_face_light.svg` как текстурный слой.
-18. Логика подбора карт для B-Shop/Gambling вынесена из `useGameData.ts` в `interactionCardPicker.ts`.
-19. Повторный показ игровых уведомлений стабилизирован через per-user список ключей в `localStorage`; клиент больше не стирает уведомления из Firestore сразу после открытия alert.
-20. Инлайн-стили `GameCard.tsx` перенесены в `src/index.css`.
-21. Добавлен `cardEffectRules.ts` с первыми pure rules для карточной логики: отражение, "Судья душ" и промокодное снижение потерь.
-22. Добавлен Vitest и первые unit tests для `cardEffectRules.ts` и `interactionCardPicker.ts`.
-23. `useFirestoreSubscriptions.ts` больше не накапливает устаревшие данные `cards`/`prizes`: `allCards` пересобирается из актуальных snapshot-карт.
-24. Механика колеса вынесена из `useGameData.ts` в `wheelHandlers.ts`; добавлен `wheelHandlers.test.ts`.
-25. Правый профильный сайдбар вынесен из `AppClean.tsx` в `ProfileSidebar.tsx`.
-26. Firestore event log получил `eventLogPolicy.ts`: низкоприоритетные события не пишутся в `gameEvents` по умолчанию, есть dedupe и клиентский лимит записей.
-27. Карточные медиа переведены на WebP; фон переведен на WebM.
-28. Часть налоговой механики вынесена в `taxHandlers.ts`; добавлен `taxHandlers.test.ts`.
-29. Часть логики легендарных карт вынесена в `legendaryHandlers.ts`; добавлен `legendaryHandlers.test.ts`.
-
-## 28. Остаточный Техдолг
-
-### До Первого Деплоя/Публичного Теста
-
-Минимальный набор перед тем, как давать ссылку другим игрокам:
-
-1. Запустить `npm test`.
-2. Запустить `npm run lint`.
-3. Запустить `npm run build`.
-4. Запустить `npm run assets:check-external`.
-5. Деплойнуть Firestore rules:
-
-```bash
-firebase deploy --only firestore:rules
-```
-
-6. Проверить `.env.local`/hosting env: все `VITE_FIREBASE_*` указывают на нужный Firebase project.
-7. Запустить `npm run seed:cards` для нужного проекта.
-8. Создать или проверить invite-коды в `invites`.
-9. Проверить руками один короткий сценарий: регистрация игрока, стартовая клетка, бросок, покупка/использование карты, действие админа.
-10. Для GitHub Pages: проверить `homepage` в `package.json`, затем выполнить `npm run deploy`.
-
-### Высокий Приоритет После Первого Деплоя
-
-1. Расширять тесты бизнес-логики: покрыть налоги, дуэли, легендарки и новые pure helpers из карточных flow. Колесо и event log policy уже имеют первые unit tests.
-2. Дальше дробить `useGameData.ts`: следующие кандидаты - налоги, дуэли, легендарки и active interactions.
-3. Дальше дробить `AppClean.tsx`: следующие кандидаты - коллекция/рука, легендарная галерея и дуэльные overlay.
-4. Продолжить перевод текстов в `src/i18n/ru.ts`.
-5. Продолжать выносить карточные эффекты в тестируемые pure functions.
-6. Усилить Firestore rules после переноса критичных операций на backend.
-7. Решить долгосрочную модель очистки/истечения `lastNotification` и `gameState.notifications`: сейчас повторный показ защищен на клиенте, но сами записи могут оставаться в Firestore.
-8. Следить за весом WebP-медиа и при необходимости дожимать самые тяжелые файлы.
-
-### Средний Приоритет
-
-1. Описать Firestore schema отдельным документом или TS-константами.
-2. Сделать repository layer:
-   - `playersRepository`
-   - `gameStateRepository`
-   - `cardsRepository`
-   - `wheelRepository`
-3. Продолжить замену последовательных `updateDoc`.
-4. Добавить Firebase Emulator workflow.
-5. Добавить prettier/format script.
-
-### Низкий Приоритет
-
-1. Дальше улучшать loading/error states для Firestore за пределами сценария удаленного профиля.
-2. Проверить адаптивность на мобильных экранах.
-3. Добавить accessibility-аудит.
-4. Добавить dev tooling для быстрого создания тестовой партии.
-
-## 29. Ключевые Файлы
-
-- `src/components/AppClean.tsx` - главный UI.
-- `src/components/useGameData.ts` - главный controller hook.
-- `src/components/useFirestoreSubscriptions.ts` - Auth/Firestore subscriptions.
-- `src/components/useEventLogger.ts` - запись game events.
-- `src/components/eventLogPolicy.ts` - фильтрация и throttling записей `gameEvents`.
-- `src/components/GameBoard.tsx` - карта и движение.
-- `src/components/GameWheel.tsx` - колесо.
-- `src/components/BottomPanel.tsx` - нижняя панель.
-- `src/components/PlayersSidebar.tsx` - игроки и админские операции.
-- `src/components/ProfileSidebar.tsx` - правый профильный сайдбар, аватар, аура, коллекции, админские Init/Reset.
-- `src/components/AdminDialog.tsx` - собственные модалки.
-- `src/components/cardEffectRules.ts` - pure rules для отражения, "Судьи душ" и промокодных потерь.
-- `src/components/interactionCardPicker.ts` - подбор карт для B-Shop/Gambling interactions.
-- `src/components/legendaryHandlers.ts` - helper-логика легендарных/prize-карт.
-- `src/components/taxHandlers.ts` - helper-логика налогов и `pendingTaxPayout`.
-- `src/components/wheelHandlers.ts` - helper-логика колеса и карточек `Подкрутка`/Fish.
-- `src/components/starterCards.json` - база карт.
-- `src/components/gameMap.ts` - граф поля.
-- `src/types/game.ts` - типы игроков, фазы, gameState.
-- `src/types/card.ts` - типы карт.
-- `src/types/duel.ts` - типы дуэлей.
-- `src/i18n/ru.ts` - русские UI-тексты.
-- `src/firebase.ts` - инициализация Firebase.
-- `firestore.rules` - правила Firestore.
-- `scripts/firebaseScriptUtils.mjs` - shared helpers для seed/reset.
-- `scripts/seedCards.mjs` - seed cards/prizes.
-- `scripts/resetDevState.mjs` - защищенный dev reset.
-- `tests/cardEffectRules.test.ts` - Vitest-покрытие pure rules карт.
-- `tests/eventLogPolicy.test.ts` - Vitest-покрытие политики записи `gameEvents`.
-- `tests/interactionCardPicker.test.ts` - Vitest-покрытие B-Shop/Gambling picker.
-- `tests/legendaryHandlers.test.ts` - Vitest-покрытие определения легендарных/prize-карт.
-- `tests/taxHandlers.test.ts` - Vitest-покрытие pure-helper-ов налоговой очереди.
-- `tests/wheelHandlers.test.ts` - Vitest-покрытие pure-части механики колеса.
+- в Firebase опубликованы рабочие правила;
+- в `wheel` у игр есть `name`, `active`, при необходимости `image` и `url`;
+- в `cards` и `prizes` загружены актуальные данные из `starterCards.json`;
+- у админа роль `admin`;
+- event log очищен, если нужен чистый старт.

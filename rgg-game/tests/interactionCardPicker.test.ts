@@ -50,6 +50,17 @@ describe("interactionCardPicker", () => {
     expect(getRandomInteractionCardIds("bshop", cards)).toEqual(["inv_priced"]);
   });
 
+  it("does not offer legendary cards in b-shop even when they have a price", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+
+    const cards = {
+      leg_priced: makeCard({ id: "leg_priced", deck: "inventory", rarity: "legendary", price: 1 }),
+      inv_priced: makeCard({ id: "inv_priced", deck: "inventory", rarity: "rare", price: 7 }),
+    };
+
+    expect(getRandomInteractionCardIds("bshop", cards)).toEqual(["inv_priced"]);
+  });
+
   it("can place one available legendary card in gambling when legendary chance hits", () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
 

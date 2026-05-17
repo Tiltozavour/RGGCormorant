@@ -46,6 +46,7 @@ function ProfileSidebar({
     danger?: boolean;
     onConfirm?: () => void | Promise<void>;
   } | null>(null);
+  const isDebtor = (playerData.tiltCoins ?? 0) < 0;
 
   const runAdminAction = useCallback(async (action: () => void | Promise<void>) => {
     if (isAdminActionPending) return;
@@ -103,6 +104,20 @@ function ProfileSidebar({
               title="Нажмите, чтобы изменить аватар"
             />
           </div>
+
+          {isDebtor && (
+            <div
+              className="w-full rounded-2xl border border-red-400/30 bg-red-950/35 px-4 py-3 text-center shadow-[0_0_24px_rgba(248,113,113,0.14)]"
+              title="Статус снимается автоматически, когда баланс станет 0 или выше"
+            >
+              <div className="text-[10px] font-black uppercase tracking-[0.25em] text-red-200">
+                Должник Карморанта
+              </div>
+              <div className="mt-1 text-[11px] font-bold text-red-300/80">
+                Баланс ниже 0
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col gap-5 w-full">
             <div className="flex flex-col gap-2">

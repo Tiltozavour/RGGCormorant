@@ -575,24 +575,24 @@ const GameBoard: React.FC<GameBoardProps> = ({
       })}
 
       {choice && (
-        <div className="absolute bottom-48 left-1/2 -translate-x-1/2 flex flex-col items-center gap-4 z-[10015] animate-in fade-in zoom-in duration-300">
-          <div className="bg-black/80 backdrop-blur-md border border-white/20 px-4 py-1.5 rounded-full shadow-2xl">
+        <div className="pointer-events-none absolute bottom-4 sm:bottom-5 left-1/2 -translate-x-1/2 flex w-[min(92vw,560px)] flex-col items-center gap-2 z-[10015] animate-in fade-in zoom-in duration-300">
+          <div className="bg-black/45 backdrop-blur-sm border border-white/15 px-3 py-1 rounded-full shadow-xl">
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white">
               {isControllingOther 
                 ? `Управление игроком: ${players.find(p => p.id === controlledTargetId)?.login}` 
                 : "Выберите направление"}
             </span>
           </div>
-          <div className="flex gap-3">
+          <div className="pointer-events-auto flex flex-wrap justify-center gap-2">
             {choice.map((id) => (
               <button
                 key={id}
                 onClick={() => handleChoice(id)}
                 className={`${
                   isControllingOther 
-                    ? "bg-red-600 hover:bg-red-500 shadow-red-500/40 animate-pulse" 
-                    : "bg-purple-600 hover:bg-purple-500 shadow-purple-500/20"
-                } hover:scale-110 active:scale-95 transition-all px-6 py-2 rounded-xl font-black uppercase text-sm shadow-xl border border-white/10 text-white`}
+                    ? "bg-red-600/70 hover:bg-red-500/95 shadow-red-500/30 animate-pulse" 
+                    : "bg-purple-600/70 hover:bg-purple-500/95 shadow-purple-500/20"
+                } hover:scale-105 active:scale-95 transition-all px-4 py-2 rounded-xl font-black uppercase text-xs sm:text-sm shadow-xl border border-white/15 text-white backdrop-blur-sm`}
                 style={{ fontFamily: "'Comfortaa', sans-serif" }}
               >
                 В сторону {id}
@@ -616,6 +616,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
           const isCurrentTurn = otherPlayer.id === currentTurnPlayerId;
           const offset = getPlayerOffset(otherPlayer.id, pos);
+          const isDebtor = (otherPlayer.tiltCoins ?? 0) < 0;
 
           return (
             <div
@@ -704,6 +705,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
                 {otherPlayer.customStatus === 'reflect_debuff' && <span title="Отражение" className="animate-status-appear">🔄</span>}
                 {otherPlayer.customStatus === 'promo_code_active' && <span title="Промокодик" className="animate-status-appear">🏷️</span>}
                 {(goldenCardHolderIds ?? []).includes(otherPlayer.id) && <span title="Золотая карта" className="animate-status-appear text-yellow-300">★</span>}
+                {isDebtor && <span title="Должник Карморанта" className="animate-status-appear text-red-300">Д</span>}
                 {isCurrentTurn && <span className="text-[8px] opacity-70">●</span>}
               </div>
 
@@ -726,6 +728,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
         const isTargetingSelf = !isControllingOther;
         const activePlayer = isTargetingSelf ? playerData : players.find(p => p.id === controlledTargetId);
         if (!activePlayer) return null;
+        const isDebtor = (activePlayer.tiltCoins ?? 0) < 0;
 
         return (
         <div
@@ -816,6 +819,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
             {activePlayer.customStatus === 'reflect_debuff' && <span title="Отражение" className="animate-status-appear">🔄</span>}
             {activePlayer.customStatus === 'promo_code_active' && <span title="Промокодик" className="animate-status-appear">🏷️</span>}
             {(goldenCardHolderIds ?? []).includes(activePlayer.id) && <span title="Золотая карта" className="animate-status-appear text-yellow-300">★</span>}
+            {isDebtor && <span title="Должник Карморанта" className="animate-status-appear text-red-300">Д</span>}
             {activePlayer.id === currentTurnPlayerId && <span className="text-[8px] opacity-70">●</span>}
           </div>
 

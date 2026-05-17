@@ -128,6 +128,7 @@ function PlayersSidebar({
                   ? ` (${row.lastGameName})`
                   : "";
                 const isTop1 = row.playerId === topPlayerId;
+                const isDebtor = (player?.tiltCoins ?? 0) < 0;
 
                 return (
                   <tr
@@ -154,6 +155,14 @@ function PlayersSidebar({
                                 title="Золотая карта: скидка 50% в B-Shop"
                               >
                                 ★
+                              </span>
+                            )}
+                            {isDebtor && (
+                              <span
+                                className="inline-flex items-center rounded-full border border-red-400/50 bg-red-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-red-200 shadow-[0_0_12px_rgba(248,113,113,0.18)]"
+                                title="Должник Карморанта: баланс ниже 0"
+                              >
+                                Должник
                               </span>
                             )}
                           </div>
@@ -205,7 +214,7 @@ function PlayersSidebar({
                       +{bonusScore}
                     </td>
 
-                    <td className="px-4 py-3 text-green-300 font-medium group">
+                    <td className={`px-4 py-3 font-medium group ${isDebtor ? "text-red-300" : "text-green-300"}`}>
                       <div className="flex items-center justify-between gap-2">
                         <span>{player?.tiltCoins ?? 0}</span>
                         {isAdmin && (

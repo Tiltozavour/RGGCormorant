@@ -32,7 +32,11 @@ export const getRandomInteractionCardIds = (
   for (let i = 0; i < INTERACTION_CARD_COUNT; i += 1) {
     if (type === "bshop") {
       const pool = cardsArray.filter(
-        (card) => card.deck === "inventory" && typeof card.price === "number" && !selectedIds.has(card.id),
+        (card) =>
+          card.deck === "inventory" &&
+          card.rarity !== "legendary" &&
+          typeof card.price === "number" &&
+          !selectedIds.has(card.id),
       );
       const selected = pickRandom(pool);
       if (selected) {

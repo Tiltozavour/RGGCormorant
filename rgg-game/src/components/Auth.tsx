@@ -73,7 +73,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         await setDoc(doc(db, "players", user.uid), {
           login: login.trim(),
           position: 0,
-          tiltCoins: 0,
+          tiltCoins: 5,
           inGame: false,
           role: "player",
           createdAt: new Date(),
