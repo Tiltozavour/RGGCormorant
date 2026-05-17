@@ -127,10 +127,6 @@ const GameBoard: React.FC<GameBoardProps> = ({
     onMoveCompleteRef.current = onMoveComplete;
   }, [onMoveComplete]);
 
-  useEffect(() => {
-    setIsChoiceCollapsed(false);
-  }, [choice]);
-
   const getCell = (id: number) => map.find((cell) => cell.id === id);
 
   useEffect(() => {
@@ -264,6 +260,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
         if (possibleMoves.length > 1) {
           const chosen = await new Promise<number>((resolve) => {
+            setIsChoiceCollapsed(false);
             setChoice(possibleMoves);
             choiceResolveRef.current = resolve;
           });

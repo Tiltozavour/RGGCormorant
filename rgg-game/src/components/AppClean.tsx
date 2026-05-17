@@ -205,8 +205,13 @@ function AppClean() {
   const canUseSelectedCard = Boolean(
     selectedCardPreviewMode === 'use' &&
     selectedCard &&
+    selectedCard.id !== "inv_018" &&
+    selectedCard.action !== "passive_benefit" &&
     playerData?.inventory?.includes(selectedCard.id)
   );
+  const canUseHandCard = (card: GameCardType) =>
+    card.id !== "inv_018" &&
+    card.action !== "passive_benefit";
 
   const [coinNotification, setCoinNotification] = useState<{ amount: number; type: 'gain' | 'loss' } | null>(null);
 
@@ -881,11 +886,11 @@ function AppClean() {
                         setSelectedCard(card); 
                         setIsHandOpen(false); 
                       }}
-                      onUse={() => { 
+                      onUse={canUseHandCard(card) ? () => { 
                         if (isInteractionPending) return;
                         handleCardClick(card); 
                         setIsHandOpen(false); 
-                      }}
+                      } : undefined}
                     />
                     {count > 1 && (
                       <div className="absolute -top-3 -right-3 z-20 min-w-10 h-10 px-2 rounded-full bg-yellow-400 text-black border-2 border-black/60 shadow-[0_0_20px_rgba(250,204,21,0.45)] flex items-center justify-center text-sm font-black">

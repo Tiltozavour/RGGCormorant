@@ -381,7 +381,7 @@
     "number": 27
   },
 
-     {
+  {
     "id": "leg_001",
     "name": "Итан Хоуп",
     "description": "Иногда я думаю.",
@@ -495,14 +495,14 @@
   }, 
   {
     "id": "leg_009",
-    "name": "Джон Доу",
-    "description": "Сейчас начнется веселье",
+    "name": "Кольт Риверс",
+    "description": "На закате все грехи выглядят одинаково.",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/comrade.webp",
+    "artCard": "/cards/legend/colt.webp",
     "price": null,
     "howtowork": "Comrade",
     "number": 36

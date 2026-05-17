@@ -37,7 +37,7 @@ function ScoresDetailsPage({
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl text-yellow-300">Подробная статистика</h1>
-            <p className="mt-2 text-sm text-zinc-400">
+            <p className="mt-2 text-sm text-zinc-400" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
               Таблицы по всем играм и актуальная сводка по игрокам
             </p>
           </div>
@@ -45,12 +45,16 @@ function ScoresDetailsPage({
           <button
             onClick={onBack}
             className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-sm text-yellow-200 transition hover:bg-yellow-500/20"
+            style={{ fontFamily: "'Comfortaa', sans-serif" }}
           >
             Назад
           </button>
         </div>
 
-        <section className="mb-8 rounded-2xl border border-yellow-500/15 bg-black/40 p-4 backdrop-blur-md">
+        <section
+          className="mb-8 rounded-2xl border border-yellow-500/15 bg-black/40 p-4 backdrop-blur-md"
+          style={{ fontFamily: "'Comfortaa', sans-serif" }}
+        >
           <h2 className="mb-4 text-lg text-yellow-200">Общий рейтинг</h2>
 
           <div className="overflow-auto rounded-xl border border-yellow-500/10">
@@ -115,7 +119,7 @@ function ScoresDetailsPage({
           </div>
         </section>
 
-        <section className="space-y-6">
+        <section className="space-y-6" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
           {gameHistory.length === 0 && (
             <div className="rounded-2xl border border-yellow-500/15 bg-black/40 p-5 text-zinc-300 backdrop-blur-md">
               История игр пока пуста. Как только в `gameHistory` появятся записи,
