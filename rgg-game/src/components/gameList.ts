@@ -6,6 +6,7 @@ export interface AvailableGame {
   name: string;
   active: boolean;
   image?: string;
+  url?: string;
 }
 
 const FALLBACK_GAMES: AvailableGame[] = [
@@ -24,6 +25,7 @@ export async function fetchAvailableGames(): Promise<AvailableGame[]> {
       id: doc.id, 
       name: doc.data().name || doc.id, // Если поля name нет, берем ID (например, game1)
       image: doc.data().image || "",
+      url: doc.data().url || "",
       active: doc.data().active ?? false
     } as AvailableGame));
 
@@ -33,6 +35,7 @@ export async function fetchAvailableGames(): Promise<AvailableGame[]> {
         id: doc.id,
         name: doc.data().name || doc.id,
         image: doc.data().image || "",
+        url: doc.data().url || "",
         active: true,
       } as AvailableGame));
 

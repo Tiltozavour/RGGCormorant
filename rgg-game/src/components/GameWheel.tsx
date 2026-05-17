@@ -8,6 +8,7 @@ interface Item {
   name: string;
   image?: string;
   active?: boolean;
+  url?: string;
 }
 
 interface WheelActionCard {
@@ -26,6 +27,7 @@ interface Props {
   onClose?: () => void;
   canSpin: boolean;
   actionCards?: WheelActionCard[];
+  readOnly?: boolean;
 }
 
 export const GameWheel: React.FC<Props> = ({
@@ -34,6 +36,7 @@ export const GameWheel: React.FC<Props> = ({
   onClose,
   canSpin,
   actionCards = [],
+  readOnly = false,
 }) => {
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
@@ -48,6 +51,8 @@ export const GameWheel: React.FC<Props> = ({
 
   // Синхронизация состояния колеса через Firebase
   useEffect(() => {
+    if (readOnly) return;
+
     const unsub = onSnapshot(doc(db, "game_settings", "wheel"), (snap) => {
       const data = snap.data();
       if (!data) return;
@@ -85,7 +90,7 @@ export const GameWheel: React.FC<Props> = ({
     });
 
     return () => unsub();
-  }, [items, rotation]);
+  }, [items, readOnly, rotation]);
 
   const updateActiveSegment = useCallback(() => {
     const tick = () => {
@@ -113,6 +118,7 @@ export const GameWheel: React.FC<Props> = ({
   }, [spinning, updateActiveSegment]);
 
   const spin = async () => {
+    if (readOnly) return;
     if (spinning || items.length === 0 || winner) return;
 
     const selectedIndex = Math.floor(Math.random() * items.length);
@@ -137,6 +143,7 @@ export const GameWheel: React.FC<Props> = ({
   };
 
   const renderActionCards = () => {
+    if (readOnly) return null;
     if (actionCards.length === 0) return null;
 
     return (
@@ -175,6 +182,7 @@ export const GameWheel: React.FC<Props> = ({
   };
 
   const handleConfirmResult = async (game: Item) => {
+    if (readOnly) return;
     setRemovedGameId(game.id); // Отмечаем игру как удаленную для локальной анимации
 
     const batch = writeBatch(db);
@@ -197,6 +205,11 @@ export const GameWheel: React.FC<Props> = ({
   };
 
   const handleCloseWinner = async () => {
+    if (readOnly) {
+      setWinner(null);
+      return;
+    }
+
     if (canSpin) {
       await updateDoc(doc(db, "game_settings", "wheel"), {
         winnerIndex: null,
@@ -208,7 +221,7 @@ export const GameWheel: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[9999]">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[10020]">
       <div className="flex flex-row items-center justify-center w-full gap-12 px-12 max-h-[90vh]">
         
         {/* Левая распорка для центровки (равна ширине списка справа) */}
@@ -290,7 +303,7 @@ export const GameWheel: React.FC<Props> = ({
           </div>
 
           <div className="flex flex-col gap-4">
-            {canSpin && !spinning && !winner && (
+            {!readOnly && canSpin && !spinning && !winner && (
               <div
                 className="bg-yellow-500 text-black px-12 py-4 rounded-full font-black text-xl cursor-pointer hover:bg-white transition-all shadow-[0_0_30px_rgba(250,204,21,0.4)]"
                 onClick={spin}
@@ -299,7 +312,7 @@ export const GameWheel: React.FC<Props> = ({
                 КРУТИТЬ!
               </div>
             )}
-            {!winner && renderActionCards()}
+            {!readOnly && !winner && renderActionCards()}
             {!spinning && (
               <button onClick={onClose} className="text-zinc-500 hover:text-white hover:scale-105 active:scale-95 transition-all text-sm uppercase font-bold tracking-widest" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
                 Закрыть
@@ -312,42 +325,51 @@ export const GameWheel: React.FC<Props> = ({
         <div className="games-list-container bg-zinc-900/50 border border-white/10 rounded-3xl p-6 backdrop-blur-xl w-80 flex flex-col gap-4 shrink-0 h-[600px] overflow-hidden">
           <h3 className="text-yellow-500 font-black uppercase tracking-tighter text-lg border-b border-white/5 pb-2">Список игр ({items.length})</h3>
           <div className="overflow-y-auto pr-2 custom-scrollbar">
-            <table className="w-full text-left border-separate border-spacing-y-2">
-              <tbody>
-                {items.map((item, idx) => {
-                  const isRemoved = removedGameId === item.id;
-                  const isHighlighted = idx === activeIndex || idx === hoveredIndex;
-                  return (
-                    <tr 
-                      key={idx} 
-                      onMouseEnter={() => setHoveredIndex(idx)}
-                      onMouseLeave={() => setHoveredIndex(null)}
-                      className={`group transition-all duration-300 ${isHighlighted ? 'bg-yellow-500/20 scale-[1.02]' : ''} ${isRemoved ? 'removed-game-row' : ''}`}
-                    >
-                    <td className="py-2 pl-3 rounded-l-lg">
-                      <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: `hsl(${(idx * 360) / items.length}, 75%, 45%)` }} />
-                        <span className={`text-[11px] font-bold truncate max-w-[140px] uppercase ${isHighlighted ? 'text-yellow-400' : 'text-zinc-400'}`}>
-                          {item.name}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-2 pr-3 text-right rounded-r-lg">
-                      <span className={`text-[9px] uppercase font-black px-2 py-0.5 rounded ${isHighlighted ? 'bg-yellow-500 text-black' : 'bg-zinc-800 text-zinc-500'}`}>
-                        {item.active !== false ? "В списке" : "Выбыл"}
+            <div className="flex flex-col gap-2">
+              {items.map((item, idx) => {
+                const isRemoved = removedGameId === item.id;
+                const isHighlighted = idx === activeIndex || idx === hoveredIndex;
+                const hasUrl = Boolean(item.url);
+                const tooltip = hasUrl ? `${item.name}\n${item.url}` : item.name;
+
+                return (
+                  <button
+                    key={item.id || idx}
+                    type="button"
+                    onMouseEnter={() => setHoveredIndex(idx)}
+                    onMouseLeave={() => setHoveredIndex(null)}
+                    onClick={() => {
+                      if (!item.url) return;
+                      window.open(item.url, "_blank", "noopener,noreferrer");
+                    }}
+                    title={tooltip}
+                    disabled={!hasUrl}
+                    className={`grid w-full grid-cols-[minmax(0,1fr)_5.75rem] items-center gap-3 rounded-lg py-2 pl-3 pr-2 text-left transition-all duration-300 disabled:cursor-default ${
+                      hasUrl ? 'cursor-pointer' : ''
+                    } ${isHighlighted ? 'bg-yellow-500/20 scale-[1.02]' : ''} ${isRemoved ? 'removed-game-row' : ''}`}
+                  >
+                    <span className="grid min-w-0 grid-cols-[0.5rem_minmax(0,1fr)_0.75rem] items-center gap-3">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: `hsl(${(idx * 360) / items.length}, 75%, 45%)` }} />
+                      <span className={`block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-bold uppercase ${isHighlighted ? 'text-yellow-400' : 'text-zinc-400'}`}>
+                        {item.name}
                       </span>
-                    </td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      <span className={`text-[9px] font-black ${hasUrl ? (isHighlighted ? 'text-yellow-300' : 'text-zinc-600') : 'text-transparent'}`}>
+                        {hasUrl ? "↗" : ""}
+                      </span>
+                    </span>
+                    <span className={`justify-self-end whitespace-nowrap rounded px-2 py-0.5 text-[9px] font-black uppercase ${isHighlighted ? 'bg-yellow-500 text-black' : 'bg-zinc-800 text-zinc-500'}`}>
+                      {item.active !== false ? "В списке" : "Выбыл"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Окно победителя (вынесено из основного flex-потока для точной центровки) */}
-      {winner && (
+      {!readOnly && winner && (
         <div className="fixed inset-0 flex items-center justify-center z-[10000] bg-black/60 backdrop-blur-sm animate-in fade-in duration-300 px-4">
           <div className="bg-zinc-900 border-2 border-yellow-500 p-8 rounded-[2.5rem] shadow-[0_0_100px_rgba(0,0,0,1)] flex flex-col items-center gap-6 max-w-sm w-full transform animate-in zoom-in duration-300">
             <div className="text-center">

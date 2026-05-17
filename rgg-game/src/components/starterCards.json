@@ -495,8 +495,8 @@
   }, 
   {
     "id": "leg_009",
-    "name": "Unknown Unknown",
-    "description": "...",
+    "name": "Джон Доу",
+    "description": "Сейчас начнется веселье",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
@@ -509,8 +509,8 @@
   },
     {
     "id": "leg_010",
-    "name": "Unknown Unknown",
-    "description": "...",
+    "name": "Роуди Рамирес",
+    "description": "Бесстрашие - это не отсутствие страха, а умение действовать несмотря на него. ",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",

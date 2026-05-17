@@ -13,6 +13,7 @@ type ProfileSidebarProps = {
   onClose: () => void;
   onOpenLegends: () => void;
   onOpenCollection: () => void;
+  onOpenWheelInfo: () => void;
   onUpdateLogin: (value: string) => void | Promise<void>;
   onUpdateBorderColor: (color: string) => void | Promise<void>;
   onUpdateAvatar: (url: string) => void | Promise<void>;
@@ -28,6 +29,7 @@ function ProfileSidebar({
   onClose,
   onOpenLegends,
   onOpenCollection,
+  onOpenWheelInfo,
   onUpdateLogin,
   onUpdateBorderColor,
   onUpdateAvatar,
@@ -137,7 +139,7 @@ function ProfileSidebar({
                 }}
                 className="w-full py-4 mt-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-center gap-3 group hover:bg-yellow-500/20 transition-all active:scale-95"
               >
-                <span className="text-xl group-hover:rotate-12 transition-transform">★</span>
+                <span className="text-xl group-hover:rotate-12 transition-transform">👑</span>
                 <span className="text-yellow-500 font-black uppercase text-xs tracking-widest">Коллекция Легенд</span>
               </button>
 
@@ -148,8 +150,19 @@ function ProfileSidebar({
                 }}
                 className="w-full py-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-center gap-3 group hover:bg-yellow-500/20 transition-all active:scale-95"
               >
-                <span className="text-xl group-hover:rotate-12 transition-transform">◇</span>
+                <span className="text-xl group-hover:rotate-12 transition-transform">✨</span>
                 <span className="text-yellow-500 font-black uppercase text-xs tracking-widest">Галерея Артефактов</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  onOpenWheelInfo();
+                  onClose();
+                }}
+                className="w-full py-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-center gap-3 group hover:bg-yellow-500/20 transition-all active:scale-95"
+              >
+                <span className="text-xl group-hover:rotate-12 transition-transform">🎮</span>
+                <span className="text-yellow-500 font-black uppercase text-xs tracking-widest">Список Игр</span>
               </button>
 
               {isAdmin && (

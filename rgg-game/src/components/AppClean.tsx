@@ -4,6 +4,7 @@ import Auth from "./Auth";
 import { syncWheelResult, syncWheelVisibility } from "../services/gameStateService"; 
 import BottomPanel from "./BottomPanel";
 import GameBoard from "./GameBoard";
+import { GameWheel } from "./GameWheel";
 import PlayersSidebar from "./PlayersSidebar";
 import ProfileSidebar from "./ProfileSidebar";
 import ScoresDetailsPage from "./ScoresDetailsPage";
@@ -30,6 +31,7 @@ import { evaluateCardUseGuard, getCardUseGuardAlert } from "./cardUseGuards";
 import { cardNeedsTarget, getSelectableCardTargets } from "./cardTargetRules";
 import type { ToastNotification } from "./useModalStates";
 import { ru } from "../i18n/ru";
+import { fetchAvailableGames, type AvailableGame } from "./gameList";
 
 const getNotificationKey = (
   source: "player" | "game",
@@ -129,6 +131,8 @@ function AppClean() {
   void localEvents; void setLocalEvents;
   const [isClearingEventLog, setIsClearingEventLog] = useState(false);
   const [selectedCardPreviewMode, setSelectedCardPreviewMode] = useState<'use' | 'view'>('use');
+  const [isWheelInfoOpen, setIsWheelInfoOpen] = useState(false);
+  const [wheelInfoGames, setWheelInfoGames] = useState<AvailableGame[]>([]);
 
   const notify = useCallback((message: string, type: ToastNotification['type'] = 'info', cardId?: string) => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -149,6 +153,12 @@ function AppClean() {
     isAdmin, currentTurnPlayerId, canRoll, canConfirmRoll,
     handlers, getPlayerById
   } = useGameData(notify, logEvent);
+
+  useEffect(() => {
+    if (!isWheelInfoOpen) return;
+
+    void fetchAvailableGames().then(setWheelInfoGames);
+  }, [isWheelInfoOpen]);
 
   const handleClearEventLog = useCallback(async () => {
     if (isClearingEventLog) return;
@@ -529,14 +539,14 @@ function AppClean() {
       gameState.activeInteraction &&
       !(gameState.activeInteraction.type === "tax_response" && gameState.activeInteraction.playerId !== user?.uid),
     );
-    const shouldLock = interactionShouldLock || isHandOpen || isCollectionOpen || isLegendsOpen;
+    const shouldLock = interactionShouldLock || isHandOpen || isCollectionOpen || isLegendsOpen || isWheelInfoOpen;
     if (shouldLock) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
     }
     return () => { document.body.style.overflow = ''; };
-  }, [gameState.activeInteraction, isHandOpen, isCollectionOpen, isLegendsOpen, user?.uid]);
+  }, [gameState.activeInteraction, isHandOpen, isCollectionOpen, isLegendsOpen, isWheelInfoOpen, user?.uid]);
 
   if (loading) {
     return <LoadingScreen message={ru.common.loadingAccess} />;
@@ -919,7 +929,7 @@ function AppClean() {
               .filter((card: GameCardType) => card.rarity !== 'legendary')
               .sort((a: GameCardType, b: GameCardType) => a.number - b.number)
               .map((card: GameCardType) => {
-                const isRevealed = isAdmin || gameState.revealedCards?.includes(card.id);
+                const isRevealed = gameState.revealedCards?.includes(card.id);
                 
                 if (!isRevealed) {
                   return (
@@ -993,7 +1003,7 @@ function AppClean() {
               .sort((a: GameCardType, b: GameCardType) => a.number - b.number)
               .map((card: GameCardType) => {
                 const winner = players.find((player) => player.id === card.winnerId);
-                const isRevealed = isAdmin || card.isWon || gameState.revealedCards?.includes(card.id);
+                const isRevealed = card.isWon || gameState.revealedCards?.includes(card.id);
                 
                 if (!isRevealed) {
                   return (
@@ -1041,6 +1051,16 @@ function AppClean() {
           
           <button className="mt-8 text-zinc-500 hover:text-white font-black uppercase text-xs tracking-widest transition-all">Нажмите в любое место, чтобы выйти</button>
         </div>
+      )}
+
+      {isWheelInfoOpen && (
+        <GameWheel
+          items={wheelInfoGames}
+          onResult={() => {}}
+          onClose={() => setIsWheelInfoOpen(false)}
+          canSpin={false}
+          readOnly
+        />
       )}
 
       {pendingTargetCard && (
@@ -1131,6 +1151,7 @@ function AppClean() {
         onClose={() => setIsSidebarOpen(false)}
         onOpenLegends={() => setIsLegendsOpen(true)}
         onOpenCollection={() => setIsCollectionOpen(true)}
+        onOpenWheelInfo={() => setIsWheelInfoOpen(true)}
         onUpdateLogin={handlers.handleUpdateLogin}
         onUpdateBorderColor={handlers.handleUpdateBorderColor}
         onUpdateAvatar={handlers.updateAvatar}
