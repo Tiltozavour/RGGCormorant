@@ -1136,6 +1136,7 @@ function AppClean() {
         onUpdateCoins={handlers.handleAdminUpdateCoins}
         onAddCard={handlers.handleAdminAddCard}
         onRemoveCard={handlers.handleAdminRemoveCard}
+        onClearStatus={handlers.handleAdminClearStatus}
         gameHistory={gameState.gameHistory}
         currentUserId={user?.uid || null}
         onClose={() => setIsPlayersSidebarOpen(false)}

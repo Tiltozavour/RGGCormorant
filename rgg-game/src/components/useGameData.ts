@@ -3951,6 +3951,29 @@ export function useGameData(
       notify("Событие игры обновлено.", 'error');
     }
   };
+
+  const handleAdminClearStatus = async (targetId: string) => {
+    if (!isAdmin) return;
+    try {
+      await updateDoc(doc(db, "players", targetId), {
+        customStatus: null,
+        statusDuration: 0,
+      });
+      notify("Статус игрока снят.", "info");
+      logEvent({
+        id: `admin_clear_status_${targetId}_${Date.now()}`,
+        timestamp: Date.now(),
+        type: "info",
+        message: "Админ снял статус с игрока.",
+        playerId: user?.uid || "admin",
+        targetPlayerId: targetId,
+      });
+    } catch {
+      console.error("Ошибка действия.");
+      notify("Не удалось снять статус игрока.", "error");
+    }
+  };
+
   const handlePrepareTurn = async () => {
     if (!isAdmin) return;
     const hasUnresolvedCustomDuel = Object.values(gameState.activeDuels || {}).some(
@@ -4033,6 +4056,7 @@ export function useGameData(
       handleAdminUpdateCoins,
       handleAdminAddCard,
       handleAdminRemoveCard,
+      handleAdminClearStatus,
     },
   };
 }

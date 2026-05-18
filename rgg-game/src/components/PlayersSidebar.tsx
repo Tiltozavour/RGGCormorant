@@ -20,6 +20,7 @@ interface PlayersSidebarProps {
   onUpdateCoins: (targetId: string, amount: number) => Promise<void>;
   onAddCard: (targetId: string, cardId: string) => Promise<void>;
   onRemoveCard: (targetId: string, cardId: string) => Promise<void>;
+  onClearStatus: (targetId: string) => Promise<void>;
   gameHistory: GameHistoryEntry[];
   currentUserId: string | null;
   onClose: () => void;
@@ -37,6 +38,7 @@ function PlayersSidebar({
   onUpdateCoins,
   onAddCard,
   onRemoveCard,
+  onClearStatus,
   gameHistory,
   currentUserId,
   onClose,
@@ -60,16 +62,6 @@ function PlayersSidebar({
   const activeDuels = Object.values(gameState.activeDuels || {}).filter(
     (duel) => duel.status !== "finished"
   );
-
-  const handleGiveAllInventoryCards = async (playerId: string) => {
-    const inventoryCardIds = Object.values(allCards)
-      .filter((card) => card.deck === "inventory")
-      .map((card) => card.id);
-
-    for (const cardId of inventoryCardIds) {
-      await onAddCard(playerId, cardId);
-    }
-  };
 
   const handleResetPassword = async (temporaryPassword?: string) => {
     const target = passwordDialog;
@@ -156,6 +148,7 @@ function PlayersSidebar({
                   : "";
                 const isTop1 = row.playerId === topPlayerId;
                 const isDebtor = (player?.tiltCoins ?? 0) < 0;
+                const hasCustomStatus = Boolean(player?.customStatus);
 
                 return (
                   <tr
@@ -221,17 +214,20 @@ function PlayersSidebar({
                                 + Карта
                               </button>
                               <button
-                                onClick={() => void handleGiveAllInventoryCards(row.playerId)}
-                                className="px-1.5 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/30 rounded text-[9px] hover:bg-blue-500/20 transition-colors"
-                              >
-                                Give All
-                              </button>
-                              <button
                                 onClick={() => setPasswordDialog({ playerId: row.playerId, login: row.login })}
                                 className="px-1.5 py-0.5 bg-red-500/10 text-red-300 border border-red-500/30 rounded text-[9px] hover:bg-red-500/20 transition-colors"
                               >
                                 Пароль
                               </button>
+                              {hasCustomStatus && (
+                                <button
+                                  onClick={() => void onClearStatus(row.playerId)}
+                                  className="px-1.5 py-0.5 bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 rounded text-[9px] hover:bg-cyan-500/20 transition-colors"
+                                  title={`Снять статус: ${player?.customStatus}`}
+                                >
+                                  Снять статус
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
