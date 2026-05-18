@@ -12,7 +12,7 @@ interface AdminDialogProps {
   initialValue?: string;
   inputLabel?: string;
   inputPlaceholder?: string;
-  inputType?: "text" | "number";
+  inputType?: "text" | "number" | "password";
   danger?: boolean;
   onConfirm: (value?: string) => void;
   onClose: () => void;

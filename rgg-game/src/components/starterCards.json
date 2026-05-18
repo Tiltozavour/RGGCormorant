@@ -481,14 +481,14 @@
   },
    {
     "id": "leg_008",
-    "name": "Unknown Unknown",
-    "description": "...",
+    "name": "Билл Шнайдер",
+    "description": "Cвобода и равенство привелегия белыx",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
     "value": 0,
     "faceCard": "/cards/card_face_light.svg",
-    "artCard": "/cards/legend/unknown.webp",
+    "artCard": "/cards/legend/bill.webp",
     "price": null,
     "howtowork": "Rasul",
     "number": 35

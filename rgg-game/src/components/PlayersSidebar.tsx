@@ -8,6 +8,7 @@ import AdminDialog from "./AdminDialog";
 import { isGameParticipant } from "./playerFilters";
 import { ru } from "../i18n/ru";
 import { FALLBACK_AVATAR } from "./gameConstants";
+import { resetPlayerPassword } from "./adminPasswordReset";
 
 interface PlayersSidebarProps {
   isOpen: boolean;
@@ -45,6 +46,9 @@ function PlayersSidebar({
   void onOpenCollection;
   const [cardDialogPlayerId, setCardDialogPlayerId] = useState<string | null>(null);
   const [coinDialog, setCoinDialog] = useState<{ playerId: string; login: string; value: string } | null>(null);
+  const [passwordDialog, setPasswordDialog] = useState<{ playerId: string; login: string } | null>(null);
+  const [passwordResetNotice, setPasswordResetNotice] = useState<string | null>(null);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   const rows = buildPlayerScoreRows(players, totalScores, gameHistory);
   const latestGameName = gameHistory.length > 0 ? gameHistory[gameHistory.length - 1].gameName : null;
 
@@ -64,6 +68,29 @@ function PlayersSidebar({
 
     for (const cardId of inventoryCardIds) {
       await onAddCard(playerId, cardId);
+    }
+  };
+
+  const handleResetPassword = async (temporaryPassword?: string) => {
+    const target = passwordDialog;
+    const password = temporaryPassword?.trim() ?? "";
+    if (!target || isResettingPassword) return;
+
+    if (password.length < 6) {
+      setPasswordResetNotice("Временный пароль должен быть не короче 6 символов.");
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      await resetPlayerPassword(target.playerId, password);
+      setPasswordDialog(null);
+      setPasswordResetNotice(`Пароль для игрока ${target.login} сброшен. Передайте ему временный пароль.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось сбросить пароль.";
+      setPasswordResetNotice(message);
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -198,6 +225,12 @@ function PlayersSidebar({
                                 className="px-1.5 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/30 rounded text-[9px] hover:bg-blue-500/20 transition-colors"
                               >
                                 Give All
+                              </button>
+                              <button
+                                onClick={() => setPasswordDialog({ playerId: row.playerId, login: row.login })}
+                                className="px-1.5 py-0.5 bg-red-500/10 text-red-300 border border-red-500/30 rounded text-[9px] hover:bg-red-500/20 transition-colors"
+                              >
+                                Пароль
                               </button>
                             </div>
                           )}
@@ -364,6 +397,30 @@ function PlayersSidebar({
           setCoinDialog(null);
           if (playerId && !Number.isNaN(amount)) void onUpdateCoins(playerId, amount);
         }}
+      />
+      <AdminDialog
+        isOpen={Boolean(passwordDialog)}
+        variant="input"
+        inputType="password"
+        danger
+        title={`Сброс пароля: ${passwordDialog?.login ?? ""}`}
+        message="Введите временный пароль. После подтверждения игрок сможет войти с ним."
+        inputLabel="Временный пароль"
+        inputPlaceholder="Минимум 6 символов"
+        confirmLabel={isResettingPassword ? "Сбрасываем..." : "Сбросить"}
+        cancelLabel={ru.bottomPanel.cancel}
+        onClose={() => {
+          if (!isResettingPassword) setPasswordDialog(null);
+        }}
+        onConfirm={(value) => void handleResetPassword(value)}
+      />
+      <AdminDialog
+        isOpen={Boolean(passwordResetNotice)}
+        title="Сброс пароля"
+        message={passwordResetNotice ?? ""}
+        confirmLabel="Ок"
+        onClose={() => setPasswordResetNotice(null)}
+        onConfirm={() => setPasswordResetNotice(null)}
       />
     </>
   );

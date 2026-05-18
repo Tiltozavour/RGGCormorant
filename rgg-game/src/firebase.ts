@@ -21,7 +21,7 @@ const firebaseConfig = {
   appId: requireEnv("VITE_FIREBASE_APP_ID"),
 };
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
