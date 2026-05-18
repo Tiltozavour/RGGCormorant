@@ -36,6 +36,17 @@ describe("cardUseGuards", () => {
     expect(guard({ phase: "next_game", action: "fish_protection", showWheel: true })).toEqual({ ok: true });
   });
 
+  it("blocks fish protection outside turn and next_game wheel states", () => {
+    expect(guard({ phase: "playing", action: "fish_protection" })).toEqual({
+      ok: false,
+      reason: "cards_blocked_in_phase",
+    });
+    expect(guard({ phase: "next_game", action: "fish_protection", showWheel: false })).toEqual({
+      ok: false,
+      reason: "only_wheel_card_in_next_game",
+    });
+  });
+
   it("blocks normal cards outside the active player's turn", () => {
     expect(guard({ currentTurnPlayerId: "player-b", action: "add_coins" })).toEqual({
       ok: false,

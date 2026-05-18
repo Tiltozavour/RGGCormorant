@@ -91,7 +91,7 @@ export const evaluateCardUseGuard = ({
       if (card.action === "extra_roll" && currentRoll === null) {
         return { ok: false, reason: "extra_roll_before_roll" };
       }
-    } else if (card.action !== "fish_protection") {
+    } else {
       return { ok: false, reason: "cards_blocked_in_phase" };
     }
   }
