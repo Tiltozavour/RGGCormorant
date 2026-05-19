@@ -97,7 +97,7 @@ function EventLog({ gameEvents, allCards, players, onClear, isClearing, canClear
         className="absolute left-full top-0 mt-4 h-10 w-8 bg-black/60 backdrop-blur-md border border-l-0 border-white/20 flex items-center justify-center text-white/70 hover:text-white rounded-r-xl shadow-2xl transition-all"
         title={isCollapsed ? ru.eventLog.expandTitle : ru.eventLog.collapseTitle}
       >
-        <span className="text-[10px] transition-transform duration-300" style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)' }}>◀</span>
+        <span className="text-[10px] transition-transform duration-300" style={{ transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}>◀</span>
       </button>
     </div>
   );
