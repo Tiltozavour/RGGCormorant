@@ -507,10 +507,10 @@
     "howtowork": "Comrade",
     "number": 36
   },
-    {
+  {
     "id": "leg_010",
-    "name": "Роуди Рамирес",
-    "description": "Бесстрашие - это не отсутствие страха, а умение действовать несмотря на него. ",
+    "name": "Джек Майксонович",
+    "description": "Что если.....?",
     "deck": "inventory",
     "rarity": "legendary",
     "action": "prize",
@@ -520,6 +520,20 @@
     "price": null,
     "howtowork": "Zaebumba",
     "number": 37
-  }
+    }, 
+    {
+    "id": "leg_011",
+    "name": "Филипп Клаус",
+    "description": "А я видел как он наяривает!",
+    "deck": "inventory",
+    "rarity": "legendary",
+    "action": "prize",
+    "value": 0,
+    "faceCard": "/cards/card_face_light.svg",
+    "price": null,
+    "artCard": "/cards/legend/phillip.webp",
+    "howtowork": "L4ine",
+    "number": 38
+    }
 
 ]

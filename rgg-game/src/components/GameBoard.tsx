@@ -634,7 +634,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
           return (
             <div
               key={otherPlayer.id}
-              className={`absolute flex flex-col items-center group ${isCurrentTurn ? "z-40" : "z-30"}`}
+              className={`absolute flex flex-col items-center group hover:z-[90] ${isCurrentTurn ? "z-40" : "z-30"}`}
               style={{
                 left: `${cell.x}%`,
                 top: `${cell.y}%`,
@@ -709,7 +709,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
               />
 
               <div 
-                className={`mb-1 px-2 text-[10px] rounded bg-black/70 border flex items-center gap-1 font-black uppercase ${isCurrentTurn ? "text-yellow-400 border-yellow-500/50" : "text-zinc-300 border-white/10"}`}
+                className={`relative z-[70] mb-1 px-2 text-[10px] rounded bg-black/70 border flex items-center gap-1 font-black uppercase ${isCurrentTurn ? "text-yellow-400 border-yellow-500/50" : "text-zinc-300 border-white/10"}`}
                 style={{ fontFamily: "'Comfortaa', sans-serif" }}
               >
                 {otherPlayer.login}
@@ -745,7 +745,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
         return (
         <div
-          className={`absolute flex flex-col items-center group ${
+          className={`absolute flex flex-col items-center group hover:z-[90] ${
             activePlayer.id === currentTurnPlayerId ? "z-40" : "z-30"
           } ${isTeleporting ? "scale-0 opacity-0 blur-2xl" : "scale-100 opacity-100 blur-0"}`}
           style={{
@@ -823,7 +823,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
           />
 
           <div 
-            className={`mb-1 px-2 text-[10px] rounded bg-black/70 border flex items-center gap-1 font-black uppercase ${playerData.id === currentTurnPlayerId ? "text-yellow-400 border-yellow-500/50" : "text-zinc-300 border-white/10"}`}
+            className={`relative z-[70] mb-1 px-2 text-[10px] rounded bg-black/70 border flex items-center gap-1 font-black uppercase ${playerData.id === currentTurnPlayerId ? "text-yellow-400 border-yellow-500/50" : "text-zinc-300 border-white/10"}`}
             style={{ fontFamily: "'Comfortaa', sans-serif" }}
           >
             {activePlayer.login}
