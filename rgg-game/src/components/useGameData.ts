@@ -3417,8 +3417,9 @@ export function useGameData(
     ) => {
       if (!user) return;
       const targetPlayerId = playerId || user.uid;
-      const playerRef = doc(db, "players", targetPlayerId);
-      const gameStateRef = doc(db, "gameState", "current");
+    const playerRef = doc(db, "players", targetPlayerId);
+    const gameStateRef = doc(db, "gameState", "current");
+    const movingPlayerName = getPlayerById(targetPlayerId)?.login || "Игрок";
 
       await runTransaction(db, async (transaction) => {
         const gsSnap = await transaction.get(gameStateRef);
@@ -3429,7 +3430,7 @@ export function useGameData(
           logEvent({
             id: `player_move_manual_${targetPlayerId}_${Date.now()}`,
             timestamp: Date.now(), type: 'movement',
-            message: "Событие игры.",
+            message: `${movingPlayerName} переместился на клетку ${position}.`,
             playerId: targetPlayerId,
             details: { from: prevCell, to: position, isCardMove: isCardMove }
           });
@@ -3454,7 +3455,7 @@ export function useGameData(
           logEvent({
             id: `landed_on_special_cell_${targetPlayerId}_${Date.now()}`,
             timestamp: Date.now(), type: 'movement',
-            message: "Событие игры.",
+            message: `${movingPlayerName} попал на клетку ${cellType === "gambling" ? "Gambling" : "B-Shop"}.`,
             playerId: targetPlayerId, details: { cellType: cellType, position: position }
           });
           return;
@@ -3469,7 +3470,7 @@ export function useGameData(
           logEvent({
             id: `card_move_completed_${targetPlayerId}_${Date.now()}`,
             timestamp: Date.now(), type: 'movement',
-            message: "Событие игры.",
+            message: `${movingPlayerName} завершил перемещение на клетке ${position}.`,
             playerId: targetPlayerId,
             details: { from: prevCell, to: position, isCardMove: isCardMove }
           });
@@ -3531,13 +3532,14 @@ export function useGameData(
 
         if (skipWithCardId) {
           if (!player.inventory?.includes(skipWithCardId)) return;
+          const skipCardName = allCards[skipWithCardId]?.name || skipWithCardId;
           transaction.update(playerRef, { inventory: removeOneCardFromInventory(player.inventory, skipWithCardId) });
           transaction.update(gameStateRef, { revealedCards: arrayUnion(skipWithCardId) });
           notify("Событие игры обновлено.", 'info');
           logEvent({
             id: `interaction_skipped_${skipWithCardId}_${Date.now()}`,
-            timestamp: Date.now(), type: 'info',
-            message: "Событие игры.",
+            timestamp: Date.now(), type: 'status_effect',
+            message: `${player.login} отменил эффект спецклетки картой "${skipCardName}".`,
             playerId: user.uid, cardId: skipWithCardId
           });
         } else if (cardId) {
@@ -3564,7 +3566,7 @@ export function useGameData(
             logEvent({
               id: `card_acquired_${card.id}_${Date.now()}`,
               timestamp: Date.now(), type: 'card_play',
-              message: "Событие игры.",
+              message: `${player.login} ${cost > 0 ? "купил" : "получил"} карту "${card.name}".`,
               playerId: user.uid, cardId: card.id,
               details: { cost: cost, reason: cost > 0 ? 'buy_card' : 'interaction_reward' }
             });

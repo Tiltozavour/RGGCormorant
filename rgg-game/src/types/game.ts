@@ -36,6 +36,7 @@ export interface ActiveInteraction {
     | "duel_betting"
     | "duel_ready_to_roll";
   cards: string[];
+  revealedCardId?: string;
   targetPlayerId?: string;
   recipientId?: string;
   actingCardId?: string;

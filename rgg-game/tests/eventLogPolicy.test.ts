@@ -18,11 +18,14 @@ describe("eventLogPolicy", () => {
     resetEventLogPolicyStateForTests();
   });
 
-  it("skips low-priority events unless verbose Firestore logging is enabled", () => {
-    const event = makeEvent({ type: "movement" });
+  it("skips only service info events unless verbose Firestore logging is enabled", () => {
+    const event = makeEvent({ type: "info" });
 
     expect(shouldPersistGameEvent(event, 1000, false)).toBe(false);
     expect(shouldPersistGameEvent(event, 1000, true)).toBe(true);
+    expect(shouldPersistGameEvent(makeEvent({ type: "movement" }), 1001, false)).toBe(true);
+    expect(shouldPersistGameEvent(makeEvent({ type: "coin_change" }), 1002, false)).toBe(true);
+    expect(shouldPersistGameEvent(makeEvent({ type: "status_effect" }), 1003, false)).toBe(true);
   });
 
   it("deduplicates the same persisted event for a short window", () => {

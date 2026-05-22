@@ -1284,6 +1284,7 @@ function AppClean() {
         gameState={gameState}
         user={user}
         playerData={playerData}
+        players={players}
         allCards={allCards}
         protectionCardsInInv={protectionCardsInInv}
         revealedGamblingCardId={revealedGamblingCardId}

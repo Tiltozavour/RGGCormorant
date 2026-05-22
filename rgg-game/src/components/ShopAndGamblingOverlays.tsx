@@ -3,12 +3,15 @@ import type { GameCard as GameCardType } from "../types/card";
 import type { GameState, Player } from "../types/game";
 import GameCard from "./GameCard";
 import { ru } from "../i18n/ru";
+import { db } from "../firebase";
+import { doc, updateDoc } from "firebase/firestore";
 import { getPublicAssetUrl } from "./gameConstants";
 
 interface ShopAndGamblingOverlaysProps {
   gameState: GameState;
   user: User | null;
   playerData: Player;
+  players: Player[];
   allCards: Record<string, GameCardType>;
   protectionCardsInInv: GameCardType[];
   revealedGamblingCardId: string | null;
@@ -27,6 +30,7 @@ function ShopAndGamblingOverlays({
   gameState,
   user,
   playerData,
+  players,
   allCards,
   protectionCardsInInv,
   revealedGamblingCardId,
@@ -44,6 +48,10 @@ function ShopAndGamblingOverlays({
     interactionCards.filter((cardId: string, idx: number, cards: string[]) =>
       Boolean(allCards[cardId]) && cards.indexOf(cardId) === idx
     );
+  const interactionPlayerName =
+    players.find((player) => player.id === interaction?.playerId)?.login || "игрок";
+  const observedRevealedCardId =
+    interaction?.type === "gambling" ? interaction.revealedCardId : undefined;
 
   return (
     <>
@@ -67,6 +75,9 @@ function ShopAndGamblingOverlays({
                     if (isInteractionPending) return;
                     void runInteractionAction(async () => {
                       setRevealedGamblingCardId(cardId);
+                      await updateDoc(doc(db, "gameState", "current"), {
+                        "activeInteraction.revealedCardId": cardId,
+                      });
                       await new Promise((resolve) => setTimeout(resolve, 1200));
                       await handlers.handleFinishInteraction(cardId);
                     });
@@ -117,6 +128,51 @@ function ShopAndGamblingOverlays({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {interaction?.type === 'gambling' && interaction.playerId !== user?.uid && (
+        <div className="pointer-events-none fixed left-1/2 top-24 z-[10005] w-[min(92vw,520px)] -translate-x-1/2 rounded-2xl border border-blue-300/20 bg-blue-950/75 px-5 py-4 text-center shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-md animate-in fade-in slide-in-from-top-3 duration-300">
+          <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-200/70">
+            Gambling
+          </p>
+          <p className="mt-1 text-sm font-bold text-white">
+            {interactionPlayerName} выбирает карту на gambling-клетке
+          </p>
+          <div className="mt-3 flex justify-center gap-2">
+            {interactionCardIds.map((cardId, idx) => (
+              <div
+                key={`${cardId}-${idx}`}
+                className={`relative h-16 w-11 rounded-md border border-blue-200/20 bg-blue-900/45 p-0.5 shadow-[0_0_18px_rgba(59,130,246,0.2)] [perspective:800px] transition-all duration-500 ${
+                  observedRevealedCardId && observedRevealedCardId !== cardId ? "opacity-25 scale-95" : ""
+                }`}
+              >
+                <div
+                  className="relative h-full w-full transition-transform duration-700 [transform-style:preserve-3d]"
+                  style={{ transform: observedRevealedCardId === cardId ? "rotateY(180deg)" : "rotateY(0deg)" }}
+                >
+                  <div className="absolute inset-0 [backface-visibility:hidden]">
+                    <img
+                      src={getPublicAssetUrl("/cards/card_back.svg")}
+                      className="h-full w-full rounded object-cover opacity-80"
+                      alt=""
+                    />
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded [transform:rotateY(180deg)] [backface-visibility:hidden]">
+                    {allCards[cardId]?.artCard ? (
+                      <img
+                        src={getPublicAssetUrl(allCards[cardId].artCard)}
+                        className="h-full w-full object-cover"
+                        alt=""
+                      />
+                    ) : (
+                      <span className="text-[10px] font-black text-white">?</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

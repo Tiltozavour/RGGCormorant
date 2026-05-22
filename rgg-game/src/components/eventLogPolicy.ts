@@ -3,9 +3,6 @@ import type { GameEvent } from "./useModalStates";
 export const VERBOSE_EVENT_LOG_STORAGE_KEY = "rgg-verbose-firestore-events";
 
 const LOW_PRIORITY_EVENT_TYPES = new Set<GameEvent["type"]>([
-  "coin_change",
-  "movement",
-  "status_effect",
   "info",
 ]);
 const EVENT_DEDUP_WINDOW_MS = 3000;

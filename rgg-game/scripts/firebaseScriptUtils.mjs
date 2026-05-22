@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import {
   collection,
+  connectFirestoreEmulator,
   deleteField,
   doc,
   getDocs,
@@ -61,10 +62,18 @@ export function createFirestoreFromEnv() {
   };
 
   const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const useEmulator = process.env.VITE_USE_FIREBASE_EMULATOR === "true";
+
+  if (useEmulator) {
+    connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  }
+
   return {
     app,
-    db: getFirestore(app),
+    db,
     projectId: firebaseConfig.projectId,
+    useEmulator,
   };
 }
 
@@ -209,6 +218,8 @@ export async function seedCardsAndPrizes(db, { clearExisting = false } = {}) {
 }
 
 export function assertDevResetAllowed(projectId) {
+  if (process.env.VITE_USE_FIREBASE_EMULATOR === "true") return;
+
   const firebaseEnv = process.env.VITE_FIREBASE_ENV ?? process.env.FIREBASE_ENV ?? "";
   const allowReset = process.env.FIREBASE_ALLOW_DEV_RESET === "true";
   const confirmProjectId = process.env.FIREBASE_RESET_CONFIRM_PROJECT_ID;

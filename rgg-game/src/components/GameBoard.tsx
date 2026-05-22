@@ -459,7 +459,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
                 `}
               >
                 <span 
-                  className={`absolute right-2 font-black tracking-tighter ${isStartPoint ? "bottom-2 text-xs" : "bottom-1 text-[10px]"} text-purple-300/40`}
+                  className="sr-only"
                   style={{ fontFamily: "'Comfortaa', sans-serif" }}
                 >
                   {cell.id}
@@ -563,7 +563,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
               `}
             >
               <span
-                className={`absolute right-2 font-black tracking-tighter ${isStartPoint ? "bottom-2 text-xs" : "bottom-1 text-[10px]"} text-purple-300/40`}
+                className="sr-only"
                 style={{ fontFamily: "'Comfortaa', sans-serif" }}
               >
                 {cell.id}
@@ -873,6 +873,42 @@ const GameBoard: React.FC<GameBoardProps> = ({
            </div>
          );
       })()}
+
+      <div className="pointer-events-none absolute inset-0 z-[85]">
+        {map.map((cell) => {
+          const isStartPoint = cell.id === 6 || cell.id === 15;
+          const offsetX = isStartPoint ? 40 : 24;
+          const offsetY = isStartPoint ? -54 : -34;
+          const numberTheme = isStartPoint
+            ? "border-purple-300/45 bg-purple-950/80 text-purple-100 shadow-[0_0_14px_rgba(168,85,247,0.55)]"
+            : cell.type === "gambling"
+              ? "border-pink-300/45 bg-pink-950/80 text-pink-100 shadow-[0_0_14px_rgba(236,72,153,0.55)]"
+              : cell.type === "b-shop"
+                ? "border-cyan-300/45 bg-cyan-950/80 text-cyan-100 shadow-[0_0_14px_rgba(0,200,255,0.55)]"
+                : "border-blue-300/30 bg-blue-950/80 text-blue-100 shadow-[0_0_14px_rgba(30,58,138,0.5)]";
+
+          return (
+            <div
+              key={`cell-number-${cell.id}`}
+              className="absolute"
+              style={{
+                left: `${cell.x}%`,
+                top: `${cell.y}%`,
+                transform: `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px))`,
+              }}
+            >
+              <span
+                className={`flex items-center justify-center rounded-full border backdrop-blur-sm ${numberTheme} ${
+                  isStartPoint ? "h-6 min-w-6 px-1 text-[11px]" : "h-5 min-w-5 px-1 text-[10px]"
+                } font-black`}
+                style={{ fontFamily: "'Comfortaa', sans-serif" }}
+              >
+                {cell.id}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
     </div>
   );

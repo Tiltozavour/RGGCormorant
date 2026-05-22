@@ -55,6 +55,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   const [tempScores, setTempScores] = useState<Record<string, number>>({});
   const [tempResultGroups, setTempResultGroups] = useState<Record<string, number>>({});
   const [tempResultPlaces, setTempResultPlaces] = useState<Record<string, number>>({});
+  const [tempSkippedResults, setTempSkippedResults] = useState<Record<string, boolean>>({});
   const [isPending, setIsPending] = useState(false);
   // Сбрасываем блокировку при любом изменении ключевых полей игрового состояния
   React.useEffect(() => {
@@ -105,9 +106,9 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     try {
       const participants = players.filter(isGameParticipant);
       const roundResults = resultInputMode === "places"
-        ? buildPlacementResults(participants, tempResultGroups, tempResultPlaces)
+        ? buildPlacementResults(participants, tempResultGroups, tempResultPlaces, tempSkippedResults)
         : Object.fromEntries(
-            participants.map((player) => [player.id, tempScores[player.id] ?? 0])
+            participants.map((player) => [player.id, tempSkippedResults[player.id] ? 0 : (tempScores[player.id] ?? 0)])
           );
       const batch = writeBatch(db);
       Object.entries(roundResults).forEach(([playerId, score]) => {
@@ -259,19 +260,22 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
               players.filter(isGameParticipant).map((p) => {
                 const group = tempResultGroups[p.id] ?? 1;
                 const place = tempResultPlaces[p.id] ?? 1;
+                const isSkipped = tempSkippedResults[p.id] === true;
                 const groupSize = players
                   .filter(isGameParticipant)
+                  .filter((player) => tempSkippedResults[player.id] !== true)
                   .filter((player) => (tempResultGroups[player.id] ?? 1) === group).length;
-                const previewScore = calculatePlacementScore(groupSize, place);
+                const previewScore = isSkipped ? 0 : calculatePlacementScore(groupSize, place);
 
                 return (
-                  <div key={p.id} className="flex min-w-[8.5rem] flex-col gap-1 rounded-lg border border-white/10 bg-zinc-950/70 px-2 py-1">
+                  <div key={p.id} className={`flex min-w-[8.5rem] flex-col gap-1 rounded-lg border px-2 py-1 ${isSkipped ? "border-zinc-700 bg-zinc-950/40 opacity-70" : "border-white/10 bg-zinc-950/70"}`}>
                     <span className="truncate text-[10px] text-zinc-300">{p.login}</span>
                     <div className="flex items-center gap-1">
                       <label className="text-[9px] uppercase text-zinc-500">Гр.</label>
                       <input
                         type="number"
                         min={1}
+                        disabled={isSkipped}
                         className="w-10 rounded border border-zinc-700 bg-black text-center text-xs text-yellow-400"
                         value={group}
                         onChange={(e) => setTempResultGroups((prev) => ({ ...prev, [p.id]: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
@@ -280,25 +284,43 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
                       <input
                         type="number"
                         min={1}
+                        disabled={isSkipped}
                         className="w-10 rounded border border-zinc-700 bg-black text-center text-xs text-yellow-400"
                         value={place}
                         onChange={(e) => setTempResultPlaces((prev) => ({ ...prev, [p.id]: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
                       />
                     </div>
-                    <span className="text-[9px] text-zinc-500">{previewScore} очк.</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[9px] text-zinc-500">{previewScore} очк.</span>
+                      <button
+                        type="button"
+                        onClick={() => setTempSkippedResults((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
+                        className={`rounded px-1.5 py-0.5 text-[8px] font-bold uppercase transition ${isSkipped ? "bg-zinc-600 text-white" : "bg-white/5 text-zinc-500 hover:text-zinc-200"}`}
+                      >
+                        Не играл
+                      </button>
+                    </div>
                   </div>
                 );
               })
             ) : (
               players.filter(isGameParticipant).map(p => (
-                <div key={p.id} className="flex flex-col items-center gap-1">
+                <div key={p.id} className={`flex flex-col items-center gap-1 ${tempSkippedResults[p.id] ? "opacity-60" : ""}`}>
                   <span className="text-[10px] text-zinc-500">{p.login}</span>
                   <input
                     type="number"
+                    disabled={tempSkippedResults[p.id] === true}
                     className="w-12 bg-black border border-zinc-700 rounded text-center text-xs text-yellow-400"
-                    value={tempScores[p.id] ?? 0}
+                    value={tempSkippedResults[p.id] ? 0 : (tempScores[p.id] ?? 0)}
                     onChange={(e) => setTempScores(prev => ({ ...prev, [p.id]: parseFloat(e.target.value) || 0 }))}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setTempSkippedResults((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
+                    className={`rounded px-1.5 py-0.5 text-[8px] font-bold uppercase transition ${tempSkippedResults[p.id] ? "bg-zinc-600 text-white" : "bg-white/5 text-zinc-500 hover:text-zinc-200"}`}
+                  >
+                    Не играл
+                  </button>
                 </div>
               ))
             )}
@@ -350,9 +372,11 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 const buildPlacementResults = (
   participants: Player[],
   groups: Record<string, number>,
-  places: Record<string, number>
+  places: Record<string, number>,
+  skipped: Record<string, boolean> = {},
 ): Record<string, number> => {
-  const groupSizes = participants.reduce<Record<number, number>>((acc, player) => {
+  const activeParticipants = participants.filter((player) => skipped[player.id] !== true);
+  const groupSizes = activeParticipants.reduce<Record<number, number>>((acc, player) => {
     const group = groups[player.id] ?? 1;
     acc[group] = (acc[group] ?? 0) + 1;
     return acc;
@@ -360,6 +384,8 @@ const buildPlacementResults = (
 
   return Object.fromEntries(
     participants.map((player) => {
+      if (skipped[player.id]) return [player.id, 0];
+
       const group = groups[player.id] ?? 1;
       const place = places[player.id] ?? 1;
 
