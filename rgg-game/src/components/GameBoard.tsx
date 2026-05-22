@@ -407,11 +407,12 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
   if (!playerData.inGame && !isAdminView) {
     return (
-      <div className="relative w-full h-full">
-        <img
-          src={getPublicAssetUrl("/map.jpg")}
-          className="absolute inset-0 w-full h-full object-contain opacity-20 pointer-events-none"
-        />
+      <div className="relative h-full w-full overflow-hidden">
+        <div className="relative h-full w-full">
+          <img
+            src={getPublicAssetUrl("/map.jpg")}
+            className="absolute inset-0 w-full h-full object-contain opacity-20 pointer-events-none"
+          />
 
         <div className="absolute top-8 left-1/2 -translate-x-1/2 z-40 bg-black/70 border border-yellow-500/30 px-6 py-3 rounded-xl backdrop-blur-lg">
           <p className="text-yellow-200 text-center text-sm">
@@ -481,28 +482,30 @@ const GameBoard: React.FC<GameBoardProps> = ({
             </div>
           );
         })}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="relative w-full h-full">
-    {showWheel && wheelGames.length > 0 && (
-  <GameWheel
-    items={wheelGames}
-    onResult={(res) => {
-      onWheelResult?.(res);
-    }}
-    onClose={onCloseWheel}
-    canSpin={isAdminView}
-    actionCards={wheelActionCards}
-  />
-)}
-      <div className="relative w-full h-full">
-      <img
-        src={getPublicAssetUrl("/map.jpg")}
-        className="absolute inset-0 w-full h-full object-contain opacity-20 pointer-events-none"
-      />
+    <div className="relative h-full w-full overflow-hidden">
+      {showWheel && wheelGames.length > 0 && (
+        <GameWheel
+          items={wheelGames}
+          onResult={(res) => {
+            onWheelResult?.(res);
+          }}
+          onClose={onCloseWheel}
+          canSpin={isAdminView}
+          actionCards={wheelActionCards}
+        />
+      )}
+      <div className="relative h-full w-full">
+        <div className="relative h-full w-full">
+          <img
+            src={getPublicAssetUrl("/map.jpg")}
+            className="absolute inset-0 w-full h-full object-contain opacity-20 pointer-events-none"
+          />
 
       <svg className="absolute inset-0 w-full h-full pointer-events-none">
         {map.map((cell) =>
@@ -874,7 +877,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
          );
       })()}
 
-      <div className="pointer-events-none absolute inset-0 z-[85]">
+      <div className="pointer-events-none absolute inset-0 z-20">
         {map.map((cell) => {
           const isStartPoint = cell.id === 6 || cell.id === 15;
           const offsetX = isStartPoint ? 40 : 24;
@@ -908,6 +911,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
             </div>
           );
         })}
+        </div>
       </div>
     </div>
     </div>
