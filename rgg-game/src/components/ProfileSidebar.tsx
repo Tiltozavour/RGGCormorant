@@ -5,6 +5,7 @@ import { AURA_COLORS, FALLBACK_AVATAR } from "./gameConstants";
 import AdminDialog from "./AdminDialog";
 import { ru } from "../i18n/ru";
 import type { ToastNotification } from "./useModalStates";
+import { downloadFirestoreBackup } from "./firestoreBackup";
 
 type ProfileSidebarProps = {
   isOpen: boolean;
@@ -194,6 +195,16 @@ function ProfileSidebar({
                     className="w-full rounded-xl border border-blue-500/30 bg-slate-900/80 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-blue-300 transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Init
+                  </button>
+                  <button
+                    onClick={() => void runAdminAction(async () => {
+                      await downloadFirestoreBackup();
+                      notify("Бекап Firestore скачан.", "success");
+                    })}
+                    disabled={isAdminActionPending}
+                    className="w-full rounded-xl border border-emerald-500/30 bg-emerald-950/50 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-emerald-300 transition-all hover:bg-emerald-900/70 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Backup DB
                   </button>
                   <button
                     onClick={() => {

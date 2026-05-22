@@ -12,6 +12,8 @@
     "test": "vitest run",
     "preview": "vite preview",
     "assets:check-external": "node scripts/checkExternalAssets.mjs",
+    "backup:firestore": "node scripts/backupFirestore.mjs",
+    "backup:firestore:full": "node scripts/backupFirestore.mjs --include-events",
     "emulators": "firebase emulators:start --config firebaseEm.json --project demo-rgg-game",
     "seed:emulator": "node scripts/seedEmulator.mjs",
     "seed:cards": "node scripts/seedCards.mjs",
