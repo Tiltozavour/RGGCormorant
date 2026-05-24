@@ -1,4 +1,4 @@
-import type { GameHistoryEntry, Player } from "../types/game";
+﻿import type { GameHistoryEntry, Player } from "../types/game";
 import { isGameParticipant } from "./playerFilters";
 import { buildPlayerScoreRows, normalizeScoreParts } from "./scoreUtils";
 
@@ -61,12 +61,13 @@ function ScoresDetailsPage({
             <table className="w-full min-w-[520px] text-sm">
               <thead className="bg-yellow-500/10 text-yellow-100">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium">Игрок</th>
-                  <th className="px-4 py-3 text-left font-medium">
+                  <th className="px-4 py-3 text-center font-medium">Место</th>
+                  <th className="px-4 py-3 text-center font-medium">Игрок</th>
+                  <th className="px-4 py-3 text-center font-medium">
                     Последний счет
                   </th>
-                  <th className="px-4 py-3 text-left font-medium">Бонусы</th>
-                  <th className="px-4 py-3 text-left font-medium">
+                  <th className="px-4 py-3 text-center font-medium">Бонусы</th>
+                  <th className="px-4 py-3 text-center font-medium">
                     Итоговый счет
                   </th>
                 </tr>
@@ -83,32 +84,38 @@ function ScoresDetailsPage({
                   return (
                     <tr
                       key={row.playerId}
-                      className={`border-t border-yellow-500/10 group transition-colors ${
-                        isTop1 ? "bg-yellow-500/10" : ""
+                      className={`border-t group transition-colors ${
+                        isTop1
+                          ? "border-yellow-300/30 bg-yellow-400/12 shadow-[inset_3px_0_0_rgba(250,204,21,0.85),0_0_20px_rgba(250,204,21,0.08)]"
+                          : isTop2
+                            ? "border-slate-200/25 bg-slate-200/10 shadow-[inset_3px_0_0_rgba(226,232,240,0.75)]"
+                            : isTop3
+                              ? "border-orange-400/25 bg-orange-700/10 shadow-[inset_3px_0_0_rgba(251,146,60,0.78),0_0_18px_rgba(251,146,60,0.06)]"
+                              : "border-yellow-500/10"
                       }`}
                     >
+                      <td className="px-4 py-3 text-center text-green-300">
+                        {isTop1 ? "🥇" : isTop2 ? "🥈" : isTop3 ? "🥉" : `${rank}.`}
+                      </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <span className="w-6 text-center">
-                            {isTop1 ? "🥇" : isTop2 ? "🥈" : isTop3 ? "🥉" : <span className="text-xs text-zinc-500">{rank}.</span>}
-                          </span>
+                        <div className="flex items-center justify-center gap-3">
                           <span className={`font-bold transition-all duration-300 ${
                             isTop1
                               ? "text-yellow-400 group-hover:drop-shadow-[0_0_12px_rgba(250,195,25,0.8)] group-hover:scale-105"
-                              : isTop2 ? "text-zinc-200" : isTop3 ? "text-amber-600" : "text-zinc-300"
+                              : isTop2 ? "text-slate-100 drop-shadow-[0_0_10px_rgba(226,232,240,0.55)]" : isTop3 ? "text-orange-300 drop-shadow-[0_0_10px_rgba(251,146,60,0.42)]" : "text-zinc-300"
                           }`}>
                             {row.login}
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-zinc-300">
+                      <td className="px-4 py-3 text-center text-zinc-300">
                         {player?.lastTiltoCoins ?? 0}
                         {row.lastGameName ? ` (${row.lastGameName})` : ""}
                       </td>
-                      <td className="px-4 py-3 text-indigo-300 font-medium">
+                      <td className="px-4 py-3 text-center text-indigo-300 font-medium">
                         +{player?.bonusPoints ?? 0}
                       </td>
-                      <td className="px-4 py-3 text-green-300">
+                      <td className="px-4 py-3 text-center text-green-300">
                         {player?.tiltCoins ?? 0}
                       </td>
                     </tr>
@@ -160,10 +167,10 @@ function ScoresDetailsPage({
                   <table className="w-full min-w-[620px] text-sm">
                     <thead className="bg-yellow-500/10 text-yellow-100">
                       <tr>
-                        <th className="px-4 py-3 text-left font-medium">Игрок</th>
-                        <th className="px-4 py-3 text-left font-medium">Счет</th>
-                        <th className="px-4 py-3 text-left font-medium">Бонусы</th>
-                        <th className="px-4 py-3 text-left font-medium">Место</th>
+                        <th className="px-4 py-3 text-center font-medium">Игрок</th>
+                        <th className="px-4 py-3 text-center font-medium">Счет</th>
+                        <th className="px-4 py-3 text-center font-medium">Бонусы</th>
+                        <th className="px-4 py-3 text-center font-medium">Место</th>
                       </tr>
                     </thead>
 
@@ -177,30 +184,36 @@ function ScoresDetailsPage({
                         return (
                           <tr
                             key={row.player.id}
-                            className={`border-t border-yellow-500/10 transition-colors ${
-                              isTop1 ? "bg-yellow-500/10" : ""
+                            className={`border-t transition-colors ${
+                              isTop1
+                                ? "border-yellow-300/30 bg-yellow-400/12 shadow-[inset_3px_0_0_rgba(250,204,21,0.85),0_0_20px_rgba(250,204,21,0.08)]"
+                                : isTop2
+                                  ? "border-slate-200/25 bg-slate-200/10 shadow-[inset_3px_0_0_rgba(226,232,240,0.75)]"
+                                  : isTop3
+                                    ? "border-orange-400/25 bg-orange-700/10 shadow-[inset_3px_0_0_rgba(251,146,60,0.78),0_0_18px_rgba(251,146,60,0.06)]"
+                                    : "border-yellow-500/10"
                             }`}
                           >
-                            <td className="px-4 py-3">
+                            <td className="px-4 py-3 text-center">
                               <span className={`font-bold ${
                                 isTop1
-                                  ? "text-yellow-400"
+                                  ? "text-yellow-300 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]"
                                   : isTop2
-                                    ? "text-zinc-200"
+                                    ? "text-slate-100 drop-shadow-[0_0_10px_rgba(226,232,240,0.55)]"
                                     : isTop3
-                                      ? "text-amber-600"
+                                      ? "text-orange-300 drop-shadow-[0_0_10px_rgba(251,146,60,0.42)]"
                                       : "text-zinc-300"
                               }`}>
                                 {row.player.login}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-zinc-300">
+                            <td className="px-4 py-3 text-center text-zinc-300">
                               {row.score}
                             </td>
-                            <td className="px-4 py-3 text-indigo-300 font-medium">
+                            <td className="px-4 py-3 text-center text-indigo-300 font-medium">
                               +{row.bonus}
                             </td>
-                            <td className="px-4 py-3 text-green-300">
+                            <td className="px-4 py-3 text-center text-green-300">
                               {isTop1 ? "🥇" : isTop2 ? "🥈" : isTop3 ? "🥉" : `${rank}.`}
                             </td>
                           </tr>

@@ -10,7 +10,7 @@ const GAMBLING_RARITY_WEIGHTS: Array<{ rarity: GamblingRarity; weight: number }>
   { rarity: "epic", weight: 20 },
 ];
 
-const GAMBLING_LEGENDARY_CHANCE = 0.05;
+const GAMBLING_LEGENDARY_CHANCE = 0.1;
 const GAMBLING_MOMENTAL_WEIGHT = 3;
 const INTERACTION_CARD_COUNT = 3;
 
