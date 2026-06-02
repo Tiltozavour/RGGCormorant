@@ -43,6 +43,7 @@ interface GameBoardProps {
     cardId?: string;
     cardName?: string;
   } | null;
+  wheelConfirmLockUntil?: number;
 }
 
 interface MapCell {
@@ -92,6 +93,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   wheelActionCards,
   round,
   goldenCardHolderIds,
+  wheelConfirmLockUntil,
 }) => {
   // Иници                  ализируем локальную позицию сразу координатами из текущей клетки в БД
   const [piecePos, setPiecePos] = useState(() => {
@@ -492,12 +494,14 @@ const GameBoard: React.FC<GameBoardProps> = ({
       {showWheel && wheelGames.length > 0 && (
         <GameWheel
           items={wheelGames}
+          players={players}
           onResult={(res) => {
             onWheelResult?.(res);
           }}
           onClose={onCloseWheel}
           canSpin={isAdminView}
           actionCards={wheelActionCards}
+          confirmLockUntil={wheelConfirmLockUntil}
         />
       )}
       <div className="relative h-full w-full">

@@ -8,7 +8,7 @@ import { GameWheel } from "./GameWheel";
 import PlayersSidebar from "./PlayersSidebar";
 import ProfileSidebar from "./ProfileSidebar";
 import ScoresDetailsPage from "./ScoresDetailsPage";
-import { collection, getDocs, writeBatch } from "firebase/firestore";
+import { collection, getDocs, writeBatch, doc, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 //import { v4 as uuidv4 } from 'uuid'; 
 
@@ -134,6 +134,14 @@ function AppClean() {
   const [selectedCardPreviewMode, setSelectedCardPreviewMode] = useState<'use' | 'view'>('use');
   const [isWheelInfoOpen, setIsWheelInfoOpen] = useState(false);
   const [wheelInfoGames, setWheelInfoGames] = useState<AvailableGame[]>([]);
+  const [wheelConfirmLockUntil, setWheelConfirmLockUntil] = useState<number>(0);
+
+  const handleWheelResult = useCallback((gameName: string) => {
+    // При получении результата блокируем кнопку "Принять" на 5 секунд
+    const lockTime = Date.now() + 5000;
+    setWheelConfirmLockUntil(lockTime);
+    void syncWheelResult("current", gameName);
+  }, []);
 
   const notify = useCallback((message: string, type: ToastNotification['type'] = 'info', cardId?: string) => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -188,6 +196,18 @@ function AppClean() {
 
     void fetchAvailableGames().then(setWheelInfoGames);
   }, [isWheelInfoOpen]);
+
+    // Вспомогательная функция для синхронизации видимости колеса с очисткой старых результатов
+  const handleSyncWheelVisibility = useCallback(async (visible: boolean) => {
+    if (isAdmin && !visible) {
+      // Если админ закрывает колесо, очищаем зависшие результаты, чтобы они не всплыли потом
+      await updateDoc(doc(db, "game_settings", "wheel"), {
+        winnerIndex: null,
+        isSpinning: false,
+      }).catch(console.error);
+    }
+    void syncWheelVisibility("current", visible);
+  }, [isAdmin]);
 
   const handleClearEventLog = useCallback(async () => {
     if (isClearingEventLog) return;
@@ -787,8 +807,9 @@ function AppClean() {
             chooseStart={handlers.chooseStart}
             onMoveComplete={handlers.handleMoveComplete}
             showWheel={gameState.showWheel}
-            onWheelResult={(res) => void syncWheelResult("current", res)}
-            onCloseWheel={() => void syncWheelVisibility("current", false)}
+            onWheelResult={handleWheelResult}
+            onCloseWheel={() => void handleSyncWheelVisibility(false)}
+            wheelConfirmLockUntil={wheelConfirmLockUntil}
             wheelActionCards={["inv_017", "inv_006"]
               .flatMap((cardId) => {
                 const card = allCards[cardId];
@@ -842,7 +863,7 @@ function AppClean() {
             onPrepareTurn={() => { void handlers.handlePrepareTurn(); }}
             onConfirmRoll={handlers.handleConfirmRoll}
             canConfirmRoll={canConfirmRoll}
-            onToggleWheel={() => void syncWheelVisibility("current", !gameState.showWheel)}
+            onToggleWheel={() => void handleSyncWheelVisibility(!gameState.showWheel)}
             isDiceRolling={visualRoll?.rolling ?? false}
             allCards={allCards}
             onCardClick={(card) => {
@@ -1090,6 +1111,7 @@ function AppClean() {
       {isWheelInfoOpen && (
         <GameWheel
           items={wheelInfoGames}
+          players={players}
           onResult={() => {}}
           onClose={() => setIsWheelInfoOpen(false)}
           canSpin={false}

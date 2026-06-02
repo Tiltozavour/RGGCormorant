@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { doc, onSnapshot, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
+import type { Player } from "../types/game";
+import type { WheelCardStackEntry } from "./wheelHandlers";
 import "./GameWheel.css";
 
 interface Item {
@@ -23,20 +25,24 @@ interface WheelActionCard {
 
 interface Props {
   items: Item[];
+  players: Player[];
   onResult: (result: string) => void;
   onClose?: () => void;
   canSpin: boolean;
   actionCards?: WheelActionCard[];
   readOnly?: boolean;
+  confirmLockUntil?: number;
 }
 
 export const GameWheel: React.FC<Props> = ({
   items,
+  players,
   onResult,
   onClose,
   canSpin,
   actionCards = [],
   readOnly = false,
+  confirmLockUntil,
 }) => {
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
@@ -44,6 +50,8 @@ export const GameWheel: React.FC<Props> = ({
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null); // Состояние для наведения на таблицу
   const [removedGameId, setRemovedGameId] = useState<string | null>(null); // Новое состояние для анимации исчезновения
+  const [cardStack, setCardStack] = useState<WheelCardStackEntry[]>([]);
+  const [lockSeconds, setLockSeconds] = useState(0);
   const wheelRef = useRef<HTMLDivElement>(null); // Ref for the main wheel div
   const requestRef = useRef<number | null>(null); // Ref for animation frame ID
 
@@ -68,6 +76,7 @@ export const GameWheel: React.FC<Props> = ({
           setSpinning(false);
           if (data.winnerIndex !== null && items[data.winnerIndex]) {
             setWinner(items[data.winnerIndex]);
+            onResult(items[data.winnerIndex].name);
           }
           void updateDoc(doc(db, "game_settings", "wheel"), {
             isSpinning: false,
@@ -83,6 +92,8 @@ export const GameWheel: React.FC<Props> = ({
         setWinner(null);
       }
 
+      setCardStack(data.wheelCardStack || []);
+
       if (!data.isSpinning && typeof data.winnerIndex === "number" && items[data.winnerIndex]) {
         setRotation(Number(data.targetRotation ?? rotation));
         setWinner(items[data.winnerIndex]);
@@ -91,6 +102,18 @@ export const GameWheel: React.FC<Props> = ({
 
     return () => unsub();
   }, [items, readOnly, rotation]);
+
+  // Логика обратного отсчета для блокировки кнопки
+  useEffect(() => {
+    if (!confirmLockUntil) return;
+    const update = () => {
+      const diff = Math.ceil((confirmLockUntil - Date.now()) / 1000);
+      setLockSeconds(Math.max(0, diff));
+    };
+    update();
+    const interval = setInterval(update, 500);
+    return () => clearInterval(interval);
+  }, [confirmLockUntil]);
 
   const updateActiveSegment = useCallback(() => {
     const tick = () => {
@@ -224,8 +247,55 @@ export const GameWheel: React.FC<Props> = ({
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[10020]">
       <div className="flex flex-row items-center justify-center w-full gap-12 px-12 max-h-[90vh]">
         
-        {/* Левая распорка для центровки (равна ширине списка справа) */}
-        <div className="w-80 hidden xl:block shrink-0" />
+        {/* Левая часть: История манипуляций */}
+        <div className="bg-zinc-900/50 border border-white/10 rounded-3xl p-6 backdrop-blur-xl w-80 flex flex-col gap-4 shrink-0 h-[600px] overflow-hidden hidden xl:flex">
+          <h3 className="text-purple-400 font-black uppercase tracking-tighter text-lg border-b border-white/5 pb-2">Манипуляции</h3>
+          <div className="overflow-y-auto pr-2 custom-scrollbar flex-1">
+            <div className="flex flex-col gap-4">
+              {cardStack.length === 0 ? (
+                <div className="text-zinc-600 text-xs italic text-center mt-10">
+                  Карт пока не применяли
+                </div>
+              ) : (
+                cardStack.map((entry, idx) => {
+                  const player = players.find(p => p.id === entry.playerId);
+                  const isFish = entry.cardId === "inv_006";
+                  const gameName = items[entry.resultWinnerIndex]?.name || "???";
+                  
+                  return (
+                    <div key={idx} className="flex flex-col gap-1 border-l-2 border-purple-500/30 pl-3 py-1">
+                      <div className="flex items-center gap-2">
+                        <img 
+                          src={player?.avatar || "/fallback-avatar.png"} 
+                          className="w-5 h-5 rounded-full border border-white/10" 
+                          alt="" 
+                        />
+                        <span className="text-[11px] font-black text-white truncate">
+                          {player?.login || "???"}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-zinc-400">
+                        {isFish ? (
+                          <span className="text-blue-400 font-bold">Отменил (Mr.Fish)</span>
+                        ) : (
+                          <span className="text-yellow-500 font-bold">Подкрутил</span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-zinc-200 bg-white/5 px-2 py-1 rounded mt-1">
+                        ➔ {gameName}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+          {cardStack.length > 0 && (
+            <div className="text-[9px] text-zinc-500 uppercase tracking-widest text-center">
+              Последнее действие внизу
+            </div>
+          )}
+        </div>
 
         {/* Центральная часть: Колесо */}
         <div className="flex flex-col items-center gap-8">
@@ -384,8 +454,11 @@ export const GameWheel: React.FC<Props> = ({
             <div className="flex flex-col w-full gap-3 mt-2">
               {!canSpin && renderActionCards()}
               {canSpin && (
-                <button onClick={() => handleConfirmResult(winner)} className="w-full bg-yellow-500 text-black py-4 rounded-2xl font-black text-lg hover:bg-white transition-all uppercase" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
-                  Принять выбор
+                <button 
+                  disabled={lockSeconds > 0}
+                  onClick={() => handleConfirmResult(winner)} 
+                  className="w-full bg-yellow-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-black py-4 rounded-2xl font-black text-lg hover:bg-white transition-all uppercase" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+                  {lockSeconds > 0 ? `Ожидание (${lockSeconds}с)` : "Принять выбор"}
                 </button>
               )}
               <button onClick={handleCloseWinner} className="w-full py-3 text-zinc-500 hover:text-white text-sm font-bold" style={{ fontFamily: "'Comfortaa', sans-serif" }}>

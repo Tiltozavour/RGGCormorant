@@ -332,12 +332,7 @@ export function useGameData(
 
   const handleRerollWheel = async (source: "participant_reroll" | "inv_017" = "participant_reroll") => {
     if (!user || !playerData) return false;
-    return rerollWheel({
-      userId: user.uid,
-      showWheel: gameState.showWheel,
-      source,
-      notify,
-    });
+    return rerollWheel({ userId: user.uid, showWheel: gameState.showWheel, source, notify, isAdmin });
   };
 
   const handleUseCard = async (card: GameCard, targetPlayerId: string | null = null) => {
@@ -966,27 +961,14 @@ export function useGameData(
 
         case "spin_wheel":
           if (gameState.showWheel) {
-            const wheelWasRerolled = await handleRerollWheel("inv_017");
-            if (!wheelWasRerolled) break;
-
-            if (!(await commitPlayedCardAndGameState({
-              playerRef,
-              cardId: card.id,
-              requireCardInInventory: !isAdmin,
-            }))) {
-              notify("Этой карты уже нет в руке.", "warning", card.id);
-              break;
-            }
+            await handleRerollWheel("inv_017");
           } else {
-            if (!(await commitPlayedCardAndGameState({
+            await commitPlayedCardAndGameState({
               playerRef,
               cardId: card.id,
               gameStatePatch: { showWheel: true },
               requireCardInInventory: !isAdmin,
-            }))) {
-              notify("Этой карты уже нет в руке.", "warning", card.id);
-              break;
-            }
+            });
             notify("Колесо открыто. Дождитесь результата, чтобы использовать переброс.", "info", card.id);
           }
           break;
@@ -1006,17 +988,7 @@ export function useGameData(
         
         case "fish_protection":
           if (gameState.showWheel) {
-            const wheelCardWasCancelled = await cancelLastWheelCardWithFish(user.uid, notify, card.id);
-            if (!wheelCardWasCancelled) break;
-
-            if (!(await commitPlayedCardAndGameState({
-              playerRef,
-              cardId: card.id,
-              requireCardInInventory: !isAdmin,
-            }))) {
-              notify("Этой карты уже нет в руке.", "warning", card.id);
-              break;
-            }
+            await cancelLastWheelCardWithFish(user.uid, notify, card.id, isAdmin);
           } else {
             if (!(await commitPlayedCardAndGameState({
               playerRef,
@@ -3828,6 +3800,16 @@ export function useGameData(
       payload.goldenCardHolderIds = [];
     }
 
+    
+    if (nextPhase === "next_game") {
+      // При переходе в фазу колеса гарантируем, что там нет старых результатов
+      await setDoc(doc(db, "game_settings", "wheel"), {
+        winnerIndex: null,
+        isSpinning: false,
+        wheelCardStack: [],
+      }, { merge: true }).catch(console.error);
+    }
+
     await updateDoc(doc(db, "gameState", "current"), payload);
   };
 
@@ -4010,6 +3992,13 @@ export function useGameData(
     );
 
     await setDoc(doc(db, "gameState", "current"), defaultGameState);
+    // Полный сброс настроек колеса
+    await setDoc(doc(db, "game_settings", "wheel"), {
+      winnerIndex: null,
+      isSpinning: false,
+      wheelCardStack: [],
+      targetRotation: 0,
+    });
     await resetStarterCards();
   };
 

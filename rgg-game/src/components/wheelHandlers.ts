@@ -3,9 +3,11 @@ import {
   doc,
   getDoc,
   getDocs,
-  setDoc,
+  arrayUnion,
+  runTransaction,
 } from "firebase/firestore";
 import { db } from "../firebase";
+import { removeOneCardFromInventory } from "./cardHandlers";
 import type { ToastNotification } from "./useModalStates";
 
 type Notify = (message: string, type?: ToastNotification["type"], cardId?: string) => void;
@@ -110,11 +112,6 @@ export const validateWheelFishCancelAvailable = async (
     return false;
   }
 
-  if (lastCard.playerId === userId) {
-    notify("No, no, no Mr.Fish нельзя использовать на свою же последнюю карту.", "warning", cardId);
-    return false;
-  }
-
   return true;
 };
 
@@ -123,28 +120,20 @@ export const rerollWheel = async ({
   showWheel,
   source,
   notify,
+  isAdmin = false,
 }: {
   userId: string;
   showWheel: boolean;
   source: "participant_reroll" | "inv_017";
   notify: Notify;
+  isAdmin?: boolean;
 }) => {
   if (!showWheel) {
     notify("Колесо сейчас закрыто.", "warning");
     return false;
   }
 
-  const { wheelSettingsRef, wheelSettings } = await getWheelSettings();
-  if (wheelSettings?.isSpinning) {
-    notify("Дождитесь остановки колеса.", "info");
-    return false;
-  }
-
-  if (typeof wheelSettings?.winnerIndex !== "number") {
-    notify("Сначала нужно запустить колесо и получить результат.", "warning");
-    return false;
-  }
-
+  const cardId = "inv_017";
   const gamesSnap = await getDocs(collection(db, "wheel"));
   const activeGames = gamesSnap.docs
     .filter((gameDoc) => gameDoc.data().active === true)
@@ -155,74 +144,145 @@ export const rerollWheel = async ({
     return false;
   }
 
-  const spinPayload = buildWheelSpinPayload(
-    activeGames.length,
-    Number(wheelSettings?.targetRotation ?? 0),
-    wheelSettings.winnerIndex,
-    source,
-    userId,
-  );
-  const wheelCardStack = [
-    ...(wheelSettings?.wheelCardStack ?? []),
-    {
-      cardId: "inv_017" as const,
-      playerId: userId,
-      previousWinnerIndex: wheelSettings.winnerIndex,
-      resultWinnerIndex: spinPayload.winnerIndex,
-      timestamp: Date.now(),
-    },
-  ];
+  try {
+    const wheelSettingsRef = doc(db, "game_settings", "wheel");
+    const playerRef = doc(db, "players", userId);
+    const gameStateRef = doc(db, "gameState", "current");
 
-  await setDoc(
-    wheelSettingsRef,
-    {
-      ...spinPayload,
-      wheelCardStack,
-    },
-    { merge: true },
-  );
+    return await runTransaction(db, async (transaction) => {
+      const [wheelSnap, playerSnap] = await Promise.all([
+        transaction.get(wheelSettingsRef),
+        transaction.get(playerRef)
+      ]);
 
-  notify(
-    source === "inv_017" ? "Колесо переброшено картой \"Подкрутка\"." : "Колесо переброшено.",
-    "info",
-    source === "inv_017" ? "inv_017" : undefined,
-  );
-  return true;
+      const wheelSettings = wheelSnap.data() as WheelSettings | undefined;
+      const playerData = playerSnap.data();
+      const inventory = playerData?.inventory ?? [];
+
+      // Проверка наличия карты (если не админ)
+      if (!isAdmin && source === "inv_017" && !inventory.includes(cardId)) {
+        notify("Этой карты больше нет в вашем инвентаре.", "error", cardId);
+        return false;
+      }
+
+      if (wheelSettings?.isSpinning) {
+        notify("Дождитесь остановки колеса.", "info");
+        return false;
+      }
+
+      if (typeof wheelSettings?.winnerIndex !== "number") {
+        notify("Сначала нужно запустить колесо и получить результат.", "warning");
+        return false;
+      }
+
+      const spinPayload = buildWheelSpinPayload(
+        activeGames.length,
+        Number(wheelSettings?.targetRotation ?? 0),
+        wheelSettings.winnerIndex,
+        source,
+        userId,
+      );
+
+      const wheelCardStack = [
+        ...(wheelSettings?.wheelCardStack ?? []),
+        {
+          cardId: "inv_017" as const,
+          playerId: userId,
+          previousWinnerIndex: wheelSettings.winnerIndex,
+          resultWinnerIndex: spinPayload.winnerIndex,
+          timestamp: Date.now(),
+        },
+      ];
+
+      // Атомарное обновление всех документов
+      transaction.update(wheelSettingsRef, { ...spinPayload, wheelCardStack });
+      
+      if (source === "inv_017" && !isAdmin) {
+        transaction.update(playerRef, {
+          inventory: removeOneCardFromInventory(inventory, cardId)
+        });
+        transaction.update(gameStateRef, {
+          revealedCards: arrayUnion(cardId)
+        });
+      }
+
+      notify(
+        source === "inv_017" ? "Колесо переброшено картой \"Подкрутка\"." : "Колесо переброшено.",
+        "info",
+        source === "inv_017" ? cardId : undefined,
+      );
+      return true;
+    });
+  } catch (error) {
+    console.error("Reroll transaction failed:", error);
+    return false;
+  }
 };
 
 export const cancelLastWheelCardWithFish = async (
   userId: string,
   notify: Notify,
   cardId: string,
+  isAdmin: boolean = false,
 ) => {
-  const { wheelSettingsRef, wheelSettings } = await getWheelSettings();
-  const wheelCardStack = wheelSettings?.wheelCardStack ?? [];
-  const lastCard = wheelCardStack.at(-1);
+  try {
+    const wheelSettingsRef = doc(db, "game_settings", "wheel");
+    const playerRef = doc(db, "players", userId);
+    const gameStateRef = doc(db, "gameState", "current");
 
-  if (!lastCard || lastCard.playerId === userId) {
-    notify("No, no, no Mr.Fish отменяет только последнюю чужую активную карту на колесе.", "warning", cardId);
+    return await runTransaction(db, async (transaction) => {
+      const [wheelSnap, playerSnap] = await Promise.all([
+        transaction.get(wheelSettingsRef),
+        transaction.get(playerRef)
+      ]);
+
+      const wheelSettings = wheelSnap.data() as WheelSettings | undefined;
+      const playerData = playerSnap.data();
+      const inventory = playerData?.inventory ?? [];
+
+      if (!isAdmin && !inventory.includes(cardId)) {
+        notify("Этой карты больше нет в вашем инвентаре.", "error", cardId);
+        return false;
+      }
+
+      const wheelCardStack = wheelSettings?.wheelCardStack ?? [];
+      const lastCard = wheelCardStack.at(-1);
+
+      if (!lastCard || (!isAdmin && lastCard.playerId === userId)) {
+        notify("Вы опоздали! Карта уже отменена или недоступна.", "warning", cardId);
+        return false;
+      }
+
+      const fishEntry: WheelCardStackEntry = {
+        cardId: "inv_006",
+        playerId: userId,
+        previousWinnerIndex: Number(wheelSettings?.winnerIndex ?? lastCard.resultWinnerIndex),
+        resultWinnerIndex: lastCard.previousWinnerIndex,
+        timestamp: Date.now(),
+      };
+
+      transaction.update(wheelSettingsRef, {
+        isSpinning: false,
+        winnerIndex: fishEntry.resultWinnerIndex,
+        lastSpinSource: cardId,
+        wheelCardStack: [...wheelCardStack, fishEntry],
+        updatedAt: Date.now(),
+      });
+
+      if (!isAdmin) {
+        transaction.update(playerRef, {
+          inventory: removeOneCardFromInventory(inventory, cardId)
+        });
+        transaction.update(gameStateRef, {
+          revealedCards: arrayUnion(cardId)
+        });
+      }
+
+      notify("Вы отменили последнюю активную карту на колесе картой No, no, no Mr.Fish.", "info", cardId);
+      return true;
+    });
+  } catch (error) {
+    console.error("Fish cancel transaction failed:", error);
     return false;
   }
-
-  const fishEntry: WheelCardStackEntry = {
-    cardId: "inv_006",
-    playerId: userId,
-    previousWinnerIndex: Number(wheelSettings?.winnerIndex ?? lastCard.resultWinnerIndex),
-    resultWinnerIndex: lastCard.previousWinnerIndex,
-    timestamp: Date.now(),
-  };
-
-  await setDoc(
-    wheelSettingsRef,
-    {
-      isSpinning: false,
-      winnerIndex: fishEntry.resultWinnerIndex,
-      lastSpinSource: "inv_006",
-      wheelCardStack: [...wheelCardStack, fishEntry],
-      updatedAt: Date.now(),
-    },
-    { merge: true },
-  );
-  notify("Вы отменили последнюю активную карту на колесе картой No, no, no Mr.Fish.", "info", cardId);
-  return true;
 };

@@ -18,7 +18,6 @@ interface EventLogProps {
 function EventLog({ gameEvents, allCards, players, onClear, isClearing, canClear }: EventLogProps) {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [previewCardId, setPreviewCardId] = useState<string | null>(null);
-  void players;
 
   const uniqueGameEvents = useMemo(() => {
     return Array.from(new Map(gameEvents.map(event => [event.id, event])).values())
@@ -51,13 +50,33 @@ function EventLog({ gameEvents, allCards, players, onClear, isClearing, canClear
           <div className="flex flex-col gap-2">
             {uniqueGameEvents.map(event => (
               <div key={event.id} className="text-xs text-zinc-400">
-                <span className="text-zinc-600 mr-2">[{new Date(event.timestamp).toLocaleTimeString()}]</span>
-                <span className={`
-                  ${event.type === 'success' ? 'text-green-400' :
-                    event.type === 'error' ? 'text-red-400' :
-                    event.type === 'warning' ? 'text-yellow-400' : 'text-blue-400'}
-                `} style={{ fontFamily: "'Comfortaa', sans-serif" }}>
-                  {event.message}
+                <span className="text-zinc-600 mr-2">[{new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}]</span>
+                <span 
+                  className={`
+                    ${event.type === 'success' ? 'text-green-400' :
+                      event.type === 'error' ? 'text-red-400' :
+                      event.type === 'warning' ? 'text-yellow-400' : 'text-blue-400'}
+                  `} 
+                  style={{ fontFamily: "'Comfortaa', sans-serif" }}
+                >
+                  {(() => {
+                    const match = event.message.match(/^\[(.*?)\] (.*)$/);
+                    if (!match) return event.message;
+
+                    const [, playerName, messageBody] = match;
+                    // Ищем игрока по логину, чтобы получить цвет его ауры
+                    const player = players.find(p => p.login === playerName);
+                    const auraColor = player?.borderColor;
+
+                    return (
+                      <>
+                        <span style={auraColor ? { color: auraColor, fontWeight: '900' } : { fontWeight: '900' }}>
+                          [{playerName}]
+                        </span>
+                        {' '}{messageBody}
+                      </>
+                    );
+                  })()}
                 </span>
                 {event.cardId && allCards[event.cardId] && (() => {
                   const card = allCards[event.cardId];
