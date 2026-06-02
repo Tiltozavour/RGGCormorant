@@ -165,6 +165,7 @@ function ScoresDetailsPage({
                       <tr>
                         <th className="px-4 py-3 text-center font-medium">Игрок</th>
                         <th className="px-4 py-3 text-center font-medium">Счет</th>
+                        <th className="px-4 py-3 text-center font-medium">Бонусы</th>
                         <th className="px-4 py-3 text-center font-medium">Место</th>
                       </tr>
                     </thead>
@@ -204,6 +205,9 @@ function ScoresDetailsPage({
                             </td>
                             <td className="px-4 py-3 text-center text-zinc-300">
                               {row.score}
+                            </td>
+                            <td className="px-4 py-3 text-center text-indigo-300 font-medium">
+                              +{row.bonus}
                             </td>
                             <td className="px-4 py-3 text-center text-green-300">
                               {isTop1 ? "🥇" : isTop2 ? "🥈" : isTop3 ? "🥉" : `${rank}.`}

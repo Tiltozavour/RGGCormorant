@@ -127,9 +127,8 @@ function PlayersSidebar({
                 <th className="px-4 py-3 text-left font-medium">
                   Последний счет
                 </th>
-                <th className="px-4 py-3 text-left font-medium">
-                  Итоговый счет
-                </th>
+                <th className="px-4 py-3 text-left font-medium">Бонусы</th>
+                <th className="px-4 py-3 text-left font-medium">Итоговый счет</th>
               </tr>
             </thead>
 
@@ -235,7 +234,9 @@ function PlayersSidebar({
                       {lastScore}
                       <span className="text-zinc-500">{gameLabel}</span>
                     </td>
-
+                    <td className="px-4 py-3 text-indigo-300 font-medium">
+                      +{bonusScore}
+                    </td>
                     <td className={`px-4 py-3 font-medium group ${isDebtor ? "text-red-300" : "text-green-300"}`}>
                       <div className="flex items-center justify-between gap-2">
                         <span>{player?.tiltCoins ?? 0}</span>
