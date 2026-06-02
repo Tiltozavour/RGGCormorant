@@ -1,4 +1,4 @@
-﻿﻿import type { GameHistoryEntry, Player } from "../types/game";
+﻿﻿﻿﻿import type { GameHistoryEntry, Player } from "../types/game";
 import { isGameParticipant } from "./playerFilters";
 import { buildPlayerScoreRows, normalizeScoreParts } from "./scoreUtils";
 
@@ -66,7 +66,6 @@ function ScoresDetailsPage({
                   <th className="px-4 py-3 text-center font-medium">
                     Последний счет
                   </th>
-                  <th className="px-4 py-3 text-center font-medium">Бонусы</th>
                   <th className="px-4 py-3 text-center font-medium">
                     Итоговый счет
                   </th>
@@ -111,9 +110,6 @@ function ScoresDetailsPage({
                       <td className="px-4 py-3 text-center text-zinc-300">
                         {player?.lastTiltoCoins ?? 0}
                         {row.lastGameName ? ` (${row.lastGameName})` : ""}
-                      </td>
-                      <td className="px-4 py-3 text-center text-indigo-300 font-medium">
-                        +{player?.bonusPoints ?? 0}
                       </td>
                       <td className="px-4 py-3 text-center text-green-300">
                         {player?.tiltCoins ?? 0}
@@ -169,7 +165,6 @@ function ScoresDetailsPage({
                       <tr>
                         <th className="px-4 py-3 text-center font-medium">Игрок</th>
                         <th className="px-4 py-3 text-center font-medium">Счет</th>
-                        <th className="px-4 py-3 text-center font-medium">Бонусы</th>
                         <th className="px-4 py-3 text-center font-medium">Место</th>
                       </tr>
                     </thead>
@@ -209,9 +204,6 @@ function ScoresDetailsPage({
                             </td>
                             <td className="px-4 py-3 text-center text-zinc-300">
                               {row.score}
-                            </td>
-                            <td className="px-4 py-3 text-center text-indigo-300 font-medium">
-                              +{row.bonus}
                             </td>
                             <td className="px-4 py-3 text-center text-green-300">
                               {isTop1 ? "🥇" : isTop2 ? "🥈" : isTop3 ? "🥉" : `${rank}.`}

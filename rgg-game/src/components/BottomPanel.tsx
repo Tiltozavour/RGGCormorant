@@ -104,7 +104,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   const handleSaveResults = async () => {
     if (!isAdmin) return;
     try {
-      const participants = players.filter(isGameParticipant);
+      const participants = players.filter(isGameParticipant).sort((a, b) => a.login.localeCompare(b.login));
       const roundResults = resultInputMode === "places"
         ? buildPlacementResults(participants, tempResultGroups, tempResultPlaces, tempSkippedResults)
         : Object.fromEntries(
@@ -327,7 +327,10 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
             </div>
 
             {resultInputMode === "places" ? (
-              players.filter(isGameParticipant).map((p) => {
+              players
+                .filter(isGameParticipant)
+                .sort((a, b) => a.login.localeCompare(b.login))
+                .map((p) => {
                 const group = tempResultGroups[p.id] ?? 1;
                 const place = tempResultPlaces[p.id] ?? 1;
                 const isSkipped = tempSkippedResults[p.id] === true;
@@ -374,7 +377,10 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
                 );
               })
             ) : (
-              players.filter(isGameParticipant).map(p => (
+              players
+                .filter(isGameParticipant)
+                .sort((a, b) => a.login.localeCompare(b.login))
+                .map(p => (
                 <div key={p.id} className={`flex flex-col items-center gap-1 ${tempSkippedResults[p.id] ? "opacity-60" : ""}`}>
                   <span className="text-[10px] text-zinc-500">{p.login}</span>
                   <input
@@ -496,7 +502,7 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
     const voteCounts: Record<string, number> = {};
     Object.values(currentVotes).forEach((vid) => { voteCounts[vid as string] = (voteCounts[vid as string] || 0) + 1; });
     const bonusByPlayer: Record<string, number> = {};
-    const participants = players.filter(isGameParticipant);
+    const participants = players.filter(isGameParticipant).sort((a, b) => a.login.localeCompare(b.login));
 
     const entries = Object.entries(voteCounts);
     if (entries.length > 0) {

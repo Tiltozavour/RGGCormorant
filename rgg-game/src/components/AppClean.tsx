@@ -613,7 +613,7 @@ function AppClean() {
   if (isScoresDetailsOpen) {
     return (
       <ScoresDetailsPage
-        players={players}
+        players={[...players].sort((a, b) => a.login.localeCompare(b.login))}
         totalScores={gameState.scores}
         gameHistory={gameState.gameHistory}
         onBack={() => setIsScoresDetailsOpen(false)}

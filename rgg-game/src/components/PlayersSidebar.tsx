@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+﻿﻿import { useState } from "react";
 import type { DuelState, GameState, Player, GameHistoryEntry } from "../types/game";
 import {
   buildPlayerScoreRows,
@@ -128,9 +128,6 @@ function PlayersSidebar({
                   Последний счет
                 </th>
                 <th className="px-4 py-3 text-left font-medium">
-                  Бонусы
-                </th>
-                <th className="px-4 py-3 text-left font-medium">
                   Итоговый счет
                 </th>
               </tr>
@@ -237,10 +234,6 @@ function PlayersSidebar({
                     <td className="px-4 py-3 text-zinc-200">
                       {lastScore}
                       <span className="text-zinc-500">{gameLabel}</span>
-                    </td>
-
-                    <td className="px-4 py-3 text-indigo-300 font-medium">
-                      +{bonusScore}
                     </td>
 
                     <td className={`px-4 py-3 font-medium group ${isDebtor ? "text-red-300" : "text-green-300"}`}>
