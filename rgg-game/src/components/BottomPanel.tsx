@@ -586,9 +586,35 @@ const AdminVotingView: React.FC<{ gameState: GameState, players: Player[], onFin
   };
 
   return (
-    <div className="flex gap-4 items-center">
-      <div className="text-xs text-indigo-300">{ru.bottomPanel.votedCount(Object.keys(gameState.votes || {}).length)}</div>
-      <button onClick={handleFinish} className="bg-green-600 px-4 py-2 rounded-lg text-xs font-black uppercase">{ru.bottomPanel.finish}</button>
+    <div className="flex flex-col gap-3 w-full">
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-indigo-300">{ru.bottomPanel.votedCount(Object.keys(gameState.votes || {}).length)}</div>
+        <button onClick={handleFinish} className="bg-green-600 px-4 py-2 rounded-lg text-xs font-black uppercase">{ru.bottomPanel.finish}</button>
+      </div>
+      
+      <div className="flex flex-wrap gap-2 overflow-x-auto pb-1">
+        {players
+          .filter(isGameParticipant)
+          .sort((a, b) => a.login.localeCompare(b.login))
+          .map((player) => {
+            const hasVoted = !!gameState.votes?.[player.id];
+            return (
+              <div
+                key={player.id}
+                className={`px-3 py-1 rounded-lg text-xs border ${
+                  hasVoted
+                    ? "bg-indigo-500/20 border-indigo-500 text-indigo-300"
+                    : "bg-zinc-800/50 border-zinc-700 text-zinc-500"
+                }`}
+              >
+                {player.login}
+                <span className="ml-2 text-white/50">
+                  {hasVoted ? "✅" : "⏳"}
+                </span>
+              </div>
+            );
+          })}
+      </div>
     </div>
   );
 };
