@@ -88,7 +88,7 @@ Stabilized slices:
 
 - Card spend plus `revealedCards`.
 - Simple self effects: protection, promo code, discard-next-drawn.
-- Wheel reroll and Fish cancellation around wheel.
+- **Wheel stability:** Reroll and Fish cancellation moved to `runTransaction` boundary.
 - Targeted openers: discard selection, steal-card selection, move-for-coins selection, duel challenge start, tax queue start.
 - Coin and movement cards: add coins, steal coins, judge coins, communism, move steps, teleports, move-target-and-self.
 - Parts of `handleReflectResponse`: reflect card spend, discard/move-for-coins transitions, judge, mage visual roll, Katjit, tax one-off response.

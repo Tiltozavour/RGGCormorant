@@ -217,7 +217,7 @@ scripts/
 - `taxHandlers.ts` - helper-логика налогов.
 - `turnHandlers.ts` - очередь ходов и золотая карта.
 - `legendaryHandlers.ts` - выдача и уникальность легендарок.
-- `wheelHandlers.ts` - логика прокрутки/Fish для колеса.
+- `wheelHandlers.ts` - логика прокрутки/Fish для колеса через транзакции Firestore.
 - `eventLogPolicy.ts` - дедупликация и политика записи событий.
 
 ## 9. UI-состояние
