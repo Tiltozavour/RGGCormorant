@@ -1,4 +1,4 @@
-﻿import type { GameHistoryEntry, Player } from "../types/game";
+﻿﻿import type { GameHistoryEntry, Player } from "../types/game";
 import { isGameParticipant } from "./playerFilters";
 import { buildPlayerScoreRows, normalizeScoreParts } from "./scoreUtils";
 
@@ -149,8 +149,8 @@ function ScoresDetailsPage({
                 };
               })
               .sort((left, right) => {
-                if (right.total !== left.total) {
-                  return right.total - left.total;
+              if (right.score !== left.score) {
+                return right.score - left.score;
                 }
 
                 return left.player.login.localeCompare(right.player.login, "ru");

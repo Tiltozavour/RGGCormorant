@@ -15,6 +15,7 @@ import { db } from "../firebase";
 import type { Player } from "../types/game";
 import type { GameCard as GameCardType } from "../types/card";
 import { useGameData } from "./useGameData";
+import type { GameEvent } from "./useModalStates";
 import { useEventLogger } from "./useEventLogger";
 import { useModalStates } from "../components/useModalStates";
 import GameCard from "./GameCard";
@@ -146,13 +147,41 @@ function AppClean() {
      return () => clearTimeout(timer); // Но notify вызывается не в useEffect, тут сложнее.
   }, [setToasts]);
 
-  const logEvent = useEventLogger();
+  //const logEvent = useEventLogger();
+
+  const baseLogEvent = useEventLogger();
+  const playerDataRef = useRef<Player | null>(null);
+
+  // Обертка для логгера, которая автоматически добавляет имя текущего игрока в сообщение
+  const logEvent = useCallback(
+    (event: GameEvent) => {
+      const playerName = playerDataRef.current?.login || "Система";
+      
+      // Добавляем префикс с именем, если его еще нет
+      const formattedMessage = event.message.startsWith(`[${playerName}]`) 
+        ? event.message 
+        : `[${playerName}] ${event.message}`;
+
+      baseLogEvent({
+        ...event,
+        message: formattedMessage,
+        // Если в событии не указан playerId, проставляем ID текущего игрока
+        playerId: event.playerId || playerDataRef.current?.id
+      });
+    },
+    [baseLogEvent]
+  );
 
   const {
     user, playerData, loading, players, gameState, allCards, gameEvents,
     isAdmin, currentTurnPlayerId, canRoll, canConfirmRoll,
     handlers, getPlayerById
   } = useGameData(notify, logEvent);
+
+  // Синхронизируем реф с актуальными данными игрока
+  useEffect(() => {
+    playerDataRef.current = playerData;
+  }, [playerData]);
 
   useEffect(() => {
     if (!isWheelInfoOpen) return;

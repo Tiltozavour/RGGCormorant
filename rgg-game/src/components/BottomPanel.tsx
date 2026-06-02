@@ -128,10 +128,57 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   };
 
   const handleAddPlayerToTurnQueue = async (playerId: string) => {
-    if (!isAdmin || gameState.turnOrder.includes(playerId)) return;
+    if (!isAdmin) return;
     await updateDoc(doc(db, "gameState", "current"), {
       turnOrder: [...gameState.turnOrder, playerId],
     });
+  };
+
+  const handleRemoveFromQueue = async (index: number) => {
+    if (!isAdmin || gameState.phase !== "turn") return;
+    
+    const newTurnOrder = [...gameState.turnOrder];
+    newTurnOrder.splice(index, 1);
+    
+    const update: any = { turnOrder: newTurnOrder };
+    
+    if (gameState.currentTurnIndex !== undefined) {
+      if (index < gameState.currentTurnIndex) {
+        // Если удалили запись перед текущим игроком, сдвигаем индекс назад, чтобы остаться на том же игроке
+        update.currentTurnIndex = Math.max(0, gameState.currentTurnIndex - 1);
+      } else if (index === gameState.currentTurnIndex) {
+        // Если удаляем текущего игрока, сбрасываем состояние броска
+        update.currentRoll = null;
+        update.rollConfirmed = false;
+        update.rollBonus = 0;
+        
+        // Если очередь опустела или удалили последнего, завершаем фазу
+        if (newTurnOrder.length === 0 || index >= newTurnOrder.length) {
+          onNextPhase();
+          return;
+        }
+      }
+    }
+    await updateDoc(doc(db, "gameState", "current"), update);
+  };
+
+  const handleSkipTurn = async () => {
+    if (!isAdmin || gameState.phase !== "turn" || gameState.turnOrder.length === 0) return;
+    
+    const nextIndex = (gameState.currentTurnIndex ?? 0) + 1;
+    
+    if (nextIndex >= gameState.turnOrder.length) {
+      // Если это был последний игрок в очереди, переходим к следующей фазе (колесо)
+      onNextPhase();
+    } else {
+      // Иначе просто переключаем индекс на следующего и сбрасываем состояние кубика
+      await updateDoc(doc(db, "gameState", "current"), {
+        currentTurnIndex: nextIndex,
+        currentRoll: null,
+        rollConfirmed: false,
+        rollBonus: 0
+      });
+    }
   };
 
   return (
@@ -210,29 +257,52 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
           <div className="flex flex-col gap-1 w-full overflow-hidden">
             <span className="text-[10px] font-black uppercase text-purple-400 tracking-widest">{ru.bottomPanel.queue}</span>
             <div className="flex items-center gap-2 overflow-x-auto">
-              {gameState.turnOrder.map((pid, idx) => (
-                <div key={pid} className={`px-3 py-1 rounded-lg border text-sm ${idx === gameState.currentTurnIndex ? "bg-yellow-500/20 border-yellow-500" : "bg-zinc-900/60 border-white/5 opacity-50"}`}>
-                  {players.find(p => p.id === pid)?.login || "???"}
-                </div>
-              ))}
+              {gameState.turnOrder.map((pid, idx) => {
+                const isCurrent = idx === gameState.currentTurnIndex;
+                return (
+                  <div key={pid + idx} className="flex items-center gap-1 shrink-0">
+                    <div className={`px-3 py-1 rounded-lg border text-sm transition-all ${isCurrent ? "bg-yellow-500/20 border-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.2)]" : "bg-zinc-900/60 border-white/5 opacity-50"}`}>
+                      {players.find(p => p.id === pid)?.login || "???"}
+                    </div>
+                    {!isCurrent ? (
+                      <button
+                        onClick={() => void handleAction(() => handleRemoveFromQueue(idx))}
+                        disabled={isPending}
+                        className="p-1 bg-zinc-800 hover:bg-red-900/40 text-zinc-500 hover:text-red-400 border border-white/5 rounded transition-colors disabled:opacity-50"
+                        title="Удалить ход из очереди"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => void handleAction(handleSkipTurn)}
+                        disabled={isPending}
+                        className="p-1 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-500/30 rounded transition-colors disabled:opacity-50"
+                        title="Пропустить ход игрока"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 17 5-5-5-5M13 17l5-5-5-5"/></svg>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            {players.some((player) => isGameParticipant(player) && !gameState.turnOrder.includes(player.id) && (gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0) <= 0) && (
-              <div className="mt-1 flex items-center gap-2 overflow-x-auto">
-                <span className="text-[9px] uppercase tracking-widest text-zinc-500">{ru.bottomPanel.zeroPoints}</span>
-                {players
-                  .filter((player) => isGameParticipant(player) && !gameState.turnOrder.includes(player.id) && (gameState.currentResults?.[player.id] ?? player.lastTiltoCoins ?? 0) <= 0)
-                  .map((player) => (
-                    <button
-                      key={player.id}
-                      type="button"
-                      onClick={() => void handleAddPlayerToTurnQueue(player.id)}
-                      className="rounded-md border border-white/10 bg-zinc-900/70 px-2 py-0.5 text-[10px] text-zinc-300 transition hover:border-yellow-400/50 hover:text-yellow-200"
-                    >
-                      + {player.login}
-                    </button>
-                  ))}
-              </div>
-            )}
+            <div className="mt-1 flex items-center gap-2 overflow-x-auto">
+              <span className="text-[9px] uppercase tracking-widest text-zinc-500">Добавить ход:</span>
+              {players
+                .filter(isGameParticipant)
+                .map((player) => (
+                  <button
+                    key={player.id}
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => void handleAction(() => handleAddPlayerToTurnQueue(player.id))}
+                    className="rounded-md border border-white/10 bg-zinc-900/70 px-2 py-0.5 text-[10px] text-zinc-300 transition hover:border-yellow-400/50 hover:text-yellow-200 shrink-0"
+                  >
+                    + {player.login}
+                  </button>
+                ))}
+            </div>
           </div>
         )}
 
