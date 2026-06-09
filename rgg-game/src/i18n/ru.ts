@@ -6,6 +6,8 @@ export const ru = {
     understood: "Понятно",
     closeDeck: "Закрыть колоду",
     closeGallery: "Закрыть галерею",
+    collapse: "Скрыть",
+    expand: "Открыть",
   },
   eventLog: {
     title: "Лог событий",
@@ -17,6 +19,18 @@ export const ru = {
   pending: {
     title: "Магия Cormorant...",
     subtitle: "Обрабатываем действие",
+  },
+  chat: {
+    title: "Чат",
+    placeholder: "Написать...",
+    newMessages: "Новые сообщения",
+    loadMore: "Загрузить предыдущие сообщения",
+    clearButton: "Очистить",
+    clearTitle: "Очистить все сообщения в чате",
+    cleared: (count: number) => `Чат очищен: удалено ${count} сообщений.`,
+    alreadyEmpty: "Чат уже пуст.",
+    clearError: "Не удалось очистить чат.",
+    replyTo: "Ответ",
   },
   bottomPanel: {
     sync: "Синхронизация...",

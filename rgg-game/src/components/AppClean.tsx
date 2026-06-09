@@ -27,6 +27,7 @@ import EventLog from "./EventLog";
 import InteractionPendingOverlay from "./InteractionPendingOverlay";
 import ShopAndGamblingOverlays from "./ShopAndGamblingOverlays";
 import TaxResponseOverlay from "./TaxResponseOverlay";
+import LeftPanelContainer from "./LeftPanelContainer"; // Import the new container
 import ToastContainer from "./ToastContainer";
 import { evaluateCardUseGuard, getCardUseGuardAlert } from "./cardUseGuards";
 import { cardNeedsTarget, getSelectableCardTargets } from "./cardTargetRules";
@@ -131,6 +132,7 @@ function AppClean() {
   } = useModalStates();
   void localEvents; void setLocalEvents;
   const [isClearingEventLog, setIsClearingEventLog] = useState(false);
+  const [isClearingChat, setIsClearingChat] = useState(false);
   const [selectedCardPreviewMode, setSelectedCardPreviewMode] = useState<'use' | 'view'>('use');
   const [isWheelInfoOpen, setIsWheelInfoOpen] = useState(false);
   const [wheelInfoGames, setWheelInfoGames] = useState<AvailableGame[]>([]);
@@ -231,6 +233,29 @@ function AppClean() {
       setIsClearingEventLog(false);
     }
   }, [isClearingEventLog, notify]);
+
+  const handleClearChat = useCallback(async () => {
+    if (isClearingChat) return;
+
+    setIsClearingChat(true);
+    try {
+      const snapshot = await getDocs(collection(db, "chatMessages"));
+      const docs = snapshot.docs;
+
+      for (let i = 0; i < docs.length; i += 450) {
+        const batch = writeBatch(db);
+        docs.slice(i, i + 450).forEach((mDoc) => batch.delete(mDoc.ref));
+        await batch.commit();
+      }
+
+      notify(docs.length > 0 ? ru.chat.cleared(docs.length) : ru.chat.alreadyEmpty, 'success');
+    } catch (error) {
+      console.error("Failed to clear chat:", error);
+      notify(ru.chat.clearError, 'error');
+    } finally {
+      setIsClearingChat(false);
+    }
+  }, [isClearingChat, notify]);
 
   const hasGoldenCard = (gameState.goldenCardHolderIds ?? []).includes(playerData?.id ?? "");
   const getBaseCardPrice = (card: GameCardType) => {
@@ -1758,14 +1783,18 @@ function AppClean() {
         allCards={allCards} 
       />
 
-      {/* Лог игровых событий */}
-      <EventLog 
-        gameEvents={gameEvents} 
-        allCards={allCards} 
-        players={players} 
-        onClear={handleClearEventLog}
-        isClearing={isClearingEventLog}
-        canClear={isAdmin}
+      {/* Левая панель (Лог событий и Чат) */}
+      <LeftPanelContainer
+        gameEvents={gameEvents}
+        allCards={allCards}
+        players={players}
+        playerData={playerData!}
+        onClearEventLog={handleClearEventLog}
+        isClearingEventLog={isClearingEventLog}
+        onClearChat={handleClearChat}
+        isClearingChat={isClearingChat}
+        isAdmin={isAdmin}
+        canClearEventLog={isAdmin}
       />
     </div>
   );
