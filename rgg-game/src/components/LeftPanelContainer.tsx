@@ -65,6 +65,8 @@ function LeftPanelContainer({
         lastSeenRef.current = msgTime;
         setHasUnread(false);
       }
+    }, (error) => {
+      console.error("Unread messages listener error:", error);
     });
   }, [isChatVisible]);
 
