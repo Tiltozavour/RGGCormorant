@@ -22,6 +22,7 @@ type ChatMessage = {
   borderColor: string;
   timestamp: any;
   replyTo?: {
+    id: string;
     login: string;
     text: string;
     borderColor: string;
@@ -41,7 +42,9 @@ function ChatBox({ playerData, isOpen, lastReadTime, hasUnread }: ChatBoxProps) 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null); // Для прокрутки
+  const containerRef = useRef<HTMLDivElement>(null); // Для отслеживания скролла
   const inputRef = useRef<HTMLInputElement>(null); // Для фокуса
 
   useEffect(() => {
@@ -81,6 +84,32 @@ function ChatBox({ playerData, isOpen, lastReadTime, hasUnread }: ChatBoxProps) 
     }
   }, [isOpen]); // Убрали зависимость от messages, чтобы не скроллить при каждом сообщении, если открыто
 
+  // Обработчик прокрутки для показа кнопки "вниз"
+  const handleScroll = () => {
+    if (!containerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    // Если до низа больше 150px — показываем кнопку
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
+    setShowScrollButton(!isNearBottom);
+  };
+
+  // Функция для плавного скролла к конкретному сообщению
+  const scrollToMessage = (msgId: string) => {
+    const element = document.getElementById(`msg-${msgId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      
+      // Добавляем временную подсветку сообщению
+      element.classList.add("ring-2", "ring-yellow-500/50", "rounded-lg", "transition-all");
+      setTimeout(() => {
+        element.classList.remove("ring-2", "ring-yellow-500/50");
+      }, 2000);
+    } else {
+      console.warn("Message not found in DOM:", msgId);
+      // Сообщение может быть не загружено из-за лимита в 50 сообщений
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
@@ -97,6 +126,7 @@ function ChatBox({ playerData, isOpen, lastReadTime, hasUnread }: ChatBoxProps) 
         borderColor: playerData.borderColor || "#fac319",
         timestamp: serverTimestamp(),
         replyTo: replyingTo ? {
+          id: replyingTo.id,
           login: replyingTo.login,
           text: replyingTo.text,
           borderColor: replyingTo.borderColor
@@ -108,9 +138,18 @@ function ChatBox({ playerData, isOpen, lastReadTime, hasUnread }: ChatBoxProps) 
     }
   };
 
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
   return (
-    <div className="flex-1 flex flex-col min-h-0" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
-      <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 w-full" style={{ direction: 'rtl' }}>
+    <div className="flex-1 flex flex-col min-h-0 relative" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
+      <div 
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto custom-scrollbar min-h-0 w-full" 
+        style={{ direction: 'rtl' }}
+      >
         <div className="p-4 space-y-3" style={{ direction: 'ltr' }}>
           {(() => {
           return messages.map((msg) => {
@@ -118,7 +157,10 @@ function ChatBox({ playerData, isOpen, lastReadTime, hasUnread }: ChatBoxProps) 
 
           return (
             <React.Fragment key={msg.id}>
-              <div className={`flex items-start gap-2 group/msg w-full animate-in fade-in slide-in-from-bottom-1 duration-300 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+              <div 
+                id={`msg-${msg.id}`} 
+                className={`flex items-start gap-2 group/msg w-full animate-in fade-in slide-in-from-bottom-1 duration-300 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
+              >
               <img src={msg.avatar || FALLBACK_AVATAR} className="w-6 h-6 rounded-full border-2 border-black shrink-0 mt-0.5" style={{ borderColor: msg.borderColor }} alt="" />
               <div className={`flex flex-col min-w-0 max-w-[66.6%] ${isMe ? 'items-end' : 'items-start'}`}>
                 <div className={`flex items-center gap-1.5 mb-0.5 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -133,7 +175,13 @@ function ChatBox({ playerData, isOpen, lastReadTime, hasUnread }: ChatBoxProps) 
                    // Применяем цвет ауры с прозрачностью 10% для всех сообщений
                    style={{ backgroundColor: hexToRgba(msg.borderColor, 0.1) }}>
                   {msg.replyTo && (
-                    <div className="mb-1.5 pb-1 border-b border-white/10 text-[10px] text-zinc-400 italic flex flex-col overflow-hidden">
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation(); // Предотвращаем всплытие
+                        if (msg.replyTo?.id) scrollToMessage(msg.replyTo.id);
+                      }}
+                      className="mb-1.5 pb-1 border-b border-white/10 text-[10px] text-zinc-400 italic flex flex-col overflow-hidden cursor-pointer hover:bg-white/10 transition-colors pointer-events-auto" // Removed title attribute
+                    >
                       <span className="font-black text-[8px] uppercase not-italic opacity-80" style={{ color: msg.replyTo.borderColor }}>@{msg.replyTo.login}</span>
                       <span className="line-clamp-2 break-words opacity-70">"{msg.replyTo.text}"</span>
                     </div>
@@ -161,6 +209,19 @@ function ChatBox({ playerData, isOpen, lastReadTime, hasUnread }: ChatBoxProps) 
           <div ref={messagesEndRef} />
         </div>
       </div>
+
+      {/* Кнопка быстрого скролла вниз */}
+      {showScrollButton && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-16 right-6 z-20 w-8 h-8 bg-yellow-500/90 text-black rounded-full flex items-center justify-center shadow-lg hover:bg-yellow-400 hover:scale-110 active:scale-95 transition-all animate-in fade-in zoom-in duration-200"
+          title="Вниз"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M7 13l5 5 5-5M7 6l5 5 5-5"/>
+          </svg>
+        </button>
+      )}
 
       {/* Превью ответа */}
       {replyingTo && (

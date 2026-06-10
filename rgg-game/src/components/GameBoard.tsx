@@ -649,8 +649,11 @@ const GameBoard: React.FC<GameBoardProps> = ({
                 transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
               }}
             >
-              {/* Всплывающее количество коинов */}
-              <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-all duration-300 bg-black/90 border border-yellow-500/50 px-2 py-0.5 rounded text-[10px] font-bold text-yellow-400 whitespace-nowrap pointer-events-none z-[60] shadow-xl transform translate-y-2 group-hover:translate-y-0">
+              {/* Всплывающее количество коинов под аватаркой */}
+              <div 
+                className="absolute -bottom-8 opacity-0 group-hover:opacity-100 transition-all duration-300 bg-black/90 border border-yellow-500/50 px-2 py-0.5 rounded text-[11px] font-black text-yellow-400 whitespace-nowrap pointer-events-none z-[60] shadow-xl transform -translate-y-2 group-hover:translate-y-0"
+                style={{ fontFamily: "'Comfortaa', sans-serif" }}
+              >
                 🦖 {otherPlayer.tiltCoins ?? 0}
               </div>
 
@@ -764,7 +767,11 @@ const GameBoard: React.FC<GameBoardProps> = ({
               : `translate(calc(-50% + ${getPlayerOffset(activePlayer.id, activePlayer.position ?? 0).x}px), calc(-50% + ${getPlayerOffset(activePlayer.id, activePlayer.position ?? 0).y}px))`,
           }}
         >
-          <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-all duration-300 bg-black/90 border border-yellow-500/50 px-2 py-0.5 rounded text-[10px] font-bold text-yellow-400 whitespace-nowrap pointer-events-none z-[60] shadow-xl transform translate-y-2 group-hover:translate-y-0">
+          {/* Всплывающее количество коинов под аватаркой */}
+          <div 
+            className="absolute -bottom-10 opacity-0 group-hover:opacity-100 transition-all duration-300 bg-black/90 border border-yellow-500/50 px-2 py-0.5 rounded text-[11px] font-black text-yellow-400 whitespace-nowrap pointer-events-none z-[60] shadow-xl transform -translate-y-2 group-hover:translate-y-0"
+            style={{ fontFamily: "'Comfortaa', sans-serif" }}
+          >
             🦖 {activePlayer.tiltCoins ?? 0}
           </div>
 
