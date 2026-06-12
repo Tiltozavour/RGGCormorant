@@ -76,7 +76,7 @@ export const GameWheel: React.FC<Props> = ({
           setSpinning(false);
           if (data.winnerIndex !== null && items[data.winnerIndex]) {
             setWinner(items[data.winnerIndex]);
-            onResult(items[data.winnerIndex].name);
+            // onResult(items[data.winnerIndex].name); // Результат обрабатывается только после подтверждения админом
           }
           void updateDoc(doc(db, "game_settings", "wheel"), {
             isSpinning: false,
@@ -224,6 +224,7 @@ export const GameWheel: React.FC<Props> = ({
     await batch.commit();
 
     // Задерживаем вызов onResult, чтобы анимация исчезновения строки успела проиграться
+    // Теперь onResult вызывается только здесь, после подтверждения админом
     setTimeout(() => onResult(game.name), 600); // Длительность анимации 0.5s + небольшой запас
   };
 
@@ -382,8 +383,8 @@ export const GameWheel: React.FC<Props> = ({
                 КРУТИТЬ!
               </div>
             )}
-            {!readOnly && !winner && renderActionCards()}
-            {!spinning && (
+            {!readOnly && !winner && renderActionCards()} {/* Action cards can be used by players too if they have them */}
+            {!spinning && (readOnly || canSpin) && ( // Кнопка "Закрыть" видна только админу на основном колесе или всегда на readOnly колесе
               <button onClick={onClose} className="text-zinc-500 hover:text-white hover:scale-105 active:scale-95 transition-all text-sm uppercase font-bold tracking-widest" style={{ fontFamily: "'Comfortaa', sans-serif" }}>
                 Закрыть
               </button>

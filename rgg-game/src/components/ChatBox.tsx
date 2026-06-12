@@ -68,6 +68,25 @@ function ChatBox({ playerData, isOpen, lastReadTime, hasUnread }: ChatBoxProps) 
     return () => unsubscribe();
   }, []);
 
+  // Автоматическая прокрутка при появлении новых сообщений
+  useEffect(() => {
+    if (isOpen && messages.length > 0) {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      // Проверяем, находится ли пользователь внизу (с запасом 150px)
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 150;
+      const lastMessage = messages[messages.length - 1];
+      const sentByMe = lastMessage?.playerId === playerData.id;
+
+      // Скроллим вниз, если мы уже там или если сообщение отправили мы
+      if (isAtBottom || sentByMe) {
+        messagesEndRef.current?.scrollIntoView({ behavior: sentByMe ? "smooth" : "auto", block: "end" });
+      }
+    }
+  }, [messages, isOpen, playerData.id]);
+
   useEffect(() => {
     if (isOpen) { // Если панель чата открыта
       // Используем небольшой таймаут, чтобы дождаться отрисовки DOM
@@ -82,7 +101,7 @@ function ChatBox({ playerData, isOpen, lastReadTime, hasUnread }: ChatBoxProps) 
     } else {
       inputRef.current?.blur(); // Снимаем фокус, если чат закрыт
     }
-  }, [isOpen]); // Убрали зависимость от messages, чтобы не скроллить при каждом сообщении, если открыто
+  }, [isOpen]);
 
   // Обработчик прокрутки для показа кнопки "вниз"
   const handleScroll = () => {
@@ -114,7 +133,22 @@ function ChatBox({ playerData, isOpen, lastReadTime, hasUnread }: ChatBoxProps) 
     e.preventDefault();
     if (!inputText.trim()) return;
 
-    const text = inputText.trim();
+    let text = inputText.trim();
+
+    // Обработка команды /roll или /dice (например, /roll d20, /dice 20, /roll)
+    const rollMatch = text.match(/^\/(roll|dice)(?:\s+d?(\d+))?$/i);
+    if (rollMatch) {
+      const command = rollMatch[1].toLowerCase();
+      const sides = rollMatch[2] ? parseInt(rollMatch[2], 10) : (command === "dice" ? 20 : 100);
+      if (sides > 0 && sides <= 1000) {
+        const roll = Math.floor(Math.random() * sides) + 1;
+        let resultSuffix = "";
+        if (roll === 1) resultSuffix = " — О нет, крит фейл!";
+        else if (roll === sides && sides > 1) resultSuffix = " — Успешный успех!";
+        text = `🎲 Бросок d${sides}: выпало ${roll}${resultSuffix}`;
+      }
+    }
+
     setInputText("");
 
     try {
@@ -171,7 +205,14 @@ function ChatBox({ playerData, isOpen, lastReadTime, hasUnread }: ChatBoxProps) 
                     ) : ''}
                   </span>
                 </div>
-                <div className={`text-[13px] text-zinc-200 break-words whitespace-pre-wrap leading-tight px-2.5 py-1.5 rounded-2xl border border-white/5 shadow-inner relative ${isMe ? 'rounded-tr-none text-right' : 'rounded-tl-none text-left'}`}
+                <div className={`text-[13px] break-words whitespace-pre-wrap leading-tight px-2.5 py-1.5 rounded-2xl border border-white/5 shadow-inner relative ${isMe ? 'rounded-tr-none text-right' : 'rounded-tl-none text-left'} ${
+                  msg.text.includes('🎲 Бросок') 
+                    ? msg.text.includes('крит фейл') 
+                      ? 'text-red-500 font-bold animate-shake' 
+                      : msg.text.includes('Успешный успех') 
+                        ? 'text-yellow-400 font-bold drop-shadow-[0_0_10px_rgba(250,204,21,0.4)] animate-pulse-5s'
+                        : 'text-blue-400 font-bold' 
+                    : 'text-zinc-200'}`}
                    // Применяем цвет ауры с прозрачностью 10% для всех сообщений
                    style={{ backgroundColor: hexToRgba(msg.borderColor, 0.1) }}>
                   {msg.replyTo && (
